@@ -3,6 +3,7 @@ package mailer
 import (
 	"crypto/rand"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"log"
@@ -25,7 +26,40 @@ type SenderProfile struct {
 	// ImplicitTLS uses direct TLS on connect (port 465 / SMTPS).
 	// When false, smtp.SendMail negotiates STARTTLS automatically if offered.
 	ImplicitTLS bool      `json:"implicit_tls"`
+	// AuthMethod controls the SMTP AUTH mechanism. Accepted values:
+	//   "plain" (default) — AUTH PLAIN
+	//   "login"           — AUTH LOGIN (required by Exchange/Outlook)
+	AuthMethod  string    `json:"auth_method,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
+}
+
+// loginAuth implements smtp.Auth for the AUTH LOGIN mechanism
+// required by Microsoft Exchange / Outlook SMTP servers.
+type loginAuth struct {
+	username, password string
+}
+
+func (a loginAuth) Start(_ *smtp.ServerInfo) (string, []byte, error) {
+	return "LOGIN", nil, nil
+}
+
+func (a loginAuth) Next(fromServer []byte, more bool) ([]byte, error) {
+	if !more {
+		return nil, nil
+	}
+	challenge := strings.ToLower(strings.TrimSpace(string(fromServer)))
+	decoded, err := base64.StdEncoding.DecodeString(challenge)
+	if err == nil {
+		challenge = strings.ToLower(strings.TrimSpace(string(decoded)))
+	}
+	switch {
+	case strings.HasPrefix(challenge, "username"):
+		return []byte(a.username), nil
+	case strings.HasPrefix(challenge, "password"):
+		return []byte(a.password), nil
+	default:
+		return nil, fmt.Errorf("unexpected AUTH LOGIN challenge: %q", fromServer)
+	}
 }
 
 // EmailTemplate is a reusable phishing email template.
@@ -213,7 +247,11 @@ func Send(profile *SenderProfile, tmpl *EmailTemplate, data TemplateData) error 
 
 	var auth smtp.Auth
 	if profile.Username != "" {
-		auth = smtp.PlainAuth("", profile.Username, profile.Password, profile.Host)
+		if strings.ToLower(profile.AuthMethod) == "login" || isExchangeHost(profile.Host) {
+			auth = loginAuth{profile.Username, profile.Password}
+		} else {
+			auth = smtp.PlainAuth("", profile.Username, profile.Password, profile.Host)
+		}
 	}
 
 	addr := fmt.Sprintf("%s:%d", profile.Host, profile.Port)
@@ -323,6 +361,15 @@ func randomBoundary() (string, error) {
 		return "", err
 	}
 	return "----=_Part_" + hex.EncodeToString(buf), nil
+}
+
+// isExchangeHost returns true for Microsoft Exchange / Office 365 SMTP hosts
+// that require AUTH LOGIN instead of AUTH PLAIN.
+func isExchangeHost(host string) bool {
+	h := strings.ToLower(host)
+	return strings.HasSuffix(h, ".outlook.com") ||
+		strings.HasSuffix(h, ".office365.com") ||
+		strings.HasSuffix(h, ".exchange.microsoft.com")
 }
 
 // loadProfilesFromRows populates the manager from database rows at startup.
