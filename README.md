@@ -17,7 +17,6 @@ Device Code Phishing Operator Console — a self-hosted platform for conducting 
 9. [API reference](#api-reference)
 10. [Artifacts and evidence](#artifacts-and-evidence)
 11. [Post-exploitation](#post-exploitation)
-12. [Docker deployment](#docker-deployment)
 
 ---
 
