@@ -17,7 +17,6 @@ Device Code Phishing Operator Console — a self-hosted platform for conducting 
 9. [API reference](#api-reference)
 10. [Artifacts and evidence](#artifacts-and-evidence)
 11. [Post-exploitation](#post-exploitation)
-12. [Docker deployment](#docker-deployment)
 
 ---
 
@@ -296,7 +295,7 @@ The config uses a simple `key=value` format:
 ```ini
 # Engagement metadata
 engagement.id         = CORP-2026-RTO-001
-engagement.operator   = jrivas
+engagement.operator   = operator
 engagement.client_code = CORPX
 
 # Server
@@ -780,21 +779,6 @@ Invoke-RefreshToMSTeamsToken -RefreshToken "<refresh_token>" -Domain "corp.com"
 - Further lateral movement via Azure RBAC (if target has Azure permissions)
 
 The `offline_access` scope in the default configuration ensures a refresh token is issued, enabling persistent access after the initial capture.
-
----
-
-## Docker deployment
-
-```bash
-cd deploy
-docker-compose up -d
-```
-
-The `Dockerfile` uses a two-stage build (Go builder → Alpine) and strips the binary with `-ldflags "-s -w"`. The container runs as a non-root user.
-
-**docker-compose.yml** mounts named volumes for `artifacts` and `exports` (and the database file) and binds only to `127.0.0.1:8443` by default. Uncomment the Caddy service block to add automatic TLS termination with Let's Encrypt.
-
-For per-engagement isolation, deploy one container stack per assessment. The config file path is passed as a volume mount and CLI argument.
 
 ---
 
