@@ -1,6 +1,6 @@
 # ENTRAITH
 
-Device Code Phishing Operator Console — a self-hosted platform for conducting Microsoft OAuth2 Device Authorization Grant attacks during authorized red team assessments.
+Device Code Phishing Operator Console — a self-hosted platform for conducting Microsoft OAuth2 Device Authorization Grant attacks during authorized red team assessments. Includes a built-in Graph API post-exploitation module for token refresh, mailbox enumeration, OneDrive/SharePoint file access, Teams chat extraction, group cloning, app deployment, and tenant recon — all from the operator dashboard.
 
 ---
 
@@ -16,7 +16,7 @@ Device Code Phishing Operator Console — a self-hosted platform for conducting 
 8. [Persistence and database](#persistence-and-database)
 9. [API reference](#api-reference)
 10. [Artifacts and evidence](#artifacts-and-evidence)
-11. [Post-exploitation](#post-exploitation)
+11. [Post-exploitation (Graph Ops)](#post-exploitation-graph-ops)
 
 ---
 
@@ -98,11 +98,20 @@ The target completes MFA themselves — against the legitimate Microsoft login p
 │  │  - spoofed User-Agent                                        │   │
 │  │  - Results chan → collectResults goroutine                   │   │
 │  └──────────────────────────────────────────────────────────────┘   │
+│                                                                      │
+│  ┌──────────────────────────────────────────────────────────────┐   │
+│  │  graph.Client  (stateless, created per Graph Ops request)    │   │
+│  │  - wraps Bearer token from captured/refreshed token          │   │
+│  │  - email search, OneDrive/SharePoint browse + download       │   │
+│  │  - Teams chats, channels, messages                           │   │
+│  │  - user/group/app/policy enumeration                         │   │
+│  └──────────────────────────────────────────────────────────────┘   │
 └──────────────────────────────────────────────────────────────────────┘
            │                          │
            ▼                          ▼
   login.microsoftonline.com    graph.microsoft.com
-  (device codes + polling)     (/me UPN resolution)
+  (device codes + polling,     (/me UPN resolution,
+   token refresh)               Graph Ops post-exploitation)
 ```
 
 ### Data flow on launch
@@ -174,15 +183,22 @@ entraith/
 │   │   └── store.go             # SQLite persistence layer
 │   │                            # Schema migration, CRUD for all entities
 │   │                            # CampaignExport for evidence packaging
+│   │                            # LoadTokenByTargetID, UpdateLatestToken
 │   │
 │   ├── campaigns/
 │   │   └── campaigns.go         # Campaign lifecycle, Manager, Launch, SendEmails
 │   │                            # Load() from DB at startup
 │   │                            # DeleteCampaign(), ExportCampaign()
+│   │                            # GetTokenByTargetID(), RefreshToken()
 │   │
 │   ├── modules/
-│   │   └── devicecode/
-│   │       └── devicecode.go    # Engine, session state, polling goroutines, UPN
+│   │   ├── devicecode/
+│   │   │   └── devicecode.go    # Engine, session state, polling goroutines, UPN
+│   │   │                        # RefreshAccessToken() — exchange refresh_token
+│   │   └── graph/
+│   │       └── graph.go         # Microsoft Graph API post-exploitation client
+│   │                            # Email, OneDrive/SharePoint, Teams, users, groups
+│   │                            # App registrations, service principals, policies
 │   │
 │   ├── targets/
 │   │   └── targets.go           # In-memory target store, CSV import
@@ -193,11 +209,13 @@ entraith/
 │   │
 │   ├── api/
 │   │   └── handler.go           # All HTTP handlers and route registration
-│   │                            # Including export and delete endpoints
+│   │                            # Token refresh, AT/RT download, Graph Ops endpoints
+│   │                            # OneDrive proxy download handler
 │   │
 │   └── web/
 │       ├── dashboard.go         # go:embed wrapper
 │       └── dashboard.html       # Single-page operator console (JS + CSS)
+│                                # Graph Ops tab, drive browser, responsive layout
 │
 ├── bootstrap/
 │   ├── engagement.example.conf  # Example key=value config
@@ -213,19 +231,21 @@ entraith/
 
 **`config`** — loads a flat `key=value` config file (comments with `#`, inline comments stripped). Sets safe defaults for missing values. No external dependencies.
 
-**`store`** — the SQLite persistence layer (`modernc.org/sqlite`, pure Go, no CGO). Opened once at startup and shared by both managers. Schema is applied via `CREATE TABLE IF NOT EXISTS` on every startup (idempotent migration). Foreign keys with `ON DELETE CASCADE` mean deleting a campaign row automatically deletes all its targets, device codes, tokens, and email results. Provides `ExportCampaign(id)` which assembles a complete `CampaignExport` struct containing all evidence for one campaign.
+**`store`** — the SQLite persistence layer (`modernc.org/sqlite`, pure Go, no CGO). Opened once at startup and shared by both managers. Schema is applied via `CREATE TABLE IF NOT EXISTS` on every startup (idempotent migration). Foreign keys with `ON DELETE CASCADE` mean deleting a campaign row automatically deletes all its targets, device codes, tokens, and email results. Provides `ExportCampaign(id)` which assembles a complete `CampaignExport` struct containing all evidence for one campaign. `LoadTokenByTargetID` fetches the most recently captured token for a given target; `UpdateLatestToken` writes refreshed token credentials back to the database.
 
-**`campaigns`** — owns the `Manager` (map of campaigns, mutex-protected). Each `Campaign` holds a `*targets.Store`, a `*devicecode.Engine`, result slices, and email send results. `Manager.Load()` reads all campaigns from SQLite at startup and reconstructs in-memory state. `Manager.Launch` orchestrates the multi-phase device code flow and persists each device code and token to the database as they are captured. `Manager.DeleteCampaign` stops any active polling, cascades the SQLite deletion, and removes the campaign from memory. `Manager.ExportCampaign` delegates to `store.ExportCampaign`.
+**`campaigns`** — owns the `Manager` (map of campaigns, mutex-protected). Each `Campaign` holds a `*targets.Store`, a `*devicecode.Engine`, result slices, and email send results. `Manager.Load()` reads all campaigns from SQLite at startup and reconstructs in-memory state. `Manager.Launch` orchestrates the multi-phase device code flow and persists each device code and token to the database as they are captured. `Manager.DeleteCampaign` stops any active polling, cascades the SQLite deletion, and removes the campaign from memory. `Manager.ExportCampaign` delegates to `store.ExportCampaign`. `Manager.GetTokenByTargetID` checks in-memory state first, falls back to the database. `Manager.RefreshToken` exchanges the stored refresh token for a new access token and updates both in-memory state and the database.
 
-**`devicecode`** — the core engine. One `Engine` per campaign (in-memory only; not persisted directly). Holds a `map[targetID]*Session`. Each session tracks a device code response and its current state (`pending`, `completed`, `expired`, `error`, `cancelled`). `StartPolling` spawns one goroutine per target. Results are delivered via a buffered channel (`chan *TokenResult`). All outbound HTTP requests use a consistent, spoofed User-Agent chosen at engine creation.
+**`devicecode`** — the core engine. One `Engine` per campaign (in-memory only; not persisted directly). Holds a `map[targetID]*Session`. Each session tracks a device code response and its current state (`pending`, `completed`, `expired`, `error`, `cancelled`). `StartPolling` spawns one goroutine per target. Results are delivered via a buffered channel (`chan *TokenResult`). All outbound HTTP requests use a consistent, spoofed User-Agent chosen at engine creation. The standalone `RefreshAccessToken` function exchanges a `refresh_token` for a new `access_token` + `refresh_token` pair using the same token endpoint.
+
+**`graph`** — stateless Graph API client. `graph.New(accessToken)` wraps a Bearer token and exposes methods for every supported post-exploitation operation. All methods accept a `context.Context` and return `json.RawMessage` (raw Graph API responses). No `$select` restrictions — all fields are returned. The `DownloadDriveItem` method uses `http.ErrUseLastResponse` to capture Graph's 302 redirect and stream the file content from the pre-authenticated download URL.
 
 **`targets`** — thread-safe in-memory store. Deduplicates by lowercase email. Supports CSV import with flexible column detection (only `email` is required). IDs are 8-byte random hex strings. The `ImportCSV` result is immediately persisted to the DB by the API handler via `Manager.SaveTargetToDB`.
 
 **`mailer`** — stateless send logic plus an in-memory manager for profiles and templates. `NewManager()` takes no arguments; persistence is injected by `main.go` via `SetPersistence(...)` callbacks — keeping the package free of any import cycle with `store`. `Render` performs simple string replacement (no Go templates, so no escaping conflicts with HTML). `buildMIME` constructs a proper RFC 5322 message with per-message random `Message-ID` and MIME boundary from `crypto/rand`.
 
-**`api`** — `Handler` holds pointers to both managers. `Routes()` returns a configured `*http.ServeMux` with all endpoints. Includes `GET /api/campaigns/{id}/export` (downloads full JSON evidence package) and `DELETE /api/campaigns/{id}` (wipes campaign and all data).
+**`api`** — `Handler` holds pointers to both managers. `Routes()` returns a configured `*http.ServeMux` with all endpoints. Includes token management (refresh, per-user AT/RT file download) and the full suite of Graph Ops endpoints. OneDrive file downloads are proxied server-side through `graphDriveDownload` to avoid CORS issues in the browser.
 
-**`web`** — single embedded HTML file. The dashboard is a self-contained SPA with no external JS dependencies. It communicates exclusively via the REST API and an SSE stream for live updates.
+**`web`** — single embedded HTML file. The dashboard is a self-contained SPA with no external JS dependencies. It communicates exclusively via the REST API and an SSE stream for live updates. The **Graph Ops** tab provides a full interactive post-exploitation interface including an interactive OneDrive/SharePoint filesystem browser.
 
 ### How the inner/outer mux works
 
@@ -394,7 +414,21 @@ The **Sessions** tab updates in real time via a Server-Sent Events stream (`/api
 
 When a token is captured, it appears in **Captured Tokens** and a notification flashes in the top-right corner. Token data persists across server restarts — captured tokens are loaded from the database on startup.
 
-### Step 7 — Export evidence
+### Step 7 — Token management
+
+The **Captured Tokens** tab shows each captured token with three inline actions:
+
+- **↓ AT** — downloads the raw access token as a `.txt` file, named `at_<upn>.txt`.
+- **↓ RT** — downloads the raw refresh token as a `.txt` file, named `rt_<upn>.txt`.
+- **↺ Refresh** — exchanges the stored refresh token for a new access + refresh token pair. The new tokens are written back to the database and to in-memory state. Use this to re-activate a session when the access token has expired.
+
+### Step 8 — Post-exploitation (Graph Ops)
+
+Click the **Graph Ops** tab. Select a captured target from the dropdown at the top — the list is populated automatically from all captured tokens.
+
+See [Post-exploitation (Graph Ops)](#post-exploitation-graph-ops) for the full list of available operations and their output format.
+
+### Step 9 — Export evidence
 
 Click **↓ Export Campaign** in the Campaign Actions sidebar. The browser downloads `campaign_<id>_export.json`, a complete evidence package containing:
 
@@ -406,7 +440,7 @@ Click **↓ Export Campaign** in the Campaign Actions sidebar. The browser downl
 
 This file is the primary deliverable for evidence documentation.
 
-### Step 8 — Delete when done
+### Step 10 — Delete when done
 
 Click **🗑 Delete Campaign**. After a confirmation dialog, the campaign and **all associated data** (targets, device codes, tokens, email results) are permanently deleted from the database via SQLite `ON DELETE CASCADE`. The in-memory state is cleared and the UI resets. Export before deleting.
 
@@ -679,6 +713,66 @@ All endpoints are under `/api/`. Content-Type for request bodies is `application
 | `POST` | `/api/campaigns/{id}/targets/import` | `multipart/form-data` with `file` field, or `text/plain` CSV body |
 | `GET` | `/api/campaigns/{id}/targets` | Array of `Target` objects |
 
+### Token management
+
+| Method | Path | Notes |
+|--------|------|-------|
+| `POST` | `/api/campaigns/{id}/tokens/{targetId}/refresh` | Exchange stored refresh_token → new access + refresh tokens |
+| `GET` | `/api/campaigns/{id}/tokens/{targetId}/access-token` | Download raw access token as `at_<upn>.txt` |
+| `GET` | `/api/campaigns/{id}/tokens/{targetId}/refresh-token` | Download raw refresh token as `rt_<upn>.txt` |
+
+### Graph Ops
+
+All Graph Ops endpoints look up the stored access token for `{targetId}` and proxy the request to Microsoft Graph. Results are returned as JSON.
+
+#### Identity and recon
+
+| Method | Path | Body | Graph API call |
+|--------|------|------|----------------|
+| `GET` | `/api/campaigns/{id}/graph/{targetId}/me` | — | `GET /me` |
+| `POST` | `/api/campaigns/{id}/graph/{targetId}/users` | `{query?, top?}` | `GET /users?$search=...` |
+| `GET` | `/api/campaigns/{id}/graph/{targetId}/mailboxes` | — | `GET /users?$filter=userType eq 'Member'` |
+
+#### Groups
+
+| Method | Path | Body | Graph API call |
+|--------|------|------|----------------|
+| `GET` | `/api/campaigns/{id}/graph/{targetId}/groups` | — | `GET /groups` |
+| `GET` | `/api/campaigns/{id}/graph/{targetId}/owned-groups` | — | `GET /me/ownedObjects` |
+| `POST` | `/api/campaigns/{id}/graph/{targetId}/clone-group` | `{source_group_id, display_name, description?}` | `GET /groups/{id}` + `POST /groups` |
+
+#### Mail
+
+| Method | Path | Body | Graph API call |
+|--------|------|------|----------------|
+| `POST` | `/api/campaigns/{id}/graph/{targetId}/emails` | `{query, top?}` | `GET /me/messages?$search=...` |
+
+#### OneDrive / SharePoint
+
+| Method | Path | Query params | Graph API call |
+|--------|------|-------------|----------------|
+| `POST` | `/api/campaigns/{id}/graph/{targetId}/files` | — | body: `{query, top?}` → `GET /me/drive/root/search(q='...')` or `GET /me/drive/root/children` |
+| `GET` | `/api/campaigns/{id}/graph/{targetId}/drive/ls` | `item_id=` (optional) | `GET /me/drive/items/{id}/children` |
+| `GET` | `/api/campaigns/{id}/graph/{targetId}/drive/download` | `item_id=` | Proxies `GET /me/drive/items/{id}/content` (follows 302, streams file) |
+
+When `query` is empty or `*` for the files endpoint, `/me/drive/root/children` is used (the Graph search endpoint rejects `*` as a query).
+
+#### Teams
+
+| Method | Path | Notes |
+|--------|------|-------|
+| `GET` | `/api/campaigns/{id}/graph/{targetId}/teams` | Lists joined teams |
+| `GET` | `/api/campaigns/{id}/graph/{targetId}/chats` | Lists direct + group chats |
+
+#### Apps and policies
+
+| Method | Path | Body | Notes |
+|--------|------|------|-------|
+| `POST` | `/api/campaigns/{id}/graph/{targetId}/deploy-app` | `{display_name, redirect_uri?, scopes?}` | Creates Azure AD app registration |
+| `GET` | `/api/campaigns/{id}/graph/{targetId}/apps` | — | Returns `{app_registrations, service_principals}` |
+| `GET` | `/api/campaigns/{id}/graph/{targetId}/grants` | — | OAuth2 delegated permission grants |
+| `GET` | `/api/campaigns/{id}/graph/{targetId}/conditional-access` | — | Conditional access policies (requires Policy.Read.All) |
+
 ### Sender profiles
 
 | Method | Path | Body |
@@ -749,36 +843,87 @@ The primary evidence package is the JSON export from `GET /api/campaigns/{id}/ex
 
 ---
 
-## Post-exploitation
+## Post-exploitation (Graph Ops)
 
-Captured refresh tokens persist beyond the initial session and can be used to acquire new access tokens for any resource the original scope covered.
+The **Graph Ops** tab in the dashboard provides built-in post-exploitation capabilities against captured tokens. All operations run server-side against Microsoft Graph and display results in formatted tables directly in the operator console. A **{ } Raw JSON** toggle shows the raw API response; **↓ Download JSON** saves the result to disk.
 
-### TokenTacticsV2
+Select a target from the dropdown (populated from all captured tokens) and choose an operation from the left panel.
 
-```powershell
-# Refresh into Microsoft Graph
-Invoke-RefreshToMSGraphToken -RefreshToken "<refresh_token>" -Domain "corp.com"
+### Token operations
 
-# Refresh into Exchange Online (email)
-Invoke-RefreshToEXOToken -RefreshToken "<refresh_token>" -Domain "corp.com"
+| Operation | What it does |
+|-----------|-------------|
+| **Refresh Token** | Exchanges the stored `refresh_token` for a new `access_token` + `refresh_token`. Updates the database. Use when the access token has expired. |
+| **↓ AT** | Downloads the raw access token as a text file. |
+| **↓ RT** | Downloads the raw refresh token as a text file. |
 
-# Refresh into Azure Core Management
-Invoke-RefreshToAzureCoreManagementToken -RefreshToken "<refresh_token>" -Domain "corp.com"
+### Identity and recon
 
-# Refresh into Teams
-Invoke-RefreshToMSTeamsToken -RefreshToken "<refresh_token>" -Domain "corp.com"
-```
+| Operation | What it does |
+|-----------|-------------|
+| **Whoami** | Returns the current user's full profile from `/me`. |
+| **Discover Users** | Lists all users in the tenant (up to 999). Requires `User.Read.All`. |
+| **Discover Mailboxes** | Lists all licensed member accounts (userType = Member). |
+| **Search User Attributes** | Searches `displayName`, `mail`, `department`, and `jobTitle` for a keyword. |
+
+### Mail
+
+| Operation | What it does |
+|-----------|-------------|
+| **Search Emails** | Searches the target's mailbox for a keyword. Configurable result limit (default 50, max 999). |
+
+### OneDrive / SharePoint (interactive browser)
+
+| Operation | What it does |
+|-----------|-------------|
+| **Browse Files** | Opens an interactive filesystem browser starting at the drive root. Folders are navigable (click to enter). Files show a **↓** download button (proxied through the server) and an **↗** open-in-browser button. A breadcrumb trail allows navigating back up. |
+| **Search Files** | Searches for files by name/content across the drive. Enter a keyword; leave empty to list the root. |
+
+File downloads are proxied server-side: the browser requests `/api/campaigns/{id}/graph/{targetId}/drive/download?item_id=...`, the server follows Graph's 302 redirect to the pre-authenticated URL, and streams the file content back with the original `Content-Disposition` filename.
+
+### Teams
+
+| Operation | What it does |
+|-----------|-------------|
+| **Joined Teams** | Lists all Teams the user is a member of. |
+| **Chats** | Lists all direct and group chats with member information. |
+
+### Groups
+
+| Operation | What it does |
+|-----------|-------------|
+| **List Groups** | Lists all groups (security + M365) in the tenant. |
+| **Owned Groups** | Lists groups the current user can modify (is an owner of). |
+| **Clone Group** | Creates a copy of an existing group with a new display name and optional description. Copies group type, mail-enabled, and security-enabled settings. |
+
+### Applications
+
+| Operation | What it does |
+|-----------|-------------|
+| **Dump App Registrations** | Lists all app registrations and service principals (enterprise apps) in the tenant. Requires `Application.Read.All`. |
+| **OAuth2 Grants** | Returns all delegated OAuth2 permission grants (consent records). Useful for identifying over-privileged consented apps. |
+| **Deploy App** | Creates a new Azure AD application registration with a specified display name, optional redirect URI, and requested scopes. |
+
+### Policies
+
+| Operation | What it does |
+|-----------|-------------|
+| **Conditional Access** | Dumps all conditional access policies. Requires `Policy.Read.All` (typically requires an admin-level token). |
 
 ### What the tokens grant (with Graph scope)
 
-- Read/send email via Microsoft Graph
-- Access files in OneDrive and SharePoint
-- Read Teams messages and channels
-- Enumerate Azure AD users, groups, roles
-- Access calendar, contacts
-- Further lateral movement via Azure RBAC (if target has Azure permissions)
+The default scope (`https://graph.microsoft.com/.default offline_access openid profile`) grants delegated access to everything the authenticated user can access:
 
-The `offline_access` scope in the default configuration ensures a refresh token is issued, enabling persistent access after the initial capture.
+- Read and send email
+- Access and download OneDrive and SharePoint files
+- Read Teams chats and channel messages
+- Enumerate Azure AD users, groups, and roles
+- Read calendar and contacts
+- Create app registrations (if the user has permission)
+- Access conditional access policies (admin tokens only)
+- Further lateral movement via Azure RBAC if the target has Azure permissions
+
+The `offline_access` scope ensures a `refresh_token` is issued, enabling persistent access through the token refresh functionality even after the original access token expires.
 
 ---
 

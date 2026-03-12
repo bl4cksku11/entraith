@@ -376,6 +376,49 @@ func (e *Engine) resolveUPN(ctx context.Context, result *TokenResult) {
 	}
 }
 
+// RefreshAccessToken exchanges a refresh_token for a new access_token using
+// the standard OAuth2 token endpoint. The returned TokenResult contains the new
+// tokens; if the server does not return a new refresh_token the caller should
+// preserve the original.
+func RefreshAccessToken(ctx context.Context, tenantID, clientID, refreshToken, scope string) (*TokenResult, error) {
+	endpoint := fmt.Sprintf(tokenURL, tenantID)
+	form := url.Values{}
+	form.Set("grant_type", "refresh_token")
+	form.Set("client_id", clientID)
+	form.Set("refresh_token", refreshToken)
+	if scope != "" {
+		form.Set("scope", scope)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, strings.NewReader(form.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("User-Agent", pickUA())
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("refresh request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 200 {
+		var pe pollError
+		json.Unmarshal(body, &pe)
+		return nil, fmt.Errorf("refresh_token exchange failed: %s — %s", pe.Error, pe.ErrorDescription)
+	}
+
+	var token TokenResult
+	if err := json.Unmarshal(body, &token); err != nil {
+		return nil, fmt.Errorf("parsing token response: %w", err)
+	}
+	token.RedeemedAt = time.Now().UTC()
+	return &token, nil
+}
+
 // AllSessions returns a snapshot of all sessions
 func (e *Engine) AllSessions() map[string]*SessionSnapshot {
 	e.mu.RLock()

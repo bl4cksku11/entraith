@@ -298,6 +298,35 @@ func (s *Store) InsertToken(t TokenRow) error {
 	return err
 }
 
+func (s *Store) LoadTokenByTargetID(campaignID, targetID string) (*TokenRow, error) {
+	rows, err := s.db.Query(`
+		SELECT campaign_id, target_id, target_email, access_token, refresh_token, id_token, token_type, expires_in, scope, upn, redeemed_at
+		FROM tokens WHERE campaign_id=? AND target_id=? ORDER BY redeemed_at DESC LIMIT 1`,
+		campaignID, targetID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return nil, nil
+	}
+	var t TokenRow
+	if err := rows.Scan(&t.CampaignID, &t.TargetID, &t.TargetEmail, &t.AccessToken, &t.RefreshToken,
+		&t.IDToken, &t.TokenType, &t.ExpiresIn, &t.Scope, &t.UPN, &t.RedeemedAt); err != nil {
+		return nil, err
+	}
+	return &t, rows.Err()
+}
+
+func (s *Store) UpdateLatestToken(campaignID, targetID, accessToken, refreshToken string, refreshedAt time.Time) error {
+	_, err := s.db.Exec(`
+		UPDATE tokens SET access_token=?, refresh_token=?, redeemed_at=?
+		WHERE campaign_id=? AND target_id=?`,
+		accessToken, refreshToken, refreshedAt, campaignID, targetID,
+	)
+	return err
+}
+
 func (s *Store) LoadTokens(campaignID string) ([]TokenRow, error) {
 	rows, err := s.db.Query(`SELECT campaign_id, target_id, target_email, access_token, refresh_token, id_token, token_type, expires_in, scope, upn, redeemed_at FROM tokens WHERE campaign_id=?`, campaignID)
 	if err != nil {

