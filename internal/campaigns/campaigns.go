@@ -437,6 +437,83 @@ func (m *Manager) GetStatus(campaignID string) (map[string]interface{}, error) {
 	}, nil
 }
 
+func (m *Manager) GetTokenByTargetID(campaignID, targetID string) (*devicecode.TokenResult, error) {
+	c, ok := m.GetCampaign(campaignID)
+	if !ok {
+		return nil, fmt.Errorf("campaign not found")
+	}
+	c.mu.RLock()
+	t, ok := c.ResultsByID[targetID]
+	c.mu.RUnlock()
+	if ok {
+		return t, nil
+	}
+	// Fall back to database (e.g. after server restart)
+	row, err := m.db.LoadTokenByTargetID(campaignID, targetID)
+	if err != nil {
+		return nil, err
+	}
+	if row == nil {
+		return nil, fmt.Errorf("no token for target %s", targetID)
+	}
+	return &devicecode.TokenResult{
+		AccessToken:       row.AccessToken,
+		RefreshToken:      row.RefreshToken,
+		IDToken:           row.IDToken,
+		TokenType:         row.TokenType,
+		ExpiresIn:         row.ExpiresIn,
+		Scope:             row.Scope,
+		TargetID:          row.TargetID,
+		TargetEmail:       row.TargetEmail,
+		RedeemedAt:        row.RedeemedAt,
+		UserPrincipalName: row.UPN,
+	}, nil
+}
+
+// RefreshToken exchanges the stored refresh_token for new tokens and persists the result.
+func (m *Manager) RefreshToken(campaignID, targetID string) (*devicecode.TokenResult, error) {
+	existing, err := m.GetTokenByTargetID(campaignID, targetID)
+	if err != nil {
+		return nil, err
+	}
+	if existing.RefreshToken == "" {
+		return nil, fmt.Errorf("no refresh token available for target %s", targetID)
+	}
+
+	refreshed, err := devicecode.RefreshAccessToken(context.Background(), m.tenantID, m.clientID, existing.RefreshToken, m.scope)
+	if err != nil {
+		return nil, err
+	}
+
+	refreshed.TargetID = existing.TargetID
+	refreshed.TargetEmail = existing.TargetEmail
+	refreshed.UserPrincipalName = existing.UserPrincipalName
+	if refreshed.RefreshToken == "" {
+		refreshed.RefreshToken = existing.RefreshToken
+	}
+
+	// Update in-memory cache
+	c, ok := m.GetCampaign(campaignID)
+	if ok {
+		c.mu.Lock()
+		c.ResultsByID[targetID] = refreshed
+		for i, r := range c.Results {
+			if r.TargetID == targetID {
+				c.Results[i] = refreshed
+				break
+			}
+		}
+		c.mu.Unlock()
+	}
+
+	// Persist updated tokens
+	if err := m.db.UpdateLatestToken(campaignID, targetID, refreshed.AccessToken, refreshed.RefreshToken, refreshed.RedeemedAt); err != nil {
+		log.Printf("[store] failed to update token for %s: %v", targetID, err)
+	}
+
+	return refreshed, nil
+}
+
 func (m *Manager) GetTokens(campaignID string) ([]*devicecode.TokenResult, error) {
 	c, ok := m.GetCampaign(campaignID)
 	if !ok {
