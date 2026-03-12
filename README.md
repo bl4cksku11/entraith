@@ -217,14 +217,11 @@ entraith/
 │       └── dashboard.html       # Single-page operator console (JS + CSS)
 │                                # Graph Ops tab, drive browser, responsive layout
 │
-├── bootstrap/
-│   ├── engagement.example.conf  # Example key=value config
-│   ├── engagement.example.yaml  # Example YAML config (for reference)
-│   └── targets.example.csv      # Example target list
-│
-└── deploy/
-    ├── Dockerfile               # Multi-stage build: golang → alpine
-    └── docker-compose.yml       # Server + optional Caddy TLS reverse proxy
+└── bootstrap/
+    ├── engagement.example.conf  # Example key=value config
+    ├── engagement.example.yaml  # Example YAML config (for reference)
+    └── targets.example.csv      # Example target list
+
 ```
 
 ### Package responsibilities
