@@ -664,6 +664,11 @@
       <button class="btn btn-danger" onclick="confirmDeleteCampaign()">🗑 Delete Campaign</button>
     </div>
 
+    <div class="sidebar-section">
+      <div class="sidebar-label">Telemetry</div>
+      <button class="btn" onclick="showWebhookView()">📡 Webhook Listener</button>
+    </div>
+
   </div>
 
   <!-- Main content -->
@@ -863,6 +868,65 @@
       </div>
     </div>
 
+    <!-- Webhook listener view -->
+    <div id="webhookView" style="display:none">
+      <div class="section-header">Telemetry / Webhook Listener</div>
+
+      <div style="display:grid;grid-template-columns:320px 1fr;gap:24px;align-items:start">
+
+        <!-- Control panel -->
+        <div class="config-card">
+          <div class="config-card-title">Listener Control</div>
+
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+            <div id="webhookDot" style="width:10px;height:10px;border-radius:50%;background:var(--text-dim);flex-shrink:0"></div>
+            <span id="webhookStatusLabel" style="font-size:11px;color:var(--text-dim)">STOPPED</span>
+          </div>
+
+          <div class="input-group">
+            <label>Listen Port</label>
+            <input type="number" id="webhookPort" value="8080" min="1" max="65535" placeholder="8080">
+          </div>
+
+          <div style="display:flex;gap:8px;margin-top:4px">
+            <button class="btn btn-success btn-sm" id="webhookStartBtn" onclick="webhookStart()" style="flex:1">▶ Start</button>
+            <button class="btn btn-danger btn-sm" id="webhookStopBtn" onclick="webhookStop()" style="flex:1" disabled>■ Stop</button>
+          </div>
+
+          <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">
+            <div style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-dim);margin-bottom:8px">Info</div>
+            <div style="font-size:11px;color:var(--text-dim);line-height:1.8">
+              Endpoint: <span style="color:var(--accent)" id="webhookEndpoint">—</span><br>
+              Path: <span style="color:var(--text)">any (/<wbr>receive, /<wbr>capture, ...)</span><br>
+              Method: <span style="color:var(--text)">POST</span><br>
+              Content-Type: <span style="color:var(--text)">application/json</span><br>
+              Total received: <span style="color:var(--accent3)" id="webhookTotal">0</span>
+            </div>
+          </div>
+
+          <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">
+            <button class="btn btn-sm" onclick="webhookRefreshLogs()" style="width:100%;margin-bottom:6px">↻ Refresh Logs</button>
+            <button class="btn btn-sm" onclick="webhookClearView()" style="width:100%">✕ Clear View</button>
+          </div>
+        </div>
+
+        <!-- Log viewer -->
+        <div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <span style="font-size:10px;letter-spacing:0.15em;text-transform:uppercase;color:var(--text-dim)">Received Payloads <span id="webhookEntryCount" style="color:var(--accent)">(0)</span></span>
+            <span style="font-size:10px;color:var(--text-dim)" id="webhookLastRefresh"></span>
+          </div>
+          <div id="webhookLog" style="background:var(--bg2);border:1px solid var(--border);border-radius:2px;overflow-y:auto;max-height:calc(100vh - 220px);font-size:11px;font-family:var(--mono)">
+            <div style="padding:24px;text-align:center;color:var(--text-dim)" id="webhookEmpty">No entries yet. Start the listener and send a POST to /receive.</div>
+          </div>
+        </div>
+
+      </div>
+
+      <hr class="divider">
+      <button class="btn btn-sm" onclick="showCampaignViewOrEmpty()" style="width:auto">← Back to Campaign</button>
+    </div>
+
     <!-- Mail config view -->
     <div id="mailConfigView" style="display:none">
       <div class="section-header">Mail Configuration</div>
@@ -1053,6 +1117,11 @@ function showView(name) {
   document.getElementById('emptyState').style.display = name === 'empty' ? 'block' : 'none';
   document.getElementById('campaignView').style.display = name === 'campaign' ? 'block' : 'none';
   document.getElementById('mailConfigView').style.display = name === 'mail' ? 'block' : 'none';
+  document.getElementById('webhookView').style.display = name === 'webhook' ? 'block' : 'none';
+  if (name !== 'webhook' && webhookPollTimer) {
+    clearInterval(webhookPollTimer);
+    webhookPollTimer = null;
+  }
 }
 
 function showCampaignViewOrEmpty() {
@@ -2068,6 +2137,114 @@ function timeUntil(isoDate) {
 function formatTime(isoDate) {
   if (!isoDate) return '—';
   return new Date(isoDate).toLocaleTimeString();
+}
+
+// ─── Webhook Listener ─────────────────────────────────────────────────────────
+let webhookPollTimer = null;
+
+function showWebhookView() {
+  showView('webhook');
+  webhookRefreshStatus();
+  webhookRefreshLogs();
+  webhookPollTimer = setInterval(() => {
+    webhookRefreshStatus();
+    webhookRefreshLogs();
+  }, 5000);
+}
+
+async function webhookRefreshStatus() {
+  const r = await fetch('/api/webhook/status');
+  if (!r.ok) return;
+  const s = await r.json();
+  const dot = document.getElementById('webhookDot');
+  const label = document.getElementById('webhookStatusLabel');
+  const startBtn = document.getElementById('webhookStartBtn');
+  const stopBtn = document.getElementById('webhookStopBtn');
+  const endpoint = document.getElementById('webhookEndpoint');
+  document.getElementById('webhookTotal').textContent = s.entries;
+  if (s.running) {
+    dot.style.background = 'var(--accent3)';
+    dot.style.boxShadow = '0 0 8px var(--accent3)';
+    label.style.color = 'var(--accent3)';
+    label.textContent = `RUNNING — port ${s.port}`;
+    startBtn.disabled = true;
+    stopBtn.disabled = false;
+    endpoint.textContent = `POST :<span style="color:var(--warn)">${s.port}</span>/receive`;
+    endpoint.innerHTML = `POST :<span style="color:var(--warn)">${s.port}</span>/receive`;
+  } else {
+    dot.style.background = 'var(--text-dim)';
+    dot.style.boxShadow = 'none';
+    label.style.color = 'var(--text-dim)';
+    label.textContent = 'STOPPED';
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+    endpoint.textContent = '—';
+  }
+}
+
+async function webhookStart() {
+  const port = parseInt(document.getElementById('webhookPort').value, 10);
+  if (!port || port < 1 || port > 65535) { notify('Invalid port', true); return; }
+  const r = await fetch('/api/webhook/start', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({port})
+  });
+  const data = await r.json();
+  if (data.error) { notify(data.error, true); return; }
+  notify(`Listener started on port ${port}`);
+  webhookRefreshStatus();
+}
+
+async function webhookStop() {
+  const r = await fetch('/api/webhook/stop', {method: 'POST', headers: {'Content-Type': 'application/json'}});
+  const data = await r.json();
+  if (data.error) { notify(data.error, true); return; }
+  notify('Listener stopped');
+  webhookRefreshStatus();
+}
+
+async function webhookRefreshLogs() {
+  const r = await fetch('/api/webhook/logs');
+  if (!r.ok) return;
+  const data = await r.json();
+  const entries = data.entries || [];
+  document.getElementById('webhookEntryCount').textContent = `(${entries.length})`;
+  document.getElementById('webhookLastRefresh').textContent =
+    'Last refresh: ' + new Date().toLocaleTimeString();
+
+  const log = document.getElementById('webhookLog');
+  if (entries.length === 0) {
+    log.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-dim)" id="webhookEmpty">No entries yet. Start the listener and send a POST to /receive.</div>';
+    return;
+  }
+
+  const rows = [...entries].reverse().map(e => {
+    let payloadDisplay;
+    try {
+      payloadDisplay = JSON.stringify(JSON.parse(e.payload), null, 2);
+    } catch {
+      payloadDisplay = e.payload;
+    }
+    return `<div style="border-bottom:1px solid var(--border);padding:10px 14px">
+      <div style="display:flex;gap:16px;margin-bottom:4px;flex-wrap:wrap">
+        <span style="color:var(--accent);font-size:10px">${e.timestamp || '—'}</span>
+        <span style="color:var(--warn);font-size:10px">src: ${e.source || '—'}</span>
+      </div>
+      <pre style="margin:0;white-space:pre-wrap;word-break:break-all;font-size:11px;color:var(--text);line-height:1.5">${escapeHTML(payloadDisplay)}</pre>
+    </div>`;
+  }).join('');
+  log.innerHTML = rows;
+}
+
+function webhookClearView() {
+  document.getElementById('webhookLog').innerHTML =
+    '<div style="padding:24px;text-align:center;color:var(--text-dim)">View cleared. Entries still saved to log file.</div>';
+  document.getElementById('webhookEntryCount').textContent = '(0)';
+}
+
+function escapeHTML(str) {
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────

@@ -17,6 +17,7 @@ Device Code Phishing Operator Console — a self-hosted platform for conducting 
 9. [API reference](#api-reference)
 10. [Artifacts and evidence](#artifacts-and-evidence)
 11. [Post-exploitation (Graph Ops)](#post-exploitation-graph-ops)
+12. [Webhook listener](#webhook-listener)
 
 ---
 
@@ -770,6 +771,16 @@ When `query` is empty or `*` for the files endpoint, `/me/drive/root/children` i
 | `GET` | `/api/campaigns/{id}/graph/{targetId}/grants` | — | OAuth2 delegated permission grants |
 | `GET` | `/api/campaigns/{id}/graph/{targetId}/conditional-access` | — | Conditional access policies (requires Policy.Read.All) |
 
+### Webhook listener
+
+| Method | Path | Body / Notes |
+|--------|------|--------------|
+| `POST` | `/receive` | `Content-Type: application/json` — receives any JSON payload on the main server port; logs to `webhook_log_path` |
+| `GET` | `/api/webhook/status` | Returns `{running, port, log_path, entries}` |
+| `POST` | `/api/webhook/start` | `{port}` — starts a standalone listener on the given port |
+| `POST` | `/api/webhook/stop` | Gracefully shuts down the standalone listener (5s timeout) |
+| `GET` | `/api/webhook/logs` | Returns the last 100 log entries as `{entries: [...], total: N}` |
+
 ### Sender profiles
 
 | Method | Path | Body |
@@ -921,6 +932,70 @@ The default scope (`https://graph.microsoft.com/.default offline_access openid p
 - Further lateral movement via Azure RBAC if the target has Azure permissions
 
 The `offline_access` scope ensures a `refresh_token` is issued, enabling persistent access through the token refresh functionality even after the original access token expires.
+
+---
+
+## Webhook listener
+
+The **Webhook Listener** tab in the dashboard provides a standalone JSON telemetry receiver that can be started and stopped from the operator console without restarting ENTRAITH. It is intended to catch outbound callbacks, beacon check-ins, or any JSON payload that a compromised host or external system sends back to operator infrastructure.
+
+### Two listener modes
+
+**Built-in endpoint (`POST /receive`)** — always available on the main ENTRAITH port. Accepts `Content-Type: application/json` POST requests to `/receive` from any source. Logs directly to the configured `webhook_log_path`.
+
+**Standalone listener** — a separate HTTP server spun up on a configurable port from the dashboard. Accepts POST requests on **any path** (e.g. `/capture`, `/hook`, `/callback`), so the listener path on the target side can be arbitrary. Also requires `Content-Type: application/json`. Both modes share the same log file.
+
+### Starting and stopping
+
+From the **Webhook Listener** panel in the sidebar:
+
+1. Enter the desired port number (e.g. `8081`).
+2. Click **Start Listener** — calls `POST /api/webhook/start` with `{port: N}`. The server binds immediately in a background goroutine.
+3. The status indicator updates to show the listener as **running**, the active port, and the number of entries logged so far.
+4. Click **Stop Listener** — calls `POST /api/webhook/stop`. The server is shut down gracefully with a 5-second timeout.
+
+The listener state is in-memory only — it does not survive a server restart and must be re-started manually after a reboot.
+
+### Payload logging
+
+Every received payload is appended to the log file (`webhook_log_path` in `engagement.conf`, defaults to `stream_monitor.log`) in a single-line format:
+
+```
+[2026-03-13T14:00:00Z] source=10.0.0.5:54321 payload={"event":"beacon","host":"WORKSTATION-01"}
+```
+
+| Field | Description |
+|-------|-------------|
+| `timestamp` | UTC time of receipt, RFC 3339 |
+| `source` | Remote address (`ip:port`) as seen by the server |
+| `payload` | Raw JSON body exactly as received |
+
+The file is appended with mode `0600`. Entries are never rotated automatically — export or clear the file manually between engagements.
+
+### Real-time log view
+
+The **Webhook Listener** panel polls `GET /api/webhook/logs` and renders received entries as formatted JSON cards in the dashboard. The last 100 entries are displayed. Each card shows the timestamp, source address, and pretty-printed payload. A **{ } Raw** toggle shows the raw log line.
+
+### Log entry object
+
+```json
+{
+  "timestamp": "2026-03-13T14:00:00Z",
+  "source": "10.0.0.5:54321",
+  "payload": "{\"event\":\"beacon\",\"host\":\"WORKSTATION-01\"}"
+}
+```
+
+`GET /api/webhook/logs` returns:
+
+```json
+{
+  "entries": [ ... ],
+  "total": 42
+}
+```
+
+`total` reflects the full count of entries in the log file, not just the last 100 returned.
 
 ---
 

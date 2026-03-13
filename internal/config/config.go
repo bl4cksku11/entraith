@@ -113,10 +113,10 @@ func Load(path string) (*Config, error) {
 
 func setDefaults(cfg *Config) {
 	if cfg.Server.Port == 0 {
-		cfg.Server.Port = 8443
+		cfg.Server.Port = 80
 	}
 	if cfg.Server.Host == "" {
-		cfg.Server.Host = "127.0.0.1"
+		cfg.Server.Host = "0.0.0.0"
 	}
 	if cfg.Campaign.TenantID == "" {
 		cfg.Campaign.TenantID = "common"

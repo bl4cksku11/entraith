@@ -17,12 +17,19 @@ import (
 )
 
 type Handler struct {
-	Manager *campaigns.Manager
-	Mailer  *mailer.Manager
+	Manager        *campaigns.Manager
+	Mailer         *mailer.Manager
+	WebhookLogPath string
+	Listener       *WebhookListener
 }
 
-func NewHandler(mgr *campaigns.Manager, mail *mailer.Manager) *Handler {
-	return &Handler{Manager: mgr, Mailer: mail}
+func NewHandler(mgr *campaigns.Manager, mail *mailer.Manager, webhookLogPath string) *Handler {
+	return &Handler{
+		Manager:        mgr,
+		Mailer:         mail,
+		WebhookLogPath: webhookLogPath,
+		Listener:       NewWebhookListener(webhookLogPath),
+	}
 }
 
 func (h *Handler) Routes() http.Handler {
@@ -77,6 +84,15 @@ func (h *Handler) Routes() http.Handler {
 
 	// SSE for real-time updates
 	mux.HandleFunc("GET /api/campaigns/{id}/events", h.streamEvents)
+
+	// Webhook / telemetry receiver
+	mux.HandleFunc("POST /receive", h.receiveWebhook)
+
+	// Webhook listener control
+	mux.HandleFunc("GET /api/webhook/status", h.webhookStatus)
+	mux.HandleFunc("POST /api/webhook/start", h.webhookStart)
+	mux.HandleFunc("POST /api/webhook/stop", h.webhookStop)
+	mux.HandleFunc("GET /api/webhook/logs", h.webhookLogs)
 
 	// Sender profiles
 	mux.HandleFunc("GET /api/mailer/profiles", h.listProfiles)
@@ -860,6 +876,47 @@ func writeJSON(w http.ResponseWriter, code int, v interface{}) {
 
 func writeError(w http.ResponseWriter, code int, msg string) {
 	writeJSON(w, code, map[string]string{"error": msg})
+}
+
+// ─── Webhook listener control handlers ───────────────────────────────────────
+
+func (h *Handler) webhookStatus(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, 200, h.Listener.Status())
+}
+
+func (h *Handler) webhookStart(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Port int `json:"port"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Port == 0 {
+		writeError(w, 400, "port required")
+		return
+	}
+	if err := h.Listener.Start(body.Port); err != nil {
+		writeError(w, 409, err.Error())
+		return
+	}
+	writeJSON(w, 200, h.Listener.Status())
+}
+
+func (h *Handler) webhookStop(w http.ResponseWriter, r *http.Request) {
+	if err := h.Listener.Stop(); err != nil {
+		writeError(w, 409, err.Error())
+		return
+	}
+	writeJSON(w, 200, h.Listener.Status())
+}
+
+func (h *Handler) webhookLogs(w http.ResponseWriter, r *http.Request) {
+	n := 100
+	entries := h.Listener.GetLogs(n)
+	if entries == nil {
+		entries = []WebhookEntry{}
+	}
+	writeJSON(w, 200, map[string]interface{}{
+		"entries": entries,
+		"total":   h.Listener.Status().Entries,
+	})
 }
 
 // GenerateUserCodeCSV is kept for potential future export use.
