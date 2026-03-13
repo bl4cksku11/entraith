@@ -1,5 +1,0 @@
-feat: add telemetry webhook listener UI and backend control
-- Added listener control panel with start/stop functionality.
-- Implemented real-time payload visualization for received JSON data.
-- Added persistent logging for telemetry events.
-- Updated sidebar with Webhook Listener navigation.k
