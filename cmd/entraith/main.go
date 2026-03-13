@@ -171,7 +171,8 @@ func runServer() {
 	}
 
 	// Build API handler
-	apiHandler := api.NewHandler(mgr, mailMgr)
+	webhookLogPath := filepath.Join(cfg.Storage.ArtifactsPath, "stream_monitor.log")
+	apiHandler := api.NewHandler(mgr, mailMgr, webhookLogPath)
 
 	// Main router
 	mux := http.NewServeMux()
@@ -184,6 +185,9 @@ func runServer() {
 
 	// API routes
 	mux.Handle("/api/", apiHandler.Routes())
+
+	// Webhook / telemetry receiver
+	mux.Handle("/receive", apiHandler.Routes())
 
 	// Health check
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
@@ -206,6 +210,7 @@ func runServer() {
 	log.Printf("Client ID  : %s", cfg.Campaign.ClientID)
 	log.Printf("Database   : %s", dbPath)
 	log.Printf("Listening  : http://%s", addr)
+	log.Printf("Webhook    : POST http://%s/receive  → %s", addr, webhookLogPath)
 
 	if err := http.ListenAndServe(addr, mux); err != nil {
 		log.Fatalf("Server error: %v", err)
