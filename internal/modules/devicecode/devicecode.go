@@ -12,6 +12,7 @@ package devicecode
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -83,6 +84,36 @@ type TokenResult struct {
 	TargetEmail       string    `json:"target_email"`
 	RedeemedAt        time.Time `json:"redeemed_at"`
 	UserPrincipalName string    `json:"upn,omitempty"`
+
+	// Extracted from JWT claims at capture time
+	TenantID         string `json:"tenant_id,omitempty"`
+	CapturedClientID string `json:"captured_client_id,omitempty"`
+}
+
+// jwtClaims holds the subset of JWT claims we care about.
+type jwtClaims struct {
+	TenantID string `json:"tid"`
+	AppID    string `json:"appid"` // v1 tokens
+	AZP      string `json:"azp"`   // v2 tokens (authorized party)
+	OID      string `json:"oid"`
+	UPN      string `json:"upn"`
+	UniqName string `json:"unique_name"`
+}
+
+// extractJWTClaims parses the payload of a JWT (no signature verification —
+// we only need metadata we trust because it came from our own capture).
+func extractJWTClaims(token string) (jwtClaims, error) {
+	parts := strings.SplitN(token, ".", 3)
+	if len(parts) != 3 {
+		return jwtClaims{}, fmt.Errorf("not a JWT")
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return jwtClaims{}, fmt.Errorf("decoding JWT payload: %w", err)
+	}
+	var c jwtClaims
+	json.Unmarshal(payload, &c)
+	return c, nil
 }
 
 // PollError types from Microsoft
@@ -330,6 +361,14 @@ func (e *Engine) poll(ctx context.Context, session *Session) (*TokenResult, bool
 		token.TargetID = session.DeviceCode.TargetID
 		token.TargetEmail = session.DeviceCode.TargetEmail
 		token.RedeemedAt = time.Now().UTC()
+		if claims, err := extractJWTClaims(token.AccessToken); err == nil {
+			token.TenantID = claims.TenantID
+			if claims.AppID != "" {
+				token.CapturedClientID = claims.AppID
+			} else {
+				token.CapturedClientID = claims.AZP
+			}
+		}
 		return &token, true, nil
 	}
 

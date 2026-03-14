@@ -10,6 +10,7 @@ package graph
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -327,4 +328,370 @@ func (c *Client) GetUserManager(ctx context.Context) (json.RawMessage, error) {
 // GetUserDirectReports returns direct reports of the current user.
 func (c *Client) GetUserDirectReports(ctx context.Context) (json.RawMessage, error) {
 	return c.get(ctx, "/me/directReports?$select=id,displayName,mail,userPrincipalName,jobTitle")
+}
+
+// deleteResource issues a DELETE and discards the (empty) body.
+func (c *Client) deleteResource(ctx context.Context, path string) error {
+	req, err := http.NewRequestWithContext(ctx, "DELETE", graphBase+path, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.accessToken)
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("graph DELETE %s → %d: %s", path, resp.StatusCode, string(body))
+	}
+	return nil
+}
+
+// ─── Mail ────────────────────────────────────────────────────────────────────
+
+// GetMailFolders lists mail folders. mailboxID empty = current user (/me);
+// non-empty = shared mailbox (/users/{mailboxID}).
+func (c *Client) GetMailFolders(ctx context.Context, mailboxID string) (json.RawMessage, error) {
+	prefix := "/me"
+	if mailboxID != "" {
+		prefix = "/users/" + url.PathEscape(mailboxID)
+	}
+	return c.get(ctx, prefix+"/mailFolders?$top=50&$select=id,displayName,totalItemCount,unreadItemCount")
+}
+
+// GetMailMessages lists messages in a folder. mailboxID empty = /me, non-empty = shared mailbox.
+// folderID empty = inbox. order must be "asc" or "desc" (default "desc").
+func (c *Client) GetMailMessages(ctx context.Context, mailboxID, folderID string, top, skip int, order string) (json.RawMessage, error) {
+	if top <= 0 || top > 100 {
+		top = 25
+	}
+	if order != "asc" {
+		order = "desc"
+	}
+	prefix := "/me"
+	if mailboxID != "" {
+		prefix = "/users/" + url.PathEscape(mailboxID)
+	}
+	sel := "$select=id,subject,from,receivedDateTime,isRead,bodyPreview,hasAttachments,importance"
+	var path string
+	if folderID == "" {
+		path = fmt.Sprintf("%s/mailFolders/inbox/messages?$top=%d&$skip=%d&$orderby=receivedDateTime%%20%s&%s", prefix, top, skip, order, sel)
+	} else {
+		path = fmt.Sprintf("%s/mailFolders/%s/messages?$top=%d&$skip=%d&$orderby=receivedDateTime%%20%s&%s", prefix, folderID, top, skip, order, sel)
+	}
+	return c.get(ctx, path)
+}
+
+// GetMailMessage returns a full message including rendered HTML body.
+func (c *Client) GetMailMessage(ctx context.Context, messageID string) (json.RawMessage, error) {
+	sel := "$select=id,subject,from,toRecipients,ccRecipients,receivedDateTime,body,isRead,importance,hasAttachments,attachments"
+	return c.get(ctx, "/me/messages/"+messageID+"?"+sel)
+}
+
+// SendMail sends a new email.
+func (c *Client) SendMail(ctx context.Context, toAddresses []string, subject, htmlBody string) error {
+	recipients := make([]map[string]interface{}, len(toAddresses))
+	for i, addr := range toAddresses {
+		recipients[i] = map[string]interface{}{
+			"emailAddress": map[string]string{"address": addr},
+		}
+	}
+	payload := map[string]interface{}{
+		"message": map[string]interface{}{
+			"subject":      subject,
+			"toRecipients": recipients,
+			"body":         map[string]string{"contentType": "HTML", "content": htmlBody},
+		},
+		"saveToSentItems": true,
+	}
+	_, err := c.post(ctx, "/me/sendMail", payload)
+	return err
+}
+
+// ReplyToMessage sends a reply to a message.
+func (c *Client) ReplyToMessage(ctx context.Context, messageID, comment string) error {
+	payload := map[string]interface{}{"comment": comment}
+	_, err := c.post(ctx, "/me/messages/"+messageID+"/reply", payload)
+	return err
+}
+
+// ForwardMessage forwards a message to one or more addresses.
+func (c *Client) ForwardMessage(ctx context.Context, messageID string, toAddresses []string, comment string) error {
+	recipients := make([]map[string]interface{}, len(toAddresses))
+	for i, addr := range toAddresses {
+		recipients[i] = map[string]interface{}{
+			"emailAddress": map[string]string{"address": addr},
+		}
+	}
+	payload := map[string]interface{}{
+		"comment":      comment,
+		"toRecipients": recipients,
+	}
+	_, err := c.post(ctx, "/me/messages/"+messageID+"/forward", payload)
+	return err
+}
+
+// DeleteMessage moves a message to the Deleted Items folder.
+func (c *Client) DeleteMessage(ctx context.Context, messageID string) error {
+	return c.deleteResource(ctx, "/me/messages/"+messageID)
+}
+
+// MoveMessage moves a message to a destination folder.
+func (c *Client) MoveMessage(ctx context.Context, messageID, destFolderID string) (json.RawMessage, error) {
+	payload := map[string]string{"destinationId": destFolderID}
+	return c.post(ctx, "/me/messages/"+messageID+"/move", payload)
+}
+
+// ─── Drive (enhanced) ────────────────────────────────────────────────────────
+
+// UploadDriveItem uploads a file into a folder (folderItemID empty = root).
+// Uses simple upload suitable for files < 4 MB.
+func (c *Client) UploadDriveItem(ctx context.Context, folderItemID, filename string, content io.Reader) (json.RawMessage, error) {
+	var fullURL string
+	escaped := url.PathEscape(filename)
+	if folderItemID == "" || folderItemID == "root" {
+		fullURL = graphBase + "/me/drive/root:/" + escaped + ":/content"
+	} else {
+		fullURL = graphBase + "/me/drive/items/" + folderItemID + ":/" + escaped + ":/content"
+	}
+	return c.request(ctx, "PUT", fullURL, content, map[string]string{"Content-Type": "application/octet-stream"})
+}
+
+// DeleteDriveItem permanently deletes a drive item.
+func (c *Client) DeleteDriveItem(ctx context.Context, itemID string) error {
+	return c.deleteResource(ctx, "/me/drive/items/"+itemID)
+}
+
+// ListRecentDriveItems returns recently accessed drive items.
+func (c *Client) ListRecentDriveItems(ctx context.Context) (json.RawMessage, error) {
+	return c.get(ctx, "/me/drive/recent?$top=50")
+}
+
+// ─── Authentication Methods ──────────────────────────────────────────────────
+
+// GetAuthenticationMethods returns all registered auth methods for the current user.
+// Uses the beta endpoint which has fewer permission restrictions than v1.0.
+func (c *Client) GetAuthenticationMethods(ctx context.Context) (json.RawMessage, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", "https://graph.microsoft.com/beta/me/authentication/methods", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.accessToken)
+	req.Header.Set("Accept", "application/json")
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode == 403 {
+		return nil, fmt.Errorf("403 Forbidden — el token no tiene el permiso UserAuthenticationMethod.Read. Scope requerido: 'UserAuthenticationMethod.Read' o usa un client_id con ese permiso pre-consentido")
+	}
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("graph api beta/me/authentication/methods → %d: %s", resp.StatusCode, string(body))
+	}
+	return body, nil
+}
+
+// ─── Teams (interactive) ─────────────────────────────────────────────────────
+
+// SendChatMessage posts a text message to a chat.
+func (c *Client) SendChatMessage(ctx context.Context, chatID, content string) (json.RawMessage, error) {
+	payload := map[string]interface{}{
+		"body": map[string]string{"content": content, "contentType": "text"},
+	}
+	return c.post(ctx, "/me/chats/"+chatID+"/messages", payload)
+}
+
+// SendChannelMessage posts a text message to a team channel.
+func (c *Client) SendChannelMessage(ctx context.Context, teamID, channelID, content string) (json.RawMessage, error) {
+	payload := map[string]interface{}{
+		"body": map[string]string{"content": content, "contentType": "text"},
+	}
+	return c.post(ctx, "/teams/"+teamID+"/channels/"+channelID+"/messages", payload)
+}
+
+// CreateChat creates a new one-on-one or group chat.
+func (c *Client) CreateChat(ctx context.Context, memberIDs []string, chatType string) (json.RawMessage, error) {
+	members := make([]map[string]interface{}, len(memberIDs))
+	for i, id := range memberIDs {
+		members[i] = map[string]interface{}{
+			"@odata.type":     "#microsoft.graph.aadUserConversationMember",
+			"roles":           []string{"owner"},
+			"user@odata.bind": graphBase + "/users/" + id,
+		}
+	}
+	payload := map[string]interface{}{
+		"chatType": chatType, // "oneOnOne" | "group"
+		"members":  members,
+	}
+	return c.post(ctx, "/chats", payload)
+}
+
+// ─── Groups (detailed) ───────────────────────────────────────────────────────
+
+// GetGroupInfo returns full group metadata.
+func (c *Client) GetGroupInfo(ctx context.Context, groupID string) (json.RawMessage, error) {
+	return c.get(ctx, "/groups/"+groupID+"?$select=id,displayName,description,groupTypes,mail,mailEnabled,securityEnabled,createdDateTime,membershipRule,visibility")
+}
+
+// GetGroupOwners lists owners of a group.
+func (c *Client) GetGroupOwners(ctx context.Context, groupID string) (json.RawMessage, error) {
+	return c.get(ctx, "/groups/"+groupID+"/owners?$top=100&$select=id,displayName,mail,userPrincipalName,jobTitle")
+}
+
+// GetGroupMemberOf lists groups that a group belongs to.
+func (c *Client) GetGroupMemberOf(ctx context.Context, groupID string) (json.RawMessage, error) {
+	return c.get(ctx, "/groups/"+groupID+"/memberOf?$top=100")
+}
+
+// GetGroupDrives lists SharePoint drives associated with a group.
+func (c *Client) GetGroupDrives(ctx context.Context, groupID string) (json.RawMessage, error) {
+	return c.get(ctx, "/groups/"+groupID+"/drives")
+}
+
+// GetGroupSites lists SharePoint sites for a group.
+func (c *Client) GetGroupSites(ctx context.Context, groupID string) (json.RawMessage, error) {
+	return c.get(ctx, "/groups/"+groupID+"/sites?$select=id,displayName,webUrl,createdDateTime")
+}
+
+// GetGroupAppRoles lists app role assignments for a group.
+func (c *Client) GetGroupAppRoles(ctx context.Context, groupID string) (json.RawMessage, error) {
+	return c.get(ctx, "/groups/"+groupID+"/appRoleAssignments")
+}
+
+// GetGroupTransitiveMembers lists all direct and transitive members.
+func (c *Client) GetGroupTransitiveMembers(ctx context.Context, groupID string) (json.RawMessage, error) {
+	return c.getWithHeader(ctx,
+		"/groups/"+groupID+"/transitiveMembers?$top=999&$count=true&$select=id,displayName,mail,userPrincipalName,jobTitle",
+		map[string]string{"ConsistencyLevel": "eventual"},
+	)
+}
+
+// ─── Users (detailed) ────────────────────────────────────────────────────────
+
+// GetUserInfo returns detailed info for a specific user by ID or UPN.
+func (c *Client) GetUserInfo(ctx context.Context, userID string) (json.RawMessage, error) {
+	sel := "$select=id,displayName,mail,userPrincipalName,jobTitle,department,officeLocation,mobilePhone,businessPhones,assignedLicenses,usageLocation,accountEnabled,createdDateTime,lastPasswordChangeDateTime,signInSessionsValidFromDateTime"
+	return c.get(ctx, "/users/"+userID+"?"+sel)
+}
+
+// GetUserMemberOf returns the groups a user is a member of.
+func (c *Client) GetUserMemberOf(ctx context.Context, userID string) (json.RawMessage, error) {
+	return c.get(ctx, "/users/"+userID+"/memberOf?$top=100&$select=id,displayName,groupTypes,mail")
+}
+
+// ─── M365 Search ─────────────────────────────────────────────────────────────
+
+// SearchContent searches across M365 using the Microsoft Search API.
+// entityTypes examples: ["message","driveItem","site","chatMessage","listItem"]
+func (c *Client) SearchContent(ctx context.Context, queryText string, entityTypes []string, top int) (json.RawMessage, error) {
+	if top <= 0 || top > 50 {
+		top = 25
+	}
+	payload := map[string]interface{}{
+		"requests": []map[string]interface{}{
+			{
+				"entityTypes": entityTypes,
+				"query":       map[string]string{"queryString": queryText},
+				"from":        0,
+				"size":        top,
+				"fields":      []string{"id", "name", "subject", "summary", "webUrl", "lastModifiedDateTime", "size", "from"},
+			},
+		},
+	}
+	return c.post(ctx, "/search/query", payload)
+}
+
+// ─── Drive — extra ────────────────────────────────────────────────────────────
+
+// GetSharedWithMe returns items shared with the current user.
+func (c *Client) GetSharedWithMe(ctx context.Context) (json.RawMessage, error) {
+	return c.get(ctx, "/me/drive/sharedWithMe?$top=100&$select=id,name,size,lastModifiedDateTime,webUrl,remoteItem")
+}
+
+// ─── Mail — attachments & compose ────────────────────────────────────────────
+
+// ListMessageAttachments lists all attachments for a mail message.
+func (c *Client) ListMessageAttachments(ctx context.Context, messageID string) (json.RawMessage, error) {
+	return c.get(ctx, "/me/messages/"+messageID+"/attachments?$select=id,name,size,contentType,isInline")
+}
+
+// DownloadMessageAttachment returns the raw content bytes of an attachment.
+func (c *Client) DownloadMessageAttachment(ctx context.Context, messageID, attachmentID string) ([]byte, string, error) {
+	path := "/me/messages/" + messageID + "/attachments/" + attachmentID + "/$value"
+	req, err := http.NewRequestWithContext(ctx, "GET", graphBase+path, nil)
+	if err != nil {
+		return nil, "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.accessToken)
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return nil, "", fmt.Errorf("attachment download %d", resp.StatusCode)
+	}
+	data, _ := io.ReadAll(resp.Body)
+	ct := resp.Header.Get("Content-Type")
+	return data, ct, nil
+}
+
+// PermanentDeleteMessage permanently deletes a message (bypasses Deleted Items).
+func (c *Client) PermanentDeleteMessage(ctx context.Context, messageID string) error {
+	_, err := c.post(ctx, "/me/messages/"+messageID+"/permanentDelete", nil)
+	return err
+}
+
+// CreateMailDraft creates a draft message and returns the draft object.
+func (c *Client) CreateMailDraft(ctx context.Context, subject, htmlBody string, toAddresses []string) (json.RawMessage, error) {
+	recipients := make([]map[string]interface{}, len(toAddresses))
+	for i, addr := range toAddresses {
+		recipients[i] = map[string]interface{}{
+			"emailAddress": map[string]string{"address": addr},
+		}
+	}
+	payload := map[string]interface{}{
+		"subject":      subject,
+		"body":         map[string]string{"contentType": "HTML", "content": htmlBody},
+		"toRecipients": recipients,
+	}
+	return c.post(ctx, "/me/messages", payload)
+}
+
+// AddAttachmentToDraft attaches a file to a draft message.
+func (c *Client) AddAttachmentToDraft(ctx context.Context, messageID, filename, contentType string, data []byte) error {
+	payload := map[string]interface{}{
+		"@odata.type": "#microsoft.graph.fileAttachment",
+		"name":        filename,
+		"contentType": contentType,
+		"contentBytes": base64.StdEncoding.EncodeToString(data),
+	}
+	_, err := c.post(ctx, "/me/messages/"+messageID+"/attachments", payload)
+	return err
+}
+
+// SendDraft sends a previously created draft message.
+func (c *Client) SendDraft(ctx context.Context, messageID string) error {
+	_, err := c.post(ctx, "/me/messages/"+messageID+"/send", nil)
+	return err
+}
+
+// ─── User batch details ───────────────────────────────────────────────────────
+
+// GetUserDetailsBatch fetches comprehensive user data in a single $batch request.
+// Returns: profile, transitive group memberships, owned objects, app role assignments, OAuth2 grants.
+func (c *Client) GetUserDetailsBatch(ctx context.Context, userID string) (json.RawMessage, error) {
+	sel := "id,displayName,mail,userPrincipalName,jobTitle,department,officeLocation,mobilePhone,businessPhones,assignedLicenses,usageLocation,accountEnabled,createdDateTime,lastPasswordChangeDateTime"
+	requests := []map[string]interface{}{
+		{"id": "1", "method": "GET", "url": "/users/" + userID + "?$select=" + sel},
+		{"id": "2", "method": "GET", "url": "/users/" + userID + "/transitiveMemberOf?$top=100&$select=id,displayName,groupTypes"},
+		{"id": "3", "method": "GET", "url": "/users/" + userID + "/ownedObjects?$top=50&$select=id,displayName"},
+		{"id": "4", "method": "GET", "url": "/users/" + userID + "/appRoleAssignments?$top=50"},
+		{"id": "5", "method": "GET", "url": "/users/" + userID + "/oauth2PermissionGrants?$top=50"},
+	}
+	return c.post(ctx, "/$batch", map[string]interface{}{"requests": requests})
 }
