@@ -40,9 +40,9 @@ type AuthConfig struct {
 
 type CampaignConfig struct {
 	// Microsoft Device Code flow settings
-	TenantID     string `yaml:"tenant_id"`      // "common" or specific tenant
+	TenantID     string `yaml:"tenant_id"`      // specific tenant GUID, or "organizations" for any work/school account
 	ClientID     string `yaml:"client_id"`       // Azure App Client ID (use known public client IDs or your own)
-	Scope        string `yaml:"scope"`           // e.g. "https://graph.microsoft.com/.default offline_access openid profile"
+	Scope        string `yaml:"scope"`           // e.g. "https://graph.microsoft.com/.default offline_access profile openid"
 	PollInterval int    `yaml:"poll_interval"`   // seconds between polls, min 5
 	PollTimeout  int    `yaml:"poll_timeout"`    // seconds total before expiry (usually 900)
 }
@@ -119,7 +119,7 @@ func setDefaults(cfg *Config) {
 		cfg.Server.Host = "0.0.0.0"
 	}
 	if cfg.Campaign.TenantID == "" {
-		cfg.Campaign.TenantID = "common"
+		cfg.Campaign.TenantID = "organizations"
 	}
 	if cfg.Campaign.PollInterval == 0 {
 		cfg.Campaign.PollInterval = 5
@@ -128,7 +128,7 @@ func setDefaults(cfg *Config) {
 		cfg.Campaign.PollTimeout = 900
 	}
 	if cfg.Campaign.Scope == "" {
-		cfg.Campaign.Scope = "https://graph.microsoft.com/.default offline_access openid profile"
+		cfg.Campaign.Scope = "https://graph.microsoft.com/.default offline_access profile openid"
 	}
 	if cfg.Storage.ArtifactsPath == "" {
 		cfg.Storage.ArtifactsPath = "/opt/entraith/data/artifacts"

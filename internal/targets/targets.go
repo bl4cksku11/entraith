@@ -96,6 +96,17 @@ func (s *Store) Count() int {
 	return len(s.targets)
 }
 
+func (s *Store) Remove(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, ok := s.targets[id]
+	if !ok {
+		return
+	}
+	delete(s.targets, id)
+	delete(s.byEmail, t.Email)
+}
+
 // ImportCSV reads a CSV and populates the store.
 // Expected columns (header row required): email, display_name, department, region, group, custom_field
 // Only "email" is required; others are optional.

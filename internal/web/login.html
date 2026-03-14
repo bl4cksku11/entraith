@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ENTRAITH // Login</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Syne:wght@400;500;600;700;800&display=swap');
+  :root {
+    --bg:#0a0c10;--bg2:#0f1218;--bg3:#161b24;--border:#1e2733;
+    --accent:#00d4ff;--accent2:#ff3e6c;--accent3:#39ff14;
+    --text:#c8d8e8;--text-dim:#5a6a7a;--text-bright:#e8f0f8;
+    --mono:'JetBrains Mono',monospace;--sans:'Syne',sans-serif;
+  }
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--bg);color:var(--text);font-family:var(--mono);font-size:13px;
+    display:flex;align-items:center;justify-content:center;min-height:100vh;
+  }
+  .card{
+    position:relative;z-index:1;
+    background:var(--bg2);border:1px solid var(--border);
+    padding:40px 36px;width:380px;border-radius:3px;
+    box-shadow:0 0 60px rgba(0,0,0,0.6),0 0 120px rgba(0,212,255,0.03);
+  }
+  .logo{
+    font-family:var(--sans);font-size:20px;font-weight:800;
+    letter-spacing:0.3em;text-transform:uppercase;color:var(--accent);
+    text-shadow:0 0 30px rgba(0,212,255,0.4);
+    text-align:center;margin-bottom:4px;
+  }
+  .subtitle{
+    font-size:9px;letter-spacing:0.3em;text-transform:uppercase;
+    color:var(--text-dim);text-align:center;margin-bottom:32px;
+  }
+  .field{margin-bottom:14px}
+  .field label{
+    display:block;font-size:9px;letter-spacing:0.2em;text-transform:uppercase;
+    color:var(--text-dim);margin-bottom:5px;
+  }
+  .field input{
+    width:100%;background:var(--bg3);border:1px solid var(--border);
+    color:var(--text-bright);font-family:var(--mono);font-size:13px;
+    padding:9px 12px;border-radius:2px;outline:none;
+    transition:border-color 0.15s,box-shadow 0.15s;
+  }
+  .field input:focus{
+    border-color:var(--accent);
+    box-shadow:0 0 0 2px rgba(0,212,255,0.08);
+  }
+  .btn{
+    width:100%;padding:10px;margin-top:6px;
+    background:rgba(0,212,255,0.06);
+    border:1px solid var(--accent);color:var(--accent);
+    font-family:var(--mono);font-size:11px;letter-spacing:0.15em;
+    text-transform:uppercase;cursor:pointer;border-radius:2px;
+    transition:background 0.15s;
+  }
+  .btn:hover{background:rgba(0,212,255,0.14)}
+  .btn:active{background:rgba(0,212,255,0.2)}
+  .btn:disabled{opacity:0.4;cursor:not-allowed}
+  .error{
+    color:var(--accent2);font-size:11px;text-align:center;
+    margin-top:12px;min-height:16px;letter-spacing:0.05em;
+  }
+  .hint{
+    font-size:9px;color:var(--text-dim);text-align:center;
+    margin-top:20px;letter-spacing:0.08em;
+  }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">ENTRAITH</div>
+  <div class="subtitle">Operator Console · Authentication Required</div>
+
+  <form id="loginForm" onsubmit="doLogin(event)" autocomplete="off">
+    <div class="field">
+      <label>Username</label>
+      <input id="username" type="text" autocomplete="username" spellcheck="false" required autofocus>
+    </div>
+    <div class="field">
+      <label>Password</label>
+      <input id="password" type="password" autocomplete="current-password" required>
+    </div>
+    <button class="btn" type="submit" id="submitBtn">→ Authenticate</button>
+  </form>
+
+  <div class="error" id="errorMsg"></div>
+  <div class="hint">All sessions are logged. Unauthorized access is prohibited.</div>
+</div>
+
+<script>
+async function doLogin(e) {
+  e.preventDefault();
+  const btn = document.getElementById('submitBtn');
+  const errEl = document.getElementById('errorMsg');
+  const username = document.getElementById('username').value.trim();
+  const password = document.getElementById('password').value;
+
+  errEl.textContent = '';
+  btn.disabled = true;
+  btn.textContent = '...';
+
+  try {
+    const r = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ username, password })
+    });
+    const data = await r.json().catch(() => ({}));
+    if (r.ok) {
+      // Server set the HttpOnly session cookie — redirect to the page the user came from
+      const next = new URLSearchParams(window.location.search).get('next') || '/';
+      window.location.replace(next);
+    } else {
+      errEl.textContent = data.error || 'Invalid credentials';
+      document.getElementById('password').value = '';
+      btn.disabled = false;
+      btn.textContent = '→ Authenticate';
+    }
+  } catch(_) {
+    errEl.textContent = 'Network error — server unreachable';
+    btn.disabled = false;
+    btn.textContent = '→ Authenticate';
+  }
+}
+</script>
+</body>
+</html>

