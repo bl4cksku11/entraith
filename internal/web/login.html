@@ -112,7 +112,6 @@ async function doLogin(e) {
     });
     const data = await r.json().catch(() => ({}));
     if (r.ok) {
-      // Server set the HttpOnly session cookie — redirect to the page the user came from
       const next = new URLSearchParams(window.location.search).get('next') || '/';
       window.location.replace(next);
     } else {

