@@ -486,6 +486,29 @@ func (m *Manager) GetStatus(campaignID string) (map[string]interface{}, error) {
 		}
 	}
 
+	// Add QR-sent placeholder sessions for targets that have received a QR email
+	// but haven't scanned yet (no real device code session exists for them).
+	if qrScans, err := m.db.ListQRScans(c.ID); err == nil {
+		seen := make(map[string]bool)
+		for _, scan := range qrScans {
+			if _, has := sessions[scan.TargetID]; has {
+				continue
+			}
+			if seen[scan.TargetID] {
+				continue
+			}
+			seen[scan.TargetID] = true
+			sessions[scan.TargetID] = map[string]interface{}{
+				"target_id":    scan.TargetID,
+				"target_email": scan.TargetEmail,
+				"state":        6,
+				"state_str":    "qr_sent",
+				"issued_at":    scan.CreatedAt,
+				"user_code":    "",
+			}
+		}
+	}
+
 	return map[string]interface{}{
 		"id":           c.ID,
 		"name":         c.Name,

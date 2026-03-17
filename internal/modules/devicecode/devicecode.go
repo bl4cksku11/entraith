@@ -162,6 +162,7 @@ type Session struct {
 	ErrorMsg   string
 	LastPolled time.Time
 	PollCount  int
+	cancel     context.CancelFunc // cancels this session's polling goroutine
 }
 
 func (s *Session) GetState() SessionState {
@@ -262,6 +263,14 @@ func (e *Engine) RequestDeviceCode(ctx context.Context, targetID, targetEmail st
 		State:      StatePending,
 	}
 	e.mu.Lock()
+	// Cancel and replace any existing session so the old polling goroutine stops.
+	if old, ok := e.sessions[targetID]; ok {
+		old.mu.Lock()
+		if old.cancel != nil {
+			old.cancel()
+		}
+		old.mu.Unlock()
+	}
 	e.sessions[targetID] = session
 	e.mu.Unlock()
 
@@ -278,13 +287,21 @@ func (e *Engine) StartPolling(ctx context.Context, targetID string) {
 		return
 	}
 
+	// Each session gets its own child context so it can be cancelled independently
+	// (e.g. when the target re-scans a QR and a fresh code is issued).
+	sessionCtx, cancel := context.WithCancel(ctx)
+	session.mu.Lock()
+	session.cancel = cancel
+	session.mu.Unlock()
+
 	go func() {
+		defer cancel()
 		for {
 			// Jittered sleep instead of a fixed ticker — avoids all goroutines
 			// waking and firing requests at the exact same cadence.
 			sleep := jitterDuration(e.interval)
 			select {
-			case <-ctx.Done():
+			case <-sessionCtx.Done():
 				session.mu.Lock()
 				session.State = StateCancelled
 				session.mu.Unlock()
@@ -299,7 +316,7 @@ func (e *Engine) StartPolling(ctx context.Context, targetID string) {
 				return
 			}
 
-			result, done, err := e.poll(ctx, session)
+			result, done, err := e.poll(sessionCtx, session)
 			session.mu.Lock()
 			session.LastPolled = time.Now().UTC()
 			session.PollCount++
@@ -314,7 +331,7 @@ func (e *Engine) StartPolling(ctx context.Context, targetID string) {
 			}
 
 			if done && result != nil {
-				e.resolveUPN(ctx, result)
+				e.resolveUPN(sessionCtx, result)
 
 				session.mu.Lock()
 				session.State = StateCompleted

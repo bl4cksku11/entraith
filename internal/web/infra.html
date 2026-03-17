@@ -71,7 +71,7 @@
   .status-dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px}
   .status-dot.running{background:var(--accent3);box-shadow:0 0 8px var(--accent3)}
   .status-dot.stopped{background:var(--text-dim)}
-  .log-stream{background:var(--bg);border:1px solid var(--border);padding:12px;font-size:11px;color:var(--text-dim);height:380px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;border-radius:2px;font-family:var(--mono)}
+  .log-stream{background:var(--bg);border:1px solid var(--border);padding:12px;font-size:11px;color:var(--text-dim);height:380px;overflow-y:auto;border-radius:2px;font-family:var(--mono)}
   .template-preview{background:var(--bg);border:1px solid var(--border);padding:16px;min-height:200px;border-radius:2px;font-size:12px;color:var(--text)}
   .tab-bar{display:flex;border-bottom:1px solid var(--border);margin-bottom:16px}
   .tab-btn{padding:8px 16px;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;cursor:pointer;color:var(--text-dim);border:none;background:none;font-family:var(--mono);border-bottom:2px solid transparent}
@@ -83,7 +83,6 @@
 </head>
 <body>
 
-<!-- Header -->
 <div class="header">
   <span class="header-logo">ENTRAITH</span>
   <span class="header-sep">//</span>
@@ -94,16 +93,14 @@
   </div>
 </div>
 
-<!-- Navigation -->
 <nav>
   <a href="/">Operations</a>
   <a href="/tools">Advanced Tools</a>
   <a href="/infra" class="active">Infrastructure</a>
 </nav>
 
-<!-- Layout -->
 <div class="layout">
-  <!-- Sidebar -->
+  
   <div class="sidebar">
     <div class="sidebar-section">
       <div class="sidebar-label">Mailer</div>
@@ -116,12 +113,12 @@
     </div>
   </div>
 
-  <!-- Main content -->
+  
   <div class="main" id="mainContent">
 
-    <!-- ============================================================ -->
-    <!-- SENDER PROFILES -->
-    <!-- ============================================================ -->
+    
+    
+    
     <div class="section-view active" id="section-sender-profiles">
       <div class="panel">
         <div class="panel-header">
@@ -129,7 +126,7 @@
           <button class="btn btn-primary btn-sm" onclick="showProfileForm()">+ New Profile</button>
         </div>
 
-        <!-- Profile form (hidden by default) -->
+        
         <div id="profileForm" style="display:none;background:var(--bg3);border:1px solid var(--border);padding:16px;margin-bottom:16px;border-radius:2px">
           <div style="font-size:10px;letter-spacing:0.15em;text-transform:uppercase;color:var(--accent);margin-bottom:12px" id="profileFormTitle">New Sender Profile</div>
           <input type="hidden" id="profileId">
@@ -187,13 +184,13 @@
           <div id="profileFormErr" style="color:var(--accent2);font-size:10px;margin-top:8px"></div>
         </div>
 
-        <!-- Profile list -->
+        
         <div id="profileList">
           <div class="empty-state">No sender profiles configured</div>
         </div>
       </div>
 
-      <!-- Test profile panel -->
+      
       <div class="panel" id="testProfilePanel" style="display:none">
         <div class="panel-title">Test Profile — <span id="testProfileName" style="color:var(--text)"></span></div>
         <div class="input-group">
@@ -208,9 +205,9 @@
       </div>
     </div>
 
-    <!-- ============================================================ -->
-    <!-- EMAIL TEMPLATES -->
-    <!-- ============================================================ -->
+    
+    
+    
     <div class="section-view" id="section-email-templates">
       <div class="panel">
         <div class="panel-header">
@@ -218,7 +215,7 @@
           <button class="btn btn-primary btn-sm" onclick="showTemplateForm()">+ New Template</button>
         </div>
 
-        <!-- Template form -->
+        
         <div id="templateForm" style="display:none;background:var(--bg3);border:1px solid var(--border);padding:16px;margin-bottom:16px;border-radius:2px">
           <div style="font-size:10px;letter-spacing:0.15em;text-transform:uppercase;color:var(--accent);margin-bottom:12px" id="templateFormTitle">New Email Template</div>
           <input type="hidden" id="templateId">
@@ -263,16 +260,16 @@
           <div id="templateFormErr" style="color:var(--accent2);font-size:10px;margin-top:8px"></div>
         </div>
 
-        <!-- Template list -->
+        
         <div id="templateList">
           <div class="empty-state">No email templates configured</div>
         </div>
       </div>
     </div>
 
-    <!-- ============================================================ -->
-    <!-- WEBHOOK LISTENER -->
-    <!-- ============================================================ -->
+    
+    
+    
     <div class="section-view" id="section-webhook-listener">
       <div class="panel">
         <div class="panel-header">
@@ -280,7 +277,8 @@
             <span class="status-dot stopped" id="webhookDot"></span>
             Webhook Listener
           </div>
-          <div style="display:flex;gap:8px">
+          <div style="display:flex;gap:8px;align-items:center">
+            <input type="number" id="webhookPort" value="9000" min="1" max="65535" style="width:80px;background:var(--bg1);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:2px;font-size:11px" placeholder="Port">
             <button class="btn btn-success btn-sm" id="btnWebhookStart" onclick="startWebhook()">Start</button>
             <button class="btn btn-danger btn-sm" id="btnWebhookStop" onclick="stopWebhook()" style="display:none">Stop</button>
           </div>
@@ -309,8 +307,8 @@
       </div>
     </div>
 
-  </div><!-- /main -->
-</div><!-- /layout -->
+  </div>
+</div>
 
 <script>
 let activeTestProfileId = '';
@@ -648,44 +646,56 @@ async function loadWebhookStatus() {
     const r = await apiFetch('/api/webhook/status');
     if (!r.ok) return;
     const d = await r.json();
-    updateWebhookUI(d.running || false);
+    updateWebhookUI(d.running || false, d.port || 0);
     // Show endpoint URL
     const endpointEl = document.getElementById('webhookEndpointInfo');
-    endpointEl.textContent = `POST ${window.location.protocol}//${window.location.host}/receive\n\nThis endpoint accepts any HTTP POST request. The raw body is logged to the stream monitor file.`;
+    const standalonePort = d.running && d.port ? `:${d.port}` : '';
+    endpointEl.textContent = `Built-in (always on):\nPOST ${window.location.protocol}//${window.location.host}/receive\n\nStandalone listener${standalonePort ? ' (running on port ' + d.port + ')' : ''}:\nPOST ${window.location.protocol}//${window.location.hostname}${standalonePort}/<any-path>`;
   } catch(e) { console.error(e); }
 }
 
-function updateWebhookUI(running) {
+function updateWebhookUI(running, port) {
   const dot = document.getElementById('webhookDot');
   const statusText = document.getElementById('webhookStatusText');
   const btnStart = document.getElementById('btnWebhookStart');
   const btnStop = document.getElementById('btnWebhookStop');
+  const portInput = document.getElementById('webhookPort');
   if (running) {
     dot.className = 'status-dot running';
-    statusText.textContent = 'Running — accepting inbound webhook events';
+    statusText.textContent = 'Running on port ' + (port || portInput.value) + ' — accepting inbound webhook events';
     statusText.style.color = 'var(--accent3)';
     btnStart.style.display = 'none';
     btnStop.style.display = 'inline-flex';
+    portInput.disabled = true;
+    if (port) portInput.value = port;
   } else {
     dot.className = 'status-dot stopped';
     statusText.textContent = 'Stopped';
     statusText.style.color = 'var(--text-dim)';
     btnStart.style.display = 'inline-flex';
     btnStop.style.display = 'none';
+    portInput.disabled = false;
   }
 }
 
 async function startWebhook() {
+  const port = parseInt(document.getElementById('webhookPort').value, 10);
+  if (!port || port < 1 || port > 65535) { alert('Enter a valid port (1–65535)'); return; }
   try {
-    const r = await apiFetch('/api/webhook/start', { method: 'POST' });
-    if (r.ok) { updateWebhookUI(true); refreshWebhookLogs(); }
+    const r = await apiFetch('/api/webhook/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ port })
+    });
+    if (r.ok) { await loadWebhookStatus(); refreshWebhookLogs(); }
+    else { const d = await r.json().catch(()=>{}); alert('Failed to start: ' + (d?.error || r.status)); }
   } catch(e) { console.error(e); }
 }
 
 async function stopWebhook() {
   try {
     const r = await apiFetch('/api/webhook/stop', { method: 'POST' });
-    if (r.ok) { updateWebhookUI(false); }
+    if (r.ok) { await loadWebhookStatus(); }
   } catch(e) { console.error(e); }
 }
 
@@ -700,16 +710,43 @@ async function refreshWebhookLogs() {
       el.textContent = 'No events captured yet.';
       return;
     }
-    el.textContent = entries.map(e => {
+    el.innerHTML = entries.map(e => {
       const ts = e.timestamp ? new Date(e.timestamp).toLocaleString() : '';
-      const ip = e.remote_addr || '';
-      const method = e.method || '';
-      const path = e.path || '';
-      const body = e.body || '';
-      return `[${ts}] ${method} ${path} from ${ip}\n${body}\n${'─'.repeat(60)}`;
-    }).join('\n');
+      const ip = escH(e.remote_addr || '');
+      const method = escH(e.method || '');
+      const path = escH(e.path || '');
+      const raw = e.body || '';
+      const isJson = e.format !== 'raw';
+      let bodyHtml;
+      if (isJson) {
+        try {
+          const pretty = JSON.stringify(JSON.parse(raw), null, 2);
+          bodyHtml = syntaxHighlight(pretty);
+        } catch { bodyHtml = escH(raw); }
+      } else {
+        bodyHtml = escH(raw);
+      }
+      return `<div style="margin-bottom:12px"><span style="color:var(--text-dim)">[${escH(ts)}]</span> <span style="color:var(--accent);font-weight:600">${method}</span> <span style="color:var(--text-bright)">${path}</span> <span style="color:var(--text-dim)">from</span> <span style="color:var(--warn)">${ip}</span>\n<pre style="margin:4px 0 0;padding:8px;background:var(--bg1);border-radius:2px;border:1px solid var(--border);overflow-x:auto;font-size:11px;line-height:1.5">${bodyHtml}</pre></div>`;
+    }).join('<hr style="border:none;border-top:1px solid var(--border);margin:8px 0">');
     el.scrollTop = el.scrollHeight;
   } catch(e) { console.error(e); }
+}
+
+function syntaxHighlight(json) {
+  return escH(json).replace(
+    /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
+    match => {
+      let cls = 'color:var(--accent3)'; // number
+      if (/^"/.test(match)) {
+        cls = /:$/.test(match) ? 'color:var(--accent)' : 'color:var(--warn)'; // key or string
+      } else if (/true|false/.test(match)) {
+        cls = 'color:#64a0ff';
+      } else if (/null/.test(match)) {
+        cls = 'color:var(--text-dim)';
+      }
+      return `<span style="${cls}">${match}</span>`;
+    }
+  );
 }
 
 function toggleAutoRefresh() {

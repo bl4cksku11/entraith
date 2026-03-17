@@ -422,11 +422,34 @@ func (h *Handler) getSessions(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 404, "campaign not found")
 		return
 	}
-	if c.Engine == nil {
-		writeJSON(w, 200, map[string]interface{}{"sessions": map[string]interface{}{}})
-		return
+	sessions := map[string]interface{}{}
+	if c.Engine != nil {
+		for tid, snap := range c.Engine.AllSessions() {
+			sessions[tid] = snap
+		}
 	}
-	writeJSON(w, 200, map[string]interface{}{"sessions": c.Engine.AllSessions()})
+	// Add QR-sent placeholder sessions for targets without a real device code session.
+	if qrScans, err := h.Store.ListQRScans(id); err == nil {
+		seen := make(map[string]bool)
+		for _, scan := range qrScans {
+			if _, has := sessions[scan.TargetID]; has {
+				continue
+			}
+			if seen[scan.TargetID] {
+				continue
+			}
+			seen[scan.TargetID] = true
+			sessions[scan.TargetID] = map[string]interface{}{
+				"target_id":    scan.TargetID,
+				"target_email": scan.TargetEmail,
+				"state":        6,
+				"state_str":    "qr_sent",
+				"issued_at":    scan.CreatedAt,
+				"user_code":    "",
+			}
+		}
+	}
+	writeJSON(w, 200, map[string]interface{}{"sessions": sessions})
 }
 
 func (h *Handler) importTargets(w http.ResponseWriter, r *http.Request) {

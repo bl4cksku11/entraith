@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -15,29 +17,42 @@ import (
 // ─── Main-server webhook handler ─────────────────────────────────────────────
 
 func (h *Handler) receiveWebhook(w http.ResponseWriter, r *http.Request) {
-	ct := r.Header.Get("Content-Type")
-	if !strings.Contains(ct, "application/json") {
-		writeError(w, 415, "Content-Type must be application/json")
+	body, format, httpErr := readWebhookBody(r)
+	if httpErr != "" {
+		writeError(w, 415, httpErr)
 		return
 	}
-
-	var payload json.RawMessage
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		writeError(w, 400, "invalid JSON body")
-		return
-	}
-
-	if err := writeWebhookLogEntry(h.WebhookLogPath, r.RemoteAddr, payload); err != nil {
+	if err := writeWebhookLogEntry(h.WebhookLogPath, r.RemoteAddr, r.Method, r.URL.Path, format, body); err != nil {
 		writeError(w, 500, "failed to write log")
 		return
 	}
-
 	writeJSON(w, 200, map[string]string{"status": "received"})
 }
 
-// ─── Shared log writer ────────────────────────────────────────────────────────
+// ─── Shared helpers ───────────────────────────────────────────────────────────
 
-func writeWebhookLogEntry(logPath, remoteAddr string, payload json.RawMessage) error {
+// readWebhookBody reads the request body based on Content-Type.
+//   - application/json     → validates JSON, returns format="json"
+//   - application/json-raw → reads body as-is, returns format="raw"
+// Returns (body, format, errMsg). errMsg is non-empty on bad Content-Type.
+func readWebhookBody(r *http.Request) (body []byte, format string, errMsg string) {
+	ct := r.Header.Get("Content-Type")
+	switch {
+	case strings.Contains(ct, "application/json-raw"):
+		b, _ := io.ReadAll(r.Body)
+		return b, "raw", ""
+	case strings.Contains(ct, "application/json"):
+		var msg json.RawMessage
+		if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
+			return nil, "", "invalid JSON body"
+		}
+		return []byte(msg), "json", ""
+	default:
+		return nil, "", "Content-Type must be application/json or application/json-raw"
+	}
+}
+
+func writeWebhookLogEntry(logPath, remoteAddr, method, path, format string, body []byte) error {
 	if logPath == "" {
 		logPath = "stream_monitor.log"
 	}
@@ -46,10 +61,9 @@ func writeWebhookLogEntry(logPath, remoteAddr string, payload json.RawMessage) e
 		return err
 	}
 	defer f.Close()
-	entry := fmt.Sprintf("[%s] source=%s payload=%s\n",
+	entry := fmt.Sprintf("[%s] source=%s method=%s path=%s format=%s payload=%s\n",
 		time.Now().UTC().Format(time.RFC3339),
-		remoteAddr,
-		string(payload),
+		remoteAddr, method, path, format, string(body),
 	)
 	_, err = f.WriteString(entry)
 	return err
@@ -58,9 +72,12 @@ func writeWebhookLogEntry(logPath, remoteAddr string, payload json.RawMessage) e
 // ─── WebhookListener — standalone server on configurable port ────────────────
 
 type WebhookEntry struct {
-	Timestamp string `json:"timestamp"`
-	Source    string `json:"source"`
-	Payload   string `json:"payload"`
+	Timestamp  string `json:"timestamp"`
+	RemoteAddr string `json:"remote_addr"`
+	Method     string `json:"method"`
+	Path       string `json:"path"`
+	Format     string `json:"format"` // "json" or "raw"
+	Body       string `json:"body"`
 }
 
 type WebhookStatus struct {
@@ -97,36 +114,33 @@ func (wl *WebhookListener) Start(port int) error {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		ct := r.Header.Get("Content-Type")
-		if !strings.Contains(ct, "application/json") {
+		body, format, errMsg := readWebhookBody(r)
+		if errMsg != "" {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(415)
-			w.Write([]byte(`{"error":"Content-Type must be application/json"}`))
+			fmt.Fprintf(w, `{"error":%q}`, errMsg)
 			return
 		}
-		var payload json.RawMessage
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(400)
-			w.Write([]byte(`{"error":"invalid JSON body"}`))
-			return
-		}
-		writeWebhookLogEntry(logPath, r.RemoteAddr, payload)
+		writeWebhookLogEntry(logPath, r.RemoteAddr, r.Method, r.URL.Path, format, body)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(200)
 		w.Write([]byte(`{"status":"received"}`))
 	})
 
-	srv := &http.Server{
-		Addr:    fmt.Sprintf(":%d", port),
-		Handler: mux,
+	// Bind the listener first so we can return an immediate error if the port
+	// is already in use, rather than silently failing in a background goroutine.
+	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+	if err != nil {
+		return fmt.Errorf("port %d unavailable: %w", port, err)
 	}
+
+	srv := &http.Server{Handler: mux}
 	wl.server = srv
 	wl.port = port
 	wl.running = true
 
 	go func() {
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
 			wl.mu.Lock()
 			wl.running = false
 			wl.mu.Unlock()
@@ -211,7 +225,7 @@ func readLogTail(path string, n int) []WebhookEntry {
 	return entries
 }
 
-// parseLogLine parses: [2024-01-01T00:00:00Z] source=1.2.3.4:5678 payload={...}
+// parseLogLine parses: [ts] source=IP method=POST path=/foo payload={...}
 func parseLogLine(line string) WebhookEntry {
 	var e WebhookEntry
 	// timestamp between [ ]
@@ -221,17 +235,38 @@ func parseLogLine(line string) WebhookEntry {
 			line = strings.TrimSpace(line[j+1:])
 		}
 	}
-	// source=
-	if after, ok := strings.CutPrefix(line, "source="); ok {
-		idx := strings.Index(after, " payload=")
-		if idx >= 0 {
-			e.Source = after[:idx]
-			e.Payload = after[idx+len(" payload="):]
-		} else {
-			e.Source = after
-		}
-	} else {
-		e.Payload = line
+	if v, rest, ok := cutField(line, "source="); ok {
+		e.RemoteAddr = v
+		line = rest
+	}
+	if v, rest, ok := cutField(line, "method="); ok {
+		e.Method = v
+		line = rest
+	}
+	if v, rest, ok := cutField(line, "path="); ok {
+		e.Path = v
+		line = rest
+	}
+	if v, rest, ok := cutField(line, "format="); ok {
+		e.Format = v
+		line = rest
+	}
+	if after, ok := strings.CutPrefix(strings.TrimSpace(line), "payload="); ok {
+		e.Body = after
 	}
 	return e
+}
+
+// cutField extracts the value after key up to the next space-separated key=value pair.
+func cutField(line, key string) (value, rest string, ok bool) {
+	after, found := strings.CutPrefix(strings.TrimSpace(line), key)
+	if !found {
+		return "", line, false
+	}
+	// value ends at the next " word=" boundary
+	idx := strings.Index(after, " ")
+	if idx < 0 {
+		return after, "", true
+	}
+	return after[:idx], strings.TrimSpace(after[idx:]), true
 }
