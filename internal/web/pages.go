@@ -16,3 +16,6 @@ var InfraHTML string
 
 //go:embed qrlanding.html
 var QRLandingHTML string
+
+//go:embed intunelanding.html
+var IntuneLandingHTML string

