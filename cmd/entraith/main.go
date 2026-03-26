@@ -60,7 +60,7 @@ func redirectToLogin(w http.ResponseWriter, r *http.Request) {
 
 func usage() {
 	fmt.Fprintf(os.Stderr, "Usage:\n")
-	fmt.Fprintf(os.Stderr, "  entraith server   <config>          start the operator console\n")
+	fmt.Fprintf(os.Stderr, "  entraith server   <config> [--debug]  start the operator console\n")
 	fmt.Fprintf(os.Stderr, "  entraith validate <config>          validate config file\n")
 	fmt.Fprintf(os.Stderr, "  entraith version                    print version\n")
 	fmt.Fprintf(os.Stderr, "\nFlags (alternative to positional config):\n")
@@ -108,9 +108,23 @@ func resolveConfig(fs *flag.FlagSet, cfgPath *string) string {
 }
 
 func runServer() {
+	// Pre-scan for --debug/-debug anywhere in the arg list before standard flag
+	// parsing, because Go's flag package stops at the first non-flag argument
+	// (the positional config path), which would cause --debug placed after it
+	// to be silently ignored.
+	debugMode := false
+	filteredArgs := make([]string, 0, len(subArgs()))
+	for _, a := range subArgs() {
+		if a == "--debug" || a == "-debug" {
+			debugMode = true
+		} else {
+			filteredArgs = append(filteredArgs, a)
+		}
+	}
+
 	fs := flag.NewFlagSet("server", flag.ExitOnError)
 	cfgPath := fs.String("config", "", "path to engagement config file")
-	fs.Parse(subArgs())
+	fs.Parse(filteredArgs)
 	resolvedCfg := resolveConfig(fs, cfgPath)
 	if resolvedCfg == "" {
 		fmt.Fprintf(os.Stderr, "error: config file required\n")
@@ -166,7 +180,9 @@ func runServer() {
 				FromAddress: p.FromAddress,
 				FromName:    p.FromName,
 				ImplicitTLS: p.ImplicitTLS,
+				AuthMethod:  p.AuthMethod,
 				CreatedAt:   p.CreatedAt,
+				OwnerID:     p.OwnerID,
 			})
 		},
 		func(id string) { db.DeleteSenderProfile(id) },
@@ -195,7 +211,8 @@ func runServer() {
 			ID: r.ID, Name: r.Name, Host: r.Host, Port: r.Port,
 			Username: r.Username, Password: r.Password,
 			FromAddress: r.FromAddress, FromName: r.FromName,
-			ImplicitTLS: r.ImplicitTLS, CreatedAt: r.CreatedAt,
+			ImplicitTLS: r.ImplicitTLS, AuthMethod: r.AuthMethod,
+			CreatedAt: r.CreatedAt, OwnerID: r.OwnerID,
 		}
 	}
 	mailMgr.LoadProfiles(profiles)
@@ -215,11 +232,18 @@ func runServer() {
 	mailMgr.LoadTemplates(templates)
 
 	// Build campaign manager and restore persisted state
+	if debugMode {
+		log.Printf("[DEBUG] mode enabled — request/response bodies will be logged")
+	}
+
 	mgr := campaigns.NewManager(
 		cfg.Campaign.TenantID,
 		cfg.Campaign.ClientID,
 		cfg.Campaign.Scope,
 		cfg.Campaign.PollInterval,
+		cfg.Campaign.CaptureV1,
+		cfg.Campaign.RequireMFA,
+		debugMode,
 		cfg.Storage.ArtifactsPath,
 		cfg.Storage.ExportsPath,
 		db,
@@ -247,11 +271,10 @@ func runServer() {
 	mux.HandleFunc("GET /tools", pageGuard(db, web.ToolsHTML))
 	mux.HandleFunc("GET /infra", pageGuard(db, web.InfraHTML))
 
-	// API routes
-	mux.Handle("/api/", apiHandler.Routes())
-
-	// Webhook listener control
-	mux.Handle("/webhook/", apiHandler.Routes())
+	// API + webhook routes — single handler instance shared across all three prefixes.
+	routes := apiHandler.Routes()
+	mux.Handle("/api/", routes)
+	mux.Handle("/webhook/", routes)
 
 	// QR phishing — two-phase flow to defeat email security scanners.
 	// GET  serves an inert JS page; POST /confirm is the real trigger.
@@ -263,7 +286,7 @@ func runServer() {
 	mux.HandleFunc("GET /intune/{token}", apiHandler.HandleIntuneLanding())
 
 	// Webhook / telemetry receiver
-	mux.Handle("/receive", apiHandler.Routes())
+	mux.Handle("/receive", routes)
 
 	// Native Broker Interop — public endpoint for URI capture
 	mux.HandleFunc("POST /capture", apiHandler.CaptureBroker())

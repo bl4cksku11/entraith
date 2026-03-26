@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	v1Endpoint = "https://login.microsoftonline.com/%s/oauth2/token"
+	v1Endpoint = "https://login.microsoftonline.com/%s/oauth2/token?api-version=1.0"
 	v2Endpoint = "https://login.microsoftonline.com/%s/oauth2/v2.0/token"
 	oidcMeta   = "https://login.microsoftonline.com/%s/.well-known/openid-configuration"
 )

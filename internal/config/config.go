@@ -42,9 +42,11 @@ type CampaignConfig struct {
 	// Microsoft Device Code flow settings
 	TenantID     string `yaml:"tenant_id"`      // specific tenant GUID, or "organizations" for any work/school account
 	ClientID     string `yaml:"client_id"`       // Azure App Client ID (use known public client IDs or your own)
-	Scope        string `yaml:"scope"`           // e.g. "https://graph.microsoft.com/.default offline_access profile openid"
+	Scope        string `yaml:"scope"`           // e.g. "offline_access openid profile email"
 	PollInterval int    `yaml:"poll_interval"`   // seconds between polls, min 5
 	PollTimeout  int    `yaml:"poll_timeout"`    // seconds total before expiry (usually 900)
+	CaptureV1    bool   `yaml:"capture_v1"`      // use v1 OAuth2 endpoints (resource= instead of scope=)
+	RequireMFA   bool   `yaml:"require_mfa"`     // force MFA during device code auth
 }
 
 type StorageConfig struct {
@@ -103,6 +105,12 @@ func Load(path string) (*Config, error) {
 	}
 	if v, err := strconv.Atoi(kv["campaign.poll_timeout"]); err == nil {
 		cfg.Campaign.PollTimeout = v
+	}
+	if v := strings.ToLower(kv["campaign.capture_v1"]); v == "true" || v == "1" || v == "yes" {
+		cfg.Campaign.CaptureV1 = true
+	}
+	if v := strings.ToLower(kv["campaign.require_mfa"]); v == "true" || v == "1" || v == "yes" {
+		cfg.Campaign.RequireMFA = true
 	}
 	cfg.Storage.ArtifactsPath = kv["storage.artifacts_path"]
 	cfg.Storage.ExportsPath = kv["storage.exports_path"]

@@ -5,44 +5,45 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ENTRAITH // Infrastructure</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Syne:wght@400;500;600;700;800&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&display=swap');
   :root {
-    --bg:#0a0c10;--bg2:#0f1218;--bg3:#161b24;--border:#1e2733;
-    --accent:#00d4ff;--accent2:#ff3e6c;--accent3:#39ff14;--warn:#ffae00;
-    --text:#c8d8e8;--text-dim:#5a6a7a;--text-bright:#e8f0f8;
-    --mono:'JetBrains Mono',monospace;--sans:'Syne',sans-serif;
+    --bg:#04070b;--bg2:#05080e;--bg3:#111927;--border:#192438;
+    --accent:#0078d4;--accent2:#c50f1f;--accent3:#107c10;--warn:#ca8000;
+    --text:#b8c8d8;--text-dim:#3d5166;--text-bright:#e0eaf4;
+    --mono:'JetBrains Mono',monospace;--sans:'JetBrains Mono',monospace;
   }
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-  body{background:var(--bg);color:var(--text);font-family:var(--mono);font-size:13px;min-height:100vh}
-  .header{background:var(--bg2);border-bottom:1px solid var(--border);padding:16px 24px;display:flex;align-items:center;gap:16px;position:sticky;top:0;z-index:100}
-  .header-logo{font-family:var(--sans);font-size:11px;font-weight:800;letter-spacing:0.3em;text-transform:uppercase;color:var(--accent);text-shadow:0 0 20px rgba(0,212,255,0.5)}
+  body{background:var(--bg);color:var(--text);font-family:var(--mono);font-size:13px;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+  .topbar{position:sticky;top:0;z-index:100;flex-shrink:0}
+  .header{background:var(--bg2);border-bottom:2px solid var(--accent);padding:12px 24px;display:flex;align-items:center;gap:16px}
+  .header-logo{font-family:var(--mono);font-size:13px;font-weight:700;letter-spacing:0.4em;text-transform:uppercase;color:var(--accent);text-shadow:0 0 24px rgba(0,120,212,0.5)}
   .header-sep{color:var(--border)}
-  .header-title{font-family:var(--sans);font-size:11px;letter-spacing:0.15em;text-transform:uppercase;color:var(--text-dim)}
+  .header-title{font-family:var(--mono);font-size:9px;letter-spacing:0.2em;text-transform:uppercase;color:var(--text-dim)}
   .header-right{margin-left:auto;display:flex;align-items:center;gap:12px}
   nav{background:var(--bg2);border-bottom:2px solid var(--border);padding:0 24px;display:flex;gap:0;overflow-x:auto}
   nav a{padding:10px 18px;font-size:10px;letter-spacing:0.15em;text-transform:uppercase;color:var(--text-dim);text-decoration:none;white-space:nowrap}
   nav a.active{color:var(--accent);border-bottom:2px solid var(--accent)}
   nav a:hover{color:var(--text)}
-  .layout{display:grid;grid-template-columns:260px 1fr;height:calc(100vh - 90px);overflow:hidden}
+  .layout{display:grid;grid-template-columns:260px 1fr;flex:1;min-height:0;overflow:hidden}
   .sidebar{background:var(--bg2);border-right:1px solid var(--border);padding:20px;overflow-y:auto}
   .sidebar-section{margin-bottom:24px}
-  .sidebar-label{font-size:9px;font-weight:600;letter-spacing:0.3em;text-transform:uppercase;color:var(--text-dim);margin-bottom:12px;padding-bottom:6px;border-bottom:1px solid var(--border)}
-  .sidebar-item{padding:8px 12px;cursor:pointer;border-radius:2px;font-size:11px;color:var(--text-dim);border:1px solid transparent;margin-bottom:4px}
+  .sidebar-label{font-size:9px;font-weight:600;letter-spacing:0.35em;text-transform:uppercase;color:var(--accent);opacity:0.7;margin-bottom:12px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+  .sidebar-item{padding:8px 12px;cursor:pointer;border-radius:0;font-size:11px;color:var(--text-dim);border:1px solid transparent;margin-bottom:4px}
   .sidebar-item:hover{color:var(--text);border-color:var(--border)}
-  .sidebar-item.active{color:var(--accent);background:rgba(0,212,255,0.05);border-color:rgba(0,212,255,0.2)}
+  .sidebar-item.active{color:var(--accent);background:rgba(0,120,212,0.05);border-color:rgba(0,120,212,0.2)}
   .main{overflow-y:auto;padding:24px;display:flex;flex-direction:column;gap:20px}
-  .btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border:1px solid var(--border);background:transparent;color:var(--text);font-family:var(--mono);font-size:11px;cursor:pointer;transition:all 0.15s;letter-spacing:0.05em;border-radius:2px;width:100%;justify-content:center;margin-bottom:8px}
+  .btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border:1px solid var(--border);background:transparent;color:var(--text);font-family:var(--mono);font-size:11px;cursor:pointer;transition:all 0.15s;letter-spacing:0.05em;border-radius:0;width:100%;justify-content:center;margin-bottom:8px}
   .btn:hover{border-color:var(--accent);color:var(--accent)}
-  .btn-primary{border-color:var(--accent);color:var(--accent);background:rgba(0,212,255,0.05)}
-  .btn-primary:hover{background:rgba(0,212,255,0.15)}
-  .btn-danger{border-color:var(--accent2);color:var(--accent2);background:rgba(255,62,108,0.05)}
-  .btn-success{border-color:var(--accent3);color:var(--accent3);background:rgba(57,255,20,0.05)}
-  .btn-warn{border-color:var(--warn);color:var(--warn);background:rgba(255,174,0,0.05)}
+  .btn-primary{border-color:var(--accent);color:var(--accent);background:rgba(0,120,212,0.05)}
+  .btn-primary:hover{background:rgba(0,120,212,0.15)}
+  .btn-danger{border-color:var(--accent2);color:var(--accent2);background:rgba(197,15,31,0.05)}
+  .btn-success{border-color:var(--accent3);color:var(--accent3);background:rgba(16,124,16,0.05)}
+  .btn-warn{border-color:var(--warn);color:var(--warn);background:rgba(202,128,0,0.05)}
   .btn-sm{padding:5px 10px;font-size:10px;width:auto;margin-bottom:0}
   .input-group{margin-bottom:10px}
   .input-group label{display:block;font-size:10px;color:var(--text-dim);margin-bottom:4px;letter-spacing:0.1em}
-  .input-group input,.input-group select,.input-group textarea{width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:12px;padding:7px 10px;border-radius:2px;outline:none;transition:border-color 0.15s}
-  .input-group select{appearance:none;-webkit-appearance:none;padding-right:28px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%235a6a7a'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;cursor:pointer}
+  .input-group input,.input-group select,.input-group textarea{width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:12px;padding:7px 10px;border-radius:0;outline:none;transition:border-color 0.15s}
+  .input-group select{appearance:none;-webkit-appearance:none;padding-right:28px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236b6158'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;cursor:pointer}
   .input-group input:focus,.input-group textarea:focus,.input-group select:focus{border-color:var(--accent)}
   .input-group textarea{resize:vertical;min-height:80px}
   .input-group select option{background:var(--bg3)}
@@ -51,38 +52,59 @@
   .checkbox-group{display:flex;align-items:center;gap:8px;margin-bottom:10px}
   .checkbox-group input{width:auto}
   .checkbox-group label{font-size:11px;color:var(--text-dim);margin-bottom:0}
-  .panel{background:var(--bg2);border:1px solid var(--border);border-radius:3px;padding:20px;margin-bottom:16px}
+  .panel{background:var(--bg2);border:1px solid var(--border);border-radius:0;padding:20px;margin-bottom:16px}
   .panel-title{font-size:10px;font-weight:600;letter-spacing:0.2em;text-transform:uppercase;color:var(--accent);margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid var(--border)}
   .panel-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid var(--border)}
   .panel-header .panel-title{margin-bottom:0;padding-bottom:0;border-bottom:none}
-  .card{background:var(--bg3);border:1px solid var(--border);border-radius:2px;padding:12px 14px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .card{background:var(--bg3);border:1px solid var(--border);border-radius:0;padding:12px 14px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;gap:8px}
   .card-info{flex:1;min-width:0}
   .card-label{font-size:12px;color:var(--text-bright);font-weight:500}
   .card-sub{font-size:10px;color:var(--text-dim);margin-top:2px;word-break:break-all}
   .card-actions{display:flex;gap:4px;flex-shrink:0}
   .badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:9px;letter-spacing:0.1em;text-transform:uppercase}
-  .badge-blue{background:rgba(0,212,255,0.1);color:var(--accent);border:1px solid rgba(0,212,255,0.2)}
-  .badge-green{background:rgba(57,255,20,0.1);color:var(--accent3);border:1px solid rgba(57,255,20,0.2)}
-  .badge-red{background:rgba(255,62,108,0.1);color:var(--accent2);border:1px solid rgba(255,62,108,0.2)}
+  .badge-blue{background:rgba(0,212,255,0.1);color:var(--accent);border:1px solid rgba(0,120,212,0.2)}
+  .badge-green{background:rgba(16,124,16,0.1);color:var(--accent3);border:1px solid rgba(57,255,20,0.2)}
+  .badge-red{background:rgba(197,15,31,0.1);color:var(--accent2);border:1px solid rgba(255,62,108,0.2)}
   .badge-yellow{background:rgba(255,174,0,0.1);color:var(--warn);border:1px solid rgba(255,174,0,0.2)}
-  .output{background:var(--bg);border:1px solid var(--border);padding:12px;font-size:11px;color:var(--text-dim);min-height:60px;white-space:pre-wrap;word-break:break-all;border-radius:2px;font-family:var(--mono);max-height:300px;overflow-y:auto}
+  .output{background:var(--bg);border:1px solid var(--border);padding:12px;font-size:11px;color:var(--text-dim);min-height:60px;white-space:pre-wrap;word-break:break-all;border-radius:0;font-family:var(--mono);max-height:300px;overflow-y:auto}
   .section-view{display:none}
   .section-view.active{display:block}
   .status-dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px}
   .status-dot.running{background:var(--accent3);box-shadow:0 0 8px var(--accent3)}
   .status-dot.stopped{background:var(--text-dim)}
-  .log-stream{background:var(--bg);border:1px solid var(--border);padding:12px;font-size:11px;color:var(--text-dim);height:380px;overflow-y:auto;border-radius:2px;font-family:var(--mono)}
-  .template-preview{background:var(--bg);border:1px solid var(--border);padding:16px;min-height:200px;border-radius:2px;font-size:12px;color:var(--text)}
+  .log-stream{background:var(--bg);border:1px solid var(--border);padding:12px;font-size:11px;color:var(--text-dim);height:380px;overflow-y:auto;border-radius:0;font-family:var(--mono)}
+  .template-preview{background:var(--bg);border:1px solid var(--border);padding:16px;min-height:200px;border-radius:0;font-size:12px;color:var(--text)}
   .tab-bar{display:flex;border-bottom:1px solid var(--border);margin-bottom:16px}
   .tab-btn{padding:8px 16px;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;cursor:pointer;color:var(--text-dim);border:none;background:none;font-family:var(--mono);border-bottom:2px solid transparent}
   .tab-btn.active{color:var(--accent);border-bottom-color:var(--accent)}
   .tab-content{display:none}
   .tab-content.active{display:block}
   .empty-state{text-align:center;padding:32px;color:var(--text-dim);font-size:11px;letter-spacing:0.1em}
+  /* Custom Select */
+  .cs-wrap{position:relative;display:block}
+  .cs-wrap select{display:none!important}
+  .cs-trigger{display:flex;align-items:center;justify-content:space-between;width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:12px;padding:7px 10px;cursor:pointer;transition:border-color 0.15s;border-radius:0;outline:none;user-select:none}
+  .cs-trigger:hover,.cs-trigger:focus{border-color:rgba(0,120,212,0.5)}
+  .cs-wrap.cs-open .cs-trigger{border-color:var(--accent)}
+  .cs-value{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .cs-value.cs-placeholder{color:var(--text-dim)}
+  .cs-arrow{width:10px;height:6px;flex-shrink:0;margin-left:8px;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236b6158'/%3E%3C/svg%3E") no-repeat center;transition:transform 0.15s}
+  .cs-wrap.cs-open .cs-arrow{transform:rotate(180deg)}
+  .cs-dropdown{display:none;position:fixed;z-index:9999;background:var(--bg3);border:1px solid var(--accent);overflow-y:auto;box-shadow:0 4px 24px rgba(0,0,0,0.5)}
+  .cs-dropdown::-webkit-scrollbar{width:3px}
+  .cs-dropdown::-webkit-scrollbar-track{background:var(--bg3)}
+  .cs-dropdown::-webkit-scrollbar-thumb{background:var(--border)}
+  .cs-wrap.cs-open .cs-dropdown{display:block}
+  .cs-option{padding:8px 12px;font-size:12px;color:var(--text);cursor:pointer;border-bottom:1px solid var(--border);font-family:var(--mono)}
+  .cs-option:last-child{border-bottom:none}
+  .cs-option:hover,.cs-option.cs-focused{background:rgba(0,120,212,0.1);color:var(--text-bright)}
+  .cs-option.cs-selected{color:var(--accent);background:rgba(0,120,212,0.07);padding-left:20px;position:relative}
+  .cs-option.cs-selected::before{content:'▸';position:absolute;left:8px;font-size:8px;top:50%;transform:translateY(-50%)}
 </style>
 </head>
 <body>
 
+<div class="topbar">
 <div class="header">
   <span class="header-logo">ENTRAITH</span>
   <span class="header-sep">//</span>
@@ -98,6 +120,7 @@
   <a href="/tools">Advanced Tools</a>
   <a href="/infra" class="active">Infrastructure</a>
 </nav>
+</div><!-- /topbar -->
 
 <div class="layout">
   
@@ -106,10 +129,6 @@
       <div class="sidebar-label">Mailer</div>
       <div class="sidebar-item active" onclick="showSection('sender-profiles',this)">Sender Profiles</div>
       <div class="sidebar-item" onclick="showSection('email-templates',this)">Email Templates</div>
-    </div>
-    <div class="sidebar-section">
-      <div class="sidebar-label">Monitoring</div>
-      <div class="sidebar-item" onclick="showSection('webhook-listener',this)">Webhook Listener</div>
     </div>
   </div>
 
@@ -127,7 +146,7 @@
         </div>
 
         
-        <div id="profileForm" style="display:none;background:var(--bg3);border:1px solid var(--border);padding:16px;margin-bottom:16px;border-radius:2px">
+        <div id="profileForm" style="display:none;background:var(--bg3);border:1px solid var(--border);padding:16px;margin-bottom:16px;border-radius:0">
           <div style="font-size:10px;letter-spacing:0.15em;text-transform:uppercase;color:var(--accent);margin-bottom:12px" id="profileFormTitle">New Sender Profile</div>
           <input type="hidden" id="profileId">
           <div class="input-row">
@@ -216,7 +235,7 @@
         </div>
 
         
-        <div id="templateForm" style="display:none;background:var(--bg3);border:1px solid var(--border);padding:16px;margin-bottom:16px;border-radius:2px">
+        <div id="templateForm" style="display:none;background:var(--bg3);border:1px solid var(--border);padding:16px;margin-bottom:16px;border-radius:0">
           <div style="font-size:10px;letter-spacing:0.15em;text-transform:uppercase;color:var(--accent);margin-bottom:12px" id="templateFormTitle">New Email Template</div>
           <input type="hidden" id="templateId">
           <div class="input-row">
@@ -270,49 +289,11 @@
     
     
     
-    <div class="section-view" id="section-webhook-listener">
-      <div class="panel">
-        <div class="panel-header">
-          <div class="panel-title">
-            <span class="status-dot stopped" id="webhookDot"></span>
-            Webhook Listener
-          </div>
-          <div style="display:flex;gap:8px;align-items:center">
-            <input type="number" id="webhookPort" value="9000" min="1" max="65535" style="width:80px;background:var(--bg1);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:2px;font-size:11px" placeholder="Port">
-            <button class="btn btn-success btn-sm" id="btnWebhookStart" onclick="startWebhook()">Start</button>
-            <button class="btn btn-danger btn-sm" id="btnWebhookStop" onclick="stopWebhook()" style="display:none">Stop</button>
-          </div>
-        </div>
-
-        <div style="display:flex;gap:12px;margin-bottom:16px;align-items:center">
-          <div style="font-size:11px;color:var(--text-dim)">Status:</div>
-          <div id="webhookStatusText" style="font-size:11px;color:var(--text)">Loading...</div>
-        </div>
-
-        <div style="display:flex;gap:8px;margin-bottom:12px">
-          <button class="btn btn-sm btn-primary" onclick="refreshWebhookLogs()" style="width:auto">Refresh Logs</button>
-          <div class="checkbox-group" style="margin-bottom:0">
-            <input type="checkbox" id="webhookAutoRefresh" onchange="toggleAutoRefresh()">
-            <label>Auto-refresh (5s)</label>
-          </div>
-        </div>
-
-        <div class="log-stream" id="webhookLogs">Waiting for telemetry events...</div>
-      </div>
-
-      <div class="panel">
-        <div class="panel-title">Endpoint Info</div>
-        <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px">The webhook listener receives inbound HTTP POSTs and logs payload data for analysis. Configure your phishing infrastructure to send beacon callbacks to:</div>
-        <div class="output" id="webhookEndpointInfo">Loading...</div>
-      </div>
-    </div>
-
   </div>
 </div>
 
 <script>
 let activeTestProfileId = '';
-let webhookAutoRefreshTimer = null;
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
 // Session is managed server-side via HttpOnly cookie. Any 401 = session expired.
@@ -354,7 +335,6 @@ async function init() {
   } catch(_) {}
   loadProfiles();
   loadTemplates();
-  loadWebhookStatus();
 }
 
 // ── Navigation ────────────────────────────────────────────────────────────────
@@ -366,7 +346,6 @@ function showSection(id, el) {
   if (el) el.classList.add('active');
   if (id === 'sender-profiles') loadProfiles();
   if (id === 'email-templates') loadTemplates();
-  if (id === 'webhook-listener') { loadWebhookStatus(); refreshWebhookLogs(); }
 }
 
 // ── Sender Profiles ───────────────────────────────────────────────────────────
@@ -395,7 +374,7 @@ function renderProfiles(profiles) {
       </div>
       <div class="card-actions">
         <button class="btn btn-warn btn-sm" onclick="openTestPanel('${escH(p.id)}','${escH(p.name)}')">Test</button>
-        <button class="btn btn-sm" onclick="editProfile(${JSON.stringify(JSON.stringify(p))})">Edit</button>
+        <button class="btn btn-sm" onclick='editProfile(${JSON.stringify(JSON.stringify(p))})'>Edit</button>
         <button class="btn btn-danger btn-sm" onclick="deleteProfile('${escH(p.id)}','${escH(p.name)}')">Del</button>
       </div>
     </div>
@@ -529,7 +508,7 @@ function renderTemplates(templates) {
     const hasQRC = (t.html_body || '').includes('{{QRC}}');
     const hasDC  = (t.html_body || '').includes('{{DCODE}}');
     const tags   = [hasDC ? 'DC' : null, hasQRC ? 'QR' : null].filter(Boolean)
-                     .map(tag => `<span style="font-size:9px;padding:1px 5px;border:1px solid var(--border);border-radius:2px;color:var(--accent);margin-left:6px">${tag}</span>`)
+                     .map(tag => `<span style="font-size:9px;padding:1px 5px;border:1px solid var(--border);border-radius:0;color:var(--accent);margin-left:6px">${tag}</span>`)
                      .join('');
     return `
     <div class="card">
@@ -640,128 +619,150 @@ async function deleteTemplate(id, name) {
   loadTemplates();
 }
 
-// ── Webhook Listener ──────────────────────────────────────────────────────────
-async function loadWebhookStatus() {
-  try {
-    const r = await apiFetch('/api/webhook/status');
-    if (!r.ok) return;
-    const d = await r.json();
-    updateWebhookUI(d.running || false, d.port || 0);
-    // Show endpoint URL
-    const endpointEl = document.getElementById('webhookEndpointInfo');
-    const standalonePort = d.running && d.port ? `:${d.port}` : '';
-    endpointEl.textContent = `Built-in (always on):\nPOST ${window.location.protocol}//${window.location.host}/receive\n\nStandalone listener${standalonePort ? ' (running on port ' + d.port + ')' : ''}:\nPOST ${window.location.protocol}//${window.location.hostname}${standalonePort}/<any-path>`;
-  } catch(e) { console.error(e); }
-}
-
-function updateWebhookUI(running, port) {
-  const dot = document.getElementById('webhookDot');
-  const statusText = document.getElementById('webhookStatusText');
-  const btnStart = document.getElementById('btnWebhookStart');
-  const btnStop = document.getElementById('btnWebhookStop');
-  const portInput = document.getElementById('webhookPort');
-  if (running) {
-    dot.className = 'status-dot running';
-    statusText.textContent = 'Running on port ' + (port || portInput.value) + ' — accepting inbound webhook events';
-    statusText.style.color = 'var(--accent3)';
-    btnStart.style.display = 'none';
-    btnStop.style.display = 'inline-flex';
-    portInput.disabled = true;
-    if (port) portInput.value = port;
-  } else {
-    dot.className = 'status-dot stopped';
-    statusText.textContent = 'Stopped';
-    statusText.style.color = 'var(--text-dim)';
-    btnStart.style.display = 'inline-flex';
-    btnStop.style.display = 'none';
-    portInput.disabled = false;
-  }
-}
-
-async function startWebhook() {
-  const port = parseInt(document.getElementById('webhookPort').value, 10);
-  if (!port || port < 1 || port > 65535) { alert('Enter a valid port (1–65535)'); return; }
-  try {
-    const r = await apiFetch('/api/webhook/start', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ port })
-    });
-    if (r.ok) { await loadWebhookStatus(); refreshWebhookLogs(); }
-    else { const d = await r.json().catch(()=>{}); alert('Failed to start: ' + (d?.error || r.status)); }
-  } catch(e) { console.error(e); }
-}
-
-async function stopWebhook() {
-  try {
-    const r = await apiFetch('/api/webhook/stop', { method: 'POST' });
-    if (r.ok) { await loadWebhookStatus(); }
-  } catch(e) { console.error(e); }
-}
-
-async function refreshWebhookLogs() {
-  try {
-    const r = await apiFetch('/api/webhook/logs');
-    if (!r.ok) return;
-    const d = await r.json();
-    const el = document.getElementById('webhookLogs');
-    const entries = d.entries || [];
-    if (!entries.length) {
-      el.textContent = 'No events captured yet.';
-      return;
-    }
-    el.innerHTML = entries.map(e => {
-      const ts = e.timestamp ? new Date(e.timestamp).toLocaleString() : '';
-      const ip = escH(e.remote_addr || '');
-      const method = escH(e.method || '');
-      const path = escH(e.path || '');
-      const raw = e.body || '';
-      const isJson = e.format !== 'raw';
-      let bodyHtml;
-      if (isJson) {
-        try {
-          const pretty = JSON.stringify(JSON.parse(raw), null, 2);
-          bodyHtml = syntaxHighlight(pretty);
-        } catch { bodyHtml = escH(raw); }
-      } else {
-        bodyHtml = escH(raw);
-      }
-      return `<div style="margin-bottom:12px"><span style="color:var(--text-dim)">[${escH(ts)}]</span> <span style="color:var(--accent);font-weight:600">${method}</span> <span style="color:var(--text-bright)">${path}</span> <span style="color:var(--text-dim)">from</span> <span style="color:var(--warn)">${ip}</span>\n<pre style="margin:4px 0 0;padding:8px;background:var(--bg1);border-radius:2px;border:1px solid var(--border);overflow-x:auto;font-size:11px;line-height:1.5">${bodyHtml}</pre></div>`;
-    }).join('<hr style="border:none;border-top:1px solid var(--border);margin:8px 0">');
-    el.scrollTop = el.scrollHeight;
-  } catch(e) { console.error(e); }
-}
-
-function syntaxHighlight(json) {
-  return escH(json).replace(
-    /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
-    match => {
-      let cls = 'color:var(--accent3)'; // number
-      if (/^"/.test(match)) {
-        cls = /:$/.test(match) ? 'color:var(--accent)' : 'color:var(--warn)'; // key or string
-      } else if (/true|false/.test(match)) {
-        cls = 'color:#64a0ff';
-      } else if (/null/.test(match)) {
-        cls = 'color:var(--text-dim)';
-      }
-      return `<span style="${cls}">${match}</span>`;
-    }
-  );
-}
-
-function toggleAutoRefresh() {
-  const enabled = document.getElementById('webhookAutoRefresh').checked;
-  if (enabled) {
-    webhookAutoRefreshTimer = setInterval(refreshWebhookLogs, 5000);
-  } else {
-    if (webhookAutoRefreshTimer) { clearInterval(webhookAutoRefreshTimer); webhookAutoRefreshTimer = null; }
-  }
-}
-
 // ── Utilities ─────────────────────────────────────────────────────────────────
 function escH(s) {
   return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
+
+// ─── Custom Select ────────────────────────────────────────────────────────────
+(function () {
+  const nativeHTML          = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML');
+  const nativeValue         = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value');
+  const nativeSelectedIndex = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'selectedIndex');
+
+  function initCustomSelect(select) {
+    if (select._csInit || select.dataset.noCs !== undefined || !select.parentNode) return;
+    select._csInit = true;
+
+    const wrap = document.createElement('div');
+    wrap.className = 'cs-wrap';
+    select.parentNode.insertBefore(wrap, select);
+    wrap.appendChild(select);
+
+    const trigger = document.createElement('div');
+    trigger.className = 'cs-trigger';
+    const valueEl = document.createElement('span');
+    valueEl.className = 'cs-value';
+    const arrow = document.createElement('span');
+    arrow.className = 'cs-arrow';
+    trigger.appendChild(valueEl);
+    trigger.appendChild(arrow);
+    wrap.appendChild(trigger);
+
+    const dropdown = document.createElement('div');
+    dropdown.className = 'cs-dropdown';
+    wrap.appendChild(dropdown);
+
+    const syncValue = () => {
+      const opt = select.options[nativeSelectedIndex.get.call(select)];
+      if (opt) {
+        valueEl.textContent = opt.text;
+        valueEl.classList.toggle('cs-placeholder', opt.value === '');
+      } else {
+        valueEl.textContent = '';
+        valueEl.classList.add('cs-placeholder');
+      }
+      dropdown.querySelectorAll('.cs-option').forEach(o =>
+        o.classList.toggle('cs-selected', o.dataset.value === nativeValue.get.call(select))
+      );
+    };
+
+    const buildOptions = () => {
+      dropdown.innerHTML = '';
+      const cur = nativeValue.get.call(select);
+      Array.from(select.options).forEach(opt => {
+        const o = document.createElement('div');
+        o.className = 'cs-option' + (opt.value === cur ? ' cs-selected' : '');
+        o.dataset.value = opt.value;
+        o.textContent = opt.text;
+        o.addEventListener('mousedown', e => e.preventDefault());
+        o.addEventListener('click', e => {
+          e.stopPropagation();
+          nativeValue.set.call(select, opt.value);
+          select.dispatchEvent(new Event('change', { bubbles: true }));
+          syncValue();
+          closeDropdown();
+        });
+        dropdown.appendChild(o);
+      });
+    };
+
+    const positionDropdown = () => {
+      const rect = trigger.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom - 6;
+      const spaceAbove = rect.top - 6;
+      if (spaceBelow >= 60 || spaceBelow >= spaceAbove) {
+        dropdown.style.top    = rect.bottom + 'px';
+        dropdown.style.bottom = 'auto';
+        dropdown.style.maxHeight = Math.max(60, spaceBelow) + 'px';
+      } else {
+        dropdown.style.bottom = (window.innerHeight - rect.top) + 'px';
+        dropdown.style.top    = 'auto';
+        dropdown.style.maxHeight = Math.max(60, spaceAbove) + 'px';
+      }
+      dropdown.style.left  = rect.left + 'px';
+      dropdown.style.width = rect.width + 'px';
+    };
+
+    const openDropdown = () => {
+      document.querySelectorAll('.cs-wrap.cs-open').forEach(w => { if (w !== wrap) w.classList.remove('cs-open'); });
+      buildOptions();
+      positionDropdown();
+      wrap.classList.add('cs-open');
+    };
+    const closeDropdown = () => wrap.classList.remove('cs-open');
+
+    trigger.setAttribute('tabindex', '0');
+
+    trigger.addEventListener('click', e => {
+      e.stopPropagation();
+      wrap.classList.contains('cs-open') ? closeDropdown() : openDropdown();
+    });
+    document.addEventListener('click', closeDropdown);
+
+    trigger.addEventListener('keydown', e => {
+      const opts = Array.from(dropdown.querySelectorAll('.cs-option'));
+      const isOpen = wrap.classList.contains('cs-open');
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        if (!isOpen) { openDropdown(); return; }
+        const focused = dropdown.querySelector('.cs-focused');
+        if (focused) focused.click();
+        return;
+      }
+      if (e.key === 'Escape' || e.key === 'Tab') { closeDropdown(); return; }
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (!isOpen) { openDropdown(); return; }
+        const cur = dropdown.querySelector('.cs-focused');
+        let idx = cur ? opts.indexOf(cur) : -1;
+        opts.forEach(o => o.classList.remove('cs-focused'));
+        idx = e.key === 'ArrowDown' ? Math.min(idx + 1, opts.length - 1) : Math.max(idx - 1, 0);
+        if (opts[idx]) { opts[idx].classList.add('cs-focused'); opts[idx].scrollIntoView({ block: 'nearest' }); }
+      }
+    });
+
+    Object.defineProperty(select, 'innerHTML', {
+      configurable: true,
+      get() { return nativeHTML.get.call(this); },
+      set(v) { nativeHTML.set.call(this, v); syncValue(); if (wrap.classList.contains('cs-open')) buildOptions(); }
+    });
+    Object.defineProperty(select, 'value', {
+      configurable: true,
+      get() { return nativeValue.get.call(this); },
+      set(v) { nativeValue.set.call(this, v); syncValue(); }
+    });
+    Object.defineProperty(select, 'selectedIndex', {
+      configurable: true,
+      get() { return nativeSelectedIndex.get.call(this); },
+      set(v) { nativeSelectedIndex.set.call(this, v); syncValue(); }
+    });
+
+    syncValue();
+  }
+
+  document.querySelectorAll('select:not([data-no-cs])').forEach(initCustomSelect);
+})();
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 init();
