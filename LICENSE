@@ -1,0 +1,32 @@
+                    GNU GENERAL PUBLIC LICENSE
+                       Version 3, 29 June 2007
+
+ Copyright (C) 2026 Jose Rivas, Elzer Pineda
+
+ This program is free software: you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation, either version 3 of the License, or
+ (at your option) any later version.
+
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+
+ You should have received a copy of the GNU General Public License
+ along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+                       ADDITIONAL TERMS (GPL-3.0 Section 7)
+
+ 1. AUTHORIZED USE
+
+    This software is intended for use in authorized security assessments
+    and red team operations. The authors do not condone or support
+    unauthorized use against systems or individuals without proper
+    authorization. Users are solely responsible for ensuring compliance
+    with applicable laws and obtaining necessary permissions before use.
+
+ 2. NON-COMMERCIAL USE
+
+    Commercial use, resale, or incorporation into paid products or services
+    is not permitted without explicit written consent from the authors.
