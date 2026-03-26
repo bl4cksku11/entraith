@@ -10,16 +10,18 @@ Device Code Phishing Operator Console — a self-hosted platform for conducting 
 2. [Architecture](#architecture)
 3. [Code structure](#code-structure)
 4. [Setup and configuration](#setup-and-configuration)
-5. [Operator workflow](#operator-workflow)
-6. [QR phishing](#qr-phishing)
-7. [Mail system](#mail-system)
-8. [Advanced Tools](#advanced-tools)
-9. [OPSEC](#opsec)
-10. [Persistence and database](#persistence-and-database)
-11. [API reference](#api-reference)
-12. [Artifacts and evidence](#artifacts-and-evidence)
-13. [Post-exploitation (Graph Ops)](#post-exploitation-graph-ops)
-14. [Webhook listener](#webhook-listener)
+5. [User roles and access control](#user-roles-and-access-control)
+6. [Operator workflow](#operator-workflow)
+7. [QR phishing](#qr-phishing)
+8. [Intune phishing](#intune-phishing)
+9. [Mail system](#mail-system)
+10. [Advanced Tools](#advanced-tools)
+11. [OPSEC](#opsec)
+12. [Persistence and database](#persistence-and-database)
+13. [API reference](#api-reference)
+14. [Artifacts and evidence](#artifacts-and-evidence)
+15. [Post-exploitation (Graph Ops)](#post-exploitation-graph-ops)
+16. [Webhook listener](#webhook-listener)
 
 ---
 
@@ -74,14 +76,14 @@ The target completes MFA themselves — against the legitimate Microsoft login p
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │  cmd/entraith/main.go                                                   │
-│  ┌─────────────────┐  ┌──────────────────┐  ┌─────────────────────────┐│
-│  │ campaigns.      │  │  mailer.Manager  │  │  api.Handler            ││
-│  │ Manager         │  │  (profiles,      │  │  (HTTP routes,          ││
-│  │ (campaigns,     │  │   templates)     │  │   wires managers,       ││
-│  │  polling)       │  │                  │  │   session auth)         ││
-│  └──────┬──────────┘  └────────┬─────────┘  └─────────────────────────┘│
+│  ┌─────────────────┐  ┌──────────────────┐  ┌─────────────────────────┐ │
+│  │ campaigns.      │  │  mailer.Manager  │  │  api.Handler            │ │
+│  │ Manager         │  │  (profiles,      │  │  (HTTP routes,          │ │
+│  │ (campaigns,     │  │   templates)     │  │   wires managers,       │ │
+│  │  polling)       │  │                  │  │   session auth)         │ │
+│  └──────┬──────────┘  └────────┬─────────┘  └─────────────────────────┘ │
 │         └──────────────────────┘                                        │
-│                    ▼                                                     │
+│                    ▼                                                    │
 │           ┌─────────────────┐                                           │
 │           │  store.Store    │  ← SQLite (entraith.db)                   │
 │           │  campaigns      │    WAL mode, FK cascade                   │
@@ -96,34 +98,38 @@ The target completes MFA themselves — against the legitimate Microsoft login p
 │           │  prts           │  ← Primary Refresh Tokens                 │
 │           │  winhello_keys  │  ← Windows Hello keys                     │
 │           │  otp_secrets    │  ← stored TOTP secrets                    │
+│           │  qr_scans       │  ← confirmed QR scan events               │
+│           │  intune_tokens  │  ← per-target Intune phishing tokens      │
+│           │  intune_captures│  ← captured Intune OAuth flows            │
+│           │  users          │  ← operator accounts (role, pw change)    │
 │           └─────────────────┘                                           │
 │                                                                         │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │  devicecode.Engine  (per campaign, in-memory only)              │   │
-│  │  - one goroutine per target for polling                         │   │
-│  │  - jittered sleep intervals                                     │   │
-│  │  - spoofed User-Agent                                           │   │
-│  │  - Results chan → collectResults goroutine                      │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
+│   ┌─────────────────────────────────────────────────────────────────┐   │
+│   │  devicecode.Engine  (per campaign, in-memory only)              │   │
+│   │  - one goroutine per target for polling                         │   │
+│   │  - jittered sleep intervals                                     │   │
+│   │  - spoofed User-Agent                                           │   │
+│   │  - Results chan → collectResults goroutine                      │   │
+│   └─────────────────────────────────────────────────────────────────┘   │
 │                                                                         │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │  graph.Client  (stateless, per Graph Ops request)               │   │
-│  │  - email browse/send/reply/forward, folder navigation           │   │
-│  │  - OneDrive/SharePoint browse, download, upload, delete         │   │
-│  │  - Teams chats, channels, messages, send                        │   │
-│  │  - user/group enumeration with deep group inspection            │   │
-│  │  - app registrations, service principals, OAuth2 grants         │   │
-│  │  - conditional access policies, auth methods                    │   │
-│  │  - M365 cross-resource search                                   │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
+│   ┌─────────────────────────────────────────────────────────────────┐   │
+│   │  graph.Client  (stateless, per Graph Ops request)               │   │
+│   │  - email browse/send/reply/forward, folder navigation           │   │
+│   │  - OneDrive/SharePoint browse, download, upload, delete         │   │
+│   │  - Teams chats, channels, messages, send                        │   │
+│   │  - user/group enumeration with deep group inspection            │   │
+│   │  - app registrations, service principals, OAuth2 grants         │   │
+│   │  - conditional access policies, auth methods                    │   │
+│   │  - M365 cross-resource search                                   │   │
+│   └─────────────────────────────────────────────────────────────────┘   │
 │                                                                         │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │  Advanced modules (Advanced Tools page)                         │   │
-│  │  mfa         — list/add/delete MFA methods, register TOTP/FIDO2│   │
-│  │  devicereg   — virtual device registration (AAD Join / WPJOIN)  │   │
-│  │  prt         — Primary Refresh Token request and conversion     │   │
-│  │  tokenexchange — v1/v2 token exchange, cross-resource tokens    │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
+│   ┌─────────────────────────────────────────────────────────────────┐   │
+│   │  Advanced modules (Advanced Tools page)                         │   │
+│   │  mfa         — list/add/delete MFA methods, register TOTP/FIDO2 │   │
+│   │  devicereg   — virtual device registration (AAD Join / WPJOIN)  │   │
+│   │  prt         — Primary Refresh Token request and conversion     │   │
+│   │  tokenexchange — v1/v2 token exchange, cross-resource tokens    │   │
+│   └─────────────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────────────┘
            │                          │
            ▼                          ▼
@@ -219,6 +225,7 @@ entraith/
 │   ├── campaigns/
 │   │   └── campaigns.go         # Campaign lifecycle, Manager, Launch, SendEmails
 │   │                            # SendQREmails (bulk + per-target), RefreshToken
+│   │                            # SendIntuneEmails (Intune OAuth phishing flow)
 │   │                            # Load(), DeleteCampaign(), ExportCampaign()
 │   │
 │   ├── modules/
@@ -256,7 +263,8 @@ entraith/
 │   │
 │   ├── api/
 │   │   ├── handler.go           # All HTTP handlers and route registration
-│   │   │                        # Auth, campaigns, targets, Graph Ops, MFA,
+│   │   │                        # Auth (RBAC: admin / operator), user management,
+│   │   │                        # campaigns, targets, Graph Ops, MFA, Intune phishing,
 │   │   │                        # device certs, PRTs, WinHello, OTP, token exchange
 │   │   └── webhook.go           # Standalone webhook listener goroutine
 │   │                            # Start/stop/log the secondary HTTP listener
@@ -265,15 +273,24 @@ entraith/
 │       ├── pages.go             # go:embed declarations for all HTML files
 │       ├── login.html           # Login page (public, session cookie auth)
 │       ├── dashboard.html       # Operations console (SPA — campaigns, mail,
-│       │                        # Graph Ops, QR phishing, webhook listener)
+│       │                        # Graph Ops, QR phishing, Intune phishing, webhook broker)
 │       ├── tools.html           # Advanced Tools (MFA, device reg, PRT, token exchange)
 │       ├── infra.html           # Infrastructure page (sender profiles, templates)
-│       └── qrlanding.html       # QR scan landing page — editable; served to targets
-│                                # on GET /qr/{token}; fires confirm POST on load
+│       ├── qrlanding.html       # QR scan landing page — editable; served to targets
+│       │                        # on GET /qr/{token}; fires confirm POST on load
+│       └── intunelanding.html   # Intune phishing landing page — Microsoft-lookalike;
+│                                # served to targets on GET /intune/{token}; captures
+│                                # ms-appx-web:// OAuth flow trigger
 │
-└── bootstrap/
-    ├── engagement.example.conf  # Example key=value config
-    └── targets.example.csv      # Example target list
+├── bootstrap/
+│   ├── engagement.example.conf  # Example key=value config
+│   └── targets.example.csv      # Example target list
+│
+└── etemplates/                  # Example email templates
+    ├── email-template.html      # Standard device code email
+    ├── template-devicecode.html # Alternative device code template
+    ├── template-intune.html     # Intune phishing email template
+    └── template-qr.html         # QR phishing email template
 ```
 
 ### Package responsibilities
@@ -282,9 +299,9 @@ entraith/
 
 **`config`** — loads a flat `key=value` config file (comments with `#`, inline comments stripped). Sets safe defaults for missing values. No external dependencies.
 
-**`store`** — the SQLite persistence layer (`modernc.org/sqlite`, pure Go, no CGO). Opened once at startup and shared by both managers. Schema applied via `CREATE TABLE IF NOT EXISTS` on every startup (idempotent). Foreign keys with `ON DELETE CASCADE` cascade deletes from campaigns to all associated rows. Stores sessions (operator login), device certificates, PRTs, Windows Hello keys, and OTP secrets in addition to campaign data.
+**`store`** — the SQLite persistence layer (`modernc.org/sqlite`, pure Go, no CGO). Opened once at startup and shared by both managers. Schema applied via `CREATE TABLE IF NOT EXISTS` on every startup (idempotent). Foreign keys with `ON DELETE CASCADE` cascade deletes from campaigns to all associated rows. Stores sessions (operator login), device certificates, PRTs, Windows Hello keys, OTP secrets, QR scan events, Intune phishing tokens and captures, and multi-operator user accounts in addition to campaign data.
 
-**`campaigns`** — owns the `Manager` (map of campaigns, mutex-protected). Each `Campaign` holds a `*targets.Store`, a `*devicecode.Engine`, result slices, email send results, and a buffered `notify` channel for instant SSE pushes. `Manager.Load()` reads all campaigns from SQLite at startup. `Manager.Launch` orchestrates the device code flow. `Manager.SendQREmails` handles bulk or per-target QR phishing email dispatch. `Manager.NotifySSE` wakes any open SSE connections for a campaign immediately.
+**`campaigns`** — owns the `Manager` (map of campaigns, mutex-protected). Each `Campaign` holds a `*targets.Store`, a `*devicecode.Engine`, result slices, email send results, and a buffered `notify` channel for instant SSE pushes. `Manager.Load()` reads all campaigns from SQLite at startup. `Manager.Launch` orchestrates the device code flow. `Manager.SendQREmails` handles bulk or per-target QR phishing email dispatch. `Manager.SendIntuneEmails` sends Intune OAuth phishing emails with unique per-target landing page tokens. `Manager.NotifySSE` wakes any open SSE connections for a campaign immediately.
 
 **`devicecode`** — the core engine. One `Engine` per campaign (in-memory only). Holds a `map[targetID]*Session`. Each `Session` carries a `cancel context.CancelFunc` — if a target scans a QR code a second time, the old polling goroutine is cancelled before a new session is stored, preventing stale polling of the invalidated code. `StartPolling` spawns one goroutine per target with a per-session child context. Results delivered via buffered channel. All requests use a consistent, spoofed User-Agent. The standalone `RefreshAccessToken` exchanges a `refresh_token` for a new pair.
 
@@ -302,7 +319,7 @@ entraith/
 
 **`mailer`** — stateless send logic plus an in-memory manager for profiles and templates. Persistence injected by `main.go` via `SetPersistence(...)` callbacks. `Render` performs simple string replacement. `buildMIME` constructs RFC 5322 messages with per-message random `Message-ID` and MIME boundary from `crypto/rand`.
 
-**`api`** — `Handler` holds pointers to all managers. `Routes()` returns a configured `*http.ServeMux` with all endpoints. Handles auth (login/logout/check), all campaign operations, Graph Ops, MFA, device certs, PRTs, Windows Hello, OTP secrets, token exchange, webhook management, and the public QR scan endpoints (`GET /qr/{token}`, `POST /qr/{token}/confirm`). The SSE handler (`streamEvents`) pushes an initial snapshot on connect and reacts to both the 2-second ticker and the campaign's `notify` channel.
+**`api`** — `Handler` holds pointers to all managers. `Routes()` returns a configured `*http.ServeMux` with all endpoints. Handles auth (login/logout/check/change-password), RBAC-gated user management (admin vs. operator), all campaign operations, Graph Ops, MFA, device certs, PRTs, Windows Hello, OTP secrets, token exchange, webhook management, public QR scan endpoints (`GET /qr/{token}`, `POST /qr/{token}/confirm`), and public Intune phishing endpoints (`GET /intune/{token}`, `POST /intune/capture`). The SSE handler (`streamEvents`) pushes an initial snapshot on connect and reacts to both the 2-second ticker and the campaign's `notify` channel.
 
 **`web`** — five embedded HTML files (`go:embed`). No external JS dependencies. All pages communicate exclusively via the REST API and SSE for live updates. `qrlanding.html` is public-facing and served to targets who scan a QR code — it fires a background confirm POST then redirects. Operator sessions are enforced server-side by `pageGuard` in `main.go` — unauthenticated requests are redirected to `/login?next=<path>`.
 
@@ -368,6 +385,7 @@ Using `common` as `tenant_id` accepts authentication from any Azure AD tenant.
 
 ```bash
 ./entraith validate --config engagement.conf   # check config without starting
+./entraith reset-admin --config engagement.conf  # reset admin password if locked out
 ./entraith version
 ```
 
@@ -382,6 +400,36 @@ On first run, a random admin password is printed to stdout:
 ```
 
 Navigate to `http://<host>:<port>/login` and authenticate before accessing the console.
+
+---
+
+## User roles and access control
+
+ENTRAITH supports two roles: `admin` and `operator`.
+
+| Capability | `admin` | `operator` |
+|------------|---------|------------|
+| Create / manage user accounts | ✓ | — |
+| Reset another user's password | ✓ | — |
+| View all campaigns | ✓ | own only |
+| View all sender profiles | ✓ | own only |
+| Full post-exploitation access | ✓ | ✓ |
+
+### First login
+
+The initial `admin` account credentials are printed to stdout on first run. A user whose account was created by an admin (or whose password was reset) must **change their password on first login**. A modal blocks the UI until the new password is set.
+
+### User management (admin only)
+
+The **Users** button appears in the top navigation bar for admin sessions. From the Users panel, admins can:
+
+- Create a new `operator` or `admin` account — a strong random password is auto-generated and displayed once.
+- Reset any user's password — generates a new random password; the user is forced to change it at next login.
+- Delete any non-admin account.
+
+### Campaign and profile ownership
+
+When an operator creates a campaign or sender profile, their user ID is recorded as `owner_id`. Operators only see their own campaigns and profiles. Admins see everything. Campaigns created before the RBAC migration have an empty `owner_id` and are visible to all operators.
 
 ---
 
@@ -422,9 +470,13 @@ Select a **Sender Profile** and **Email Template**, then click **✉ Send Phishi
 
 Email sending is intentionally decoupled from launch — launch first to start the polling clock, then send.
 
-### Step 6 — QR phishing (optional, replaces steps 4–5)
+### Step 6 — Phishing mode (optional alternative to steps 4–5)
 
-Switch the **Phishing Mode** dropdown in the sidebar to **QR** — this hides the normal launch/regen buttons and shows the QR Phishing section. Sending QR emails is all that's required — the campaign launches automatically when each target scans their code, and the DC email is sent to them at that moment. Targets appear in the Sessions tab immediately after the QR email is sent, with state `qr_sent`, and transition to `pending` once they scan. See [QR phishing](#qr-phishing) for the full flow.
+The **Phishing Mode** dropdown in the sidebar controls which delivery method is used. Three modes are available:
+
+- **Normal** (default) — standard device code flow: launch the campaign first, then send phishing emails containing the user code.
+- **QR** — QR code delivery: send QR emails; the campaign launches automatically when each target scans. See [QR phishing](#qr-phishing) for the full flow.
+- **Intune Phishing** — Microsoft Intune lookalike: send phishing emails with a link to an operator-hosted landing page that mimics Microsoft's device enrollment flow. See [Intune phishing](#intune-phishing) for the full flow.
 
 ### Step 7 — Monitor
 
@@ -520,6 +572,49 @@ The **QR Scans** tab logs every confirmed scan event: timestamp, source IP, and 
 
 ---
 
+## Intune phishing
+
+Intune phishing is an alternative delivery method that combines a phishing email with a Microsoft-lookalike device enrollment landing page. It is useful when the target environment uses Microsoft Intune for device management and a device enrollment pretext is credible.
+
+### How it works
+
+1. The operator sends **Intune phishing emails** via the **Intune Phishing** section (visible when **Phishing Mode** is set to **Intune Phishing**). Each email contains a unique link pointing to `<base_url>/intune/<token>` on the operator's infrastructure.
+2. When the target clicks the link, `GET /intune/<token>` serves `intunelanding.html` — a page styled to resemble Microsoft's account sign-in flow.
+3. When the target interacts with the page (submitting their email or clicking Next), the page fires `POST /intune/capture` in the background. ENTRAITH logs the capture: source IP, trigger event, campaign, and target.
+4. The landing page then redirects the target to the real Microsoft Intune OAuth URL (`ms-appx-web://` scheme via the Microsoft.AAD.BrokerPlugin), completing the enrollment pretext.
+
+### Captured data
+
+Each capture is stored in the `intune_captures` table and accessible via `GET /api/campaigns/{id}/intune-captures`. Captured fields include: `campaign_id`, `target_id`, `token`, `source_ip`, `trigger` (the event that fired the capture), `url`, `timestamp`, and `raw_json` (full POST body).
+
+### Customizing the landing page
+
+The landing page is embedded from `internal/web/intunelanding.html`. Edit it freely — logo, text, form fields — then rebuild:
+
+```bash
+go build -o entraith ./cmd/entraith
+```
+
+The `fetch('/intune/capture', ...)` call in the `<script>` block **must not be removed** — it is what registers the interaction. `{{TOKEN}}` is replaced by the server at request time.
+
+### Template placeholders
+
+| Placeholder | Resolved to |
+|-------------|-------------|
+| `{{URL}}` | The full Intune landing page URL for this target (`<base_url>/intune/<token>`) |
+| `{{EMAIL}}` | Target's email address |
+| `{{NAME}}` | Target's display name from the CSV |
+
+### Sending
+
+In the **Intune Phishing** section of the Operations sidebar:
+
+1. Select a **Sender Profile** and **Intune email template**.
+2. Enter the **Public Base URL** (e.g. `https://r.yourdomain.com`).
+3. Click **Send Intune Emails** to deliver to all targets, or use the per-row **→** button for a single target.
+
+---
+
 ## Mail system
 
 ### Sender profiles
@@ -534,6 +629,7 @@ The **QR Scans** tab logs every confirmed scan event: timestamp, source IP, and 
 | `from_name` | Display name in the `From:` header |
 | `from_address` | Sender email address |
 | `implicit_tls` | `true` → TLS-on-connect (port 465); `false` → STARTTLS |
+| `auth_method` | Override SMTP AUTH mechanism: `plain` (default) or `login` (Exchange/Outlook hosts auto-detected) |
 
 ```
 Office365:  host: smtp.office365.com  port: 587  implicit_tls: false
@@ -684,14 +780,18 @@ All operator data is stored in a single SQLite database (`entraith.db`). WAL mod
 ### Schema
 
 ```
-campaigns        — campaign metadata (id, name, status, timestamps)
+campaigns        — campaign metadata (id, name, status, timestamps, owner_id)
 targets          — import list per campaign (CASCADE)
 device_codes     — issued device codes per campaign (CASCADE)
 tokens           — captured OAuth tokens per campaign (CASCADE)
 email_results    — per-target email send outcomes (CASCADE)
-sender_profiles  — SMTP accounts (global)
+qr_scans         — confirmed QR scan events per campaign (CASCADE)
+intune_tokens    — per-target Intune landing page tokens (CASCADE)
+intune_captures  — captured Intune OAuth flow events per campaign (CASCADE)
+sender_profiles  — SMTP accounts (owner_id scoped to operator)
 email_templates  — phishing HTML templates (global)
 sessions         — operator login sessions (expiry-based)
+users            — operator accounts (username, password hash, role, must_change_password)
 device_certs     — registered virtual devices (global)
 prts             — Primary Refresh Tokens (global)
 winhello_keys    — Windows Hello for Business NGC keys (global)
@@ -737,9 +837,20 @@ All endpoints are under `/api/`. Request bodies are `application/json` unless no
 
 | Method | Path | Notes |
 |--------|------|-------|
-| `POST` | `/api/auth/login` | `{username, password}` → sets `session` HttpOnly cookie |
+| `POST` | `/api/auth/login` | `{username, password}` → sets `session` HttpOnly cookie; returns `{status, username, role, must_change_password}` |
 | `POST` | `/api/auth/logout` | Clears the session cookie |
-| `GET` | `/api/auth/check` | Returns `{ok: true}` if authenticated |
+| `GET` | `/api/auth/check` | Returns `{ok, username, role, must_change_password}` |
+| `POST` | `/api/auth/change-password` | `{new_password}` — clears `must_change_password` flag for current user |
+
+### User management (admin only)
+
+| Method | Path | Notes |
+|--------|------|-------|
+| `GET` | `/api/users` | List all user accounts |
+| `POST` | `/api/users` | `{username, password, role}` — create user; `role` is `admin` or `operator` |
+| `PUT` | `/api/users/{id}` | `{username?, role?}` — update user fields |
+| `DELETE` | `/api/users/{id}` | Delete a user account |
+| `POST` | `/api/users/{id}/reset-password` | Generate a new random password; user must change on next login |
 
 ### Campaigns
 
@@ -748,6 +859,8 @@ All endpoints are under `/api/`. Request bodies are `application/json` unless no
 | `GET` | `/api/campaigns` | Array of all campaign objects |
 | `POST` | `/api/campaigns` | `{name, description}` → 201 |
 | `GET` | `/api/campaigns/{id}` | Campaign object |
+| `PATCH` | `/api/campaigns/{id}` | `{name?, description?}` — rename/update campaign fields |
+| `POST` | `/api/campaigns/{id}/duplicate` | Clone campaign + targets (no tokens); returns new campaign |
 | `GET` | `/api/campaigns/{id}/status` | Live counts |
 | `POST` | `/api/campaigns/{id}/launch` | Start device code flow + polling |
 | `POST` | `/api/campaigns/{id}/stop` | Cancel all polling |
@@ -785,6 +898,15 @@ All endpoints are under `/api/`. Request bodies are `application/json` unless no
 | `GET` | `/qr/{token}` | Public — serves `qrlanding.html` with the token injected |
 | `POST` | `/qr/{token}/confirm` | Public — fired by the landing page; launches campaign, requests device code for the target, sends DC email, starts polling |
 
+### Intune phishing
+
+| Method | Path | Notes |
+|--------|------|-------|
+| `POST` | `/api/campaigns/{id}/intune-emails` | `{profile_id, intune_template_id, base_url, target_id?}` — send Intune phishing emails |
+| `GET` | `/api/campaigns/{id}/intune-captures` | Array of captured Intune flow events |
+| `GET` | `/intune/{token}` | Public — serves `intunelanding.html` with the token injected |
+| `POST` | `/intune/capture` | Public — fired by the landing page; logs capture event (source IP, trigger, campaign, target) |
+
 ### Token management
 
 | Method | Path | Notes |
@@ -793,6 +915,7 @@ All endpoints are under `/api/`. Request bodies are `application/json` unless no
 | `GET` | `/api/campaigns/{id}/tokens/{targetId}/access-token` | Download `at_<upn>.txt` |
 | `GET` | `/api/campaigns/{id}/tokens/{targetId}/refresh-token` | Download `rt_<upn>.txt` |
 | `POST` | `/api/campaigns/{id}/tokens/{targetId}/exchange` | `{resource, scope, client_id, use_v1}` → token exchange |
+| `POST` | `/api/campaigns/{id}/tokens/{targetId}/exchange-refresh` | Refresh a previously exchanged token |
 
 ### Graph Ops
 
@@ -939,6 +1062,16 @@ All Graph Ops routes look up the stored access token for `{targetId}` and proxy 
 | `GET` | `/api/otp-secrets/{id}/code` | Generate current TOTP code |
 | `DELETE` | `/api/otp-secrets/{id}` | Delete |
 
+### Request templates
+
+Saved custom Graph API request templates (stored globally, used in the custom request builder in Advanced Tools).
+
+| Method | Path | Notes |
+|--------|------|-------|
+| `GET` | `/api/request-templates` | List all saved request templates |
+| `POST` | `/api/request-templates` | `{label, method, url, body?}` — save a template |
+| `DELETE` | `/api/request-templates/{id}` | Delete a template |
+
 ### Utilities
 
 | Method | Path | Notes |
@@ -950,10 +1083,10 @@ All Graph Ops routes look up the stored access token for `{targetId}` and proxy 
 | Method | Path | Notes |
 |--------|------|-------|
 | `POST` | `/receive` | Always-on endpoint — logs any `application/json` or `application/json-raw` payload to `webhook_log_path` |
-| `GET` | `/api/webhook/status` | `{running, port, log_path, entries}` |
-| `POST` | `/api/webhook/start` | `{port: N}` — bind standalone listener on port N; returns error immediately if port is unavailable |
-| `POST` | `/api/webhook/stop` | Graceful shutdown (5s timeout) |
-| `GET` | `/api/webhook/logs` | Last 100 entries as `{entries, total}` |
+| `GET` | `/webhook/status` | `{running, port, log_path, entries}` |
+| `POST` | `/webhook/start` | `{port: N}` — bind standalone listener on port N; returns error immediately if port is unavailable |
+| `POST` | `/webhook/stop` | Graceful shutdown (5s timeout) |
+| `GET` | `/webhook/logs` | Last 100 entries as `{entries, total}` |
 
 ### Sender profiles
 
@@ -1013,7 +1146,7 @@ The `offline_access` scope ensures a `refresh_token` is issued. Token exchange (
 
 **Built-in endpoint (`POST /receive`)** — always available on the main ENTRAITH port. Accepts any JSON payload; logs to `webhook_log_path`.
 
-**Standalone listener** — a secondary HTTP server on a configurable port, started from the **Webhook Listener** panel in the Infrastructure page. Enter the desired port (default 9000) and click **Start**. Accepts POST requests on **any path** so the callback URL on the target side can be arbitrary. The port is bound synchronously — if the port is already in use, an error is returned immediately.
+**Standalone listener** — a secondary HTTP server on a configurable port, managed from the **Broker** tab inside any campaign view. Enter the desired port (default 9000) and click **Start**. Accepts POST requests on **any path** so the callback URL on the target side can be arbitrary. The port is bound synchronously — if the port is already in use, an error is returned immediately.
 
 Both modes share the same log file. The standalone listener state is in-memory only — restart manually after a server restart.
 
@@ -1030,7 +1163,7 @@ Both modes share the same log file. The standalone listener state is in-memory o
 [2026-03-13T14:00:00Z] source=10.0.0.5:54321 method=POST path=/receive format=json payload={"event":"beacon","host":"WORKSTATION-01"}
 ```
 
-The **Webhook Listener** panel polls `GET /api/webhook/logs` and renders the last 100 entries as formatted cards showing timestamp, source IP, HTTP method, path, and syntax-highlighted JSON payload.
+The **Broker** tab polls `GET /webhook/logs` and renders the last 100 entries as formatted cards showing timestamp, source IP, HTTP method, path, and syntax-highlighted JSON payload.
 
 ---
 

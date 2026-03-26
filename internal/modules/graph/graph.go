@@ -68,6 +68,13 @@ func (c *Client) request(ctx context.Context, method, fullURL string, body io.Re
 	}
 	defer resp.Body.Close()
 	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode == 429 {
+		hint := "Microsoft is throttling requests — wait before retrying"
+		if ra := resp.Header.Get("Retry-After"); ra != "" {
+			hint = fmt.Sprintf("Microsoft is throttling requests — retry after %s seconds", ra)
+		}
+		return nil, fmt.Errorf("%s: %s", hint, string(respBody))
+	}
 	if resp.StatusCode >= 400 {
 		return nil, fmt.Errorf("graph api %s %s → %d: %s", method, fullURL, resp.StatusCode, string(respBody))
 	}

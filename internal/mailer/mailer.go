@@ -31,6 +31,7 @@ type SenderProfile struct {
 	//   "login"           — AUTH LOGIN (required by Exchange/Outlook)
 	AuthMethod  string    `json:"auth_method,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
+	OwnerID     string    `json:"owner_id,omitempty"`
 }
 
 // loginAuth implements smtp.Auth for the AUTH LOGIN mechanism

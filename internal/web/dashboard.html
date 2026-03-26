@@ -5,22 +5,22 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ENTRAITH // Device Code Operator</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Syne:wght@400;500;600;700;800&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&display=swap');
 
   :root {
-    --bg: #0a0c10;
-    --bg2: #0f1218;
-    --bg3: #161b24;
-    --border: #1e2733;
-    --accent: #00d4ff;
-    --accent2: #ff3e6c;
-    --accent3: #39ff14;
-    --warn: #ffae00;
-    --text: #c8d8e8;
-    --text-dim: #5a6a7a;
-    --text-bright: #e8f0f8;
+    --bg:#04070b;
+    --bg2:#05080e;
+    --bg3:#111927;
+    --border:#192438;
+    --accent: #0078d4;
+    --accent2: #c50f1f;
+    --accent3: #107c10;
+    --warn: #ca8000;
+    --text: #b8c8d8;
+    --text-dim: #3d5166;
+    --text-bright: #e0eaf4;
     --mono: 'JetBrains Mono', monospace;
-    --sans: 'Syne', sans-serif;
+    --sans: 'JetBrains Mono', monospace;
   }
 
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -30,37 +30,43 @@
     color: var(--text);
     font-family: var(--mono);
     font-size: 13px;
-    min-height: 100vh;
-    overflow-x: hidden;
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
   }
 
-  .header {
-    background: var(--bg2);
-    border-bottom: 1px solid var(--border);
-    padding: 16px 24px;
-    display: flex;
-    align-items: center;
-    gap: 16px;
+  .topbar {
+    flex-shrink: 0;
     position: sticky;
     top: 0;
     z-index: 100;
   }
 
-  .header-logo {
-    font-family: var(--sans);
-    font-size: 11px;
-    font-weight: 800;
-    letter-spacing: 0.3em;
-    text-transform: uppercase;
-    color: var(--accent);
-    text-shadow: 0 0 20px rgba(0,212,255,0.5);
+  .header {
+    background: var(--bg2);
+    border-bottom: 2px solid var(--accent);
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
   }
 
-  .header-sep { color: var(--border); }
+  .header-logo {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.35em;
+    text-transform: uppercase;
+    color: var(--accent);
+    text-shadow: 0 0 24px rgba(0,120,212,0.5);
+  }
+
+  .header-sep { color: var(--border); font-size: 10px; }
   .header-title {
-    font-family: var(--sans);
-    font-size: 11px;
-    letter-spacing: 0.15em;
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 0.2em;
     text-transform: uppercase;
     color: var(--text-dim);
   }
@@ -113,30 +119,210 @@
   .layout {
     display: grid;
     grid-template-columns: 290px 1fr;
-    height: calc(100vh - 57px);
+    flex: 1;
+    min-height: 0;
     overflow: hidden;
   }
 
   .sidebar {
     background: var(--bg2);
     border-right: 1px solid var(--border);
-    padding: 20px;
+    padding: 12px 12px;
     overflow-y: auto;
     height: 100%;
   }
 
-  .sidebar-section { margin-bottom: 24px; }
+  .sidebar-section { margin-bottom: 14px; }
 
   .sidebar-label {
     font-size: 9px;
     font-weight: 600;
+    letter-spacing: 0.35em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 8px;
+    padding-bottom: 5px;
+    border-bottom: 1px solid var(--border);
+    opacity: 0.7;
+  }
+
+  /* ── Collapsible sidebar sections ─────────────────────────────────────── */
+  .sidebar-toggle {
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    user-select: none;
+    /* typography — matches sidebar-label but standalone */
+    font-size: 9px;
+    font-weight: 600;
     letter-spacing: 0.3em;
     text-transform: uppercase;
+    /* default (collapsed) state */
     color: var(--text-dim);
-    margin-bottom: 12px;
-    padding-bottom: 6px;
+    padding: 6px 8px;
+    margin: 0 -8px;
+    border-left: 2px solid transparent;
     border-bottom: 1px solid var(--border);
+    transition: color 0.14s, background 0.14s, border-color 0.14s;
   }
+  .sidebar-toggle:hover {
+    color: var(--text);
+    background: rgba(0, 120, 212, 0.06);
+    border-left-color: rgba(0, 120, 212, 0.4);
+  }
+  /* expanded state */
+  .sidebar-toggle:not(.collapsed) {
+    color: var(--accent);
+    border-left-color: var(--accent);
+    background: rgba(0, 120, 212, 0.05);
+  }
+
+  /* CSS-only chevron arrow — no Unicode dependency */
+  .toggle-arrow {
+    width: 5px;
+    height: 5px;
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    transform: rotate(45deg);   /* ↓ expanded */
+    transition: transform 0.18s ease;
+    flex-shrink: 0;
+    opacity: 0.7;
+    margin-bottom: 2px;         /* optical centering */
+  }
+  .sidebar-toggle.collapsed .toggle-arrow {
+    transform: rotate(-45deg);  /* → collapsed */
+    margin-bottom: 0;
+    margin-right: 1px;
+  }
+
+  /* Body: smooth open/close via max-height */
+  .collapsible-body {
+    padding-left: 8px;
+    border-left: 1px solid var(--border);
+    margin-left: 2px;
+    overflow: hidden;
+    max-height: 700px;
+    opacity: 1;
+    margin-top: 8px;
+    transition: max-height 0.24s ease, opacity 0.18s ease, margin-top 0.18s ease;
+  }
+  .collapsible-body.hidden {
+    max-height: 0;
+    opacity: 0;
+    margin-top: 0;
+    pointer-events: none;
+  }
+
+  /* ── Custom Select Component ─────────────────────────────────────────────── */
+  .cs-wrap {
+    position: relative;
+    display: block;
+    width: 100%;
+  }
+  .cs-wrap select { display: none !important; }
+
+  .cs-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 7px 10px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+    cursor: pointer;
+    user-select: none;
+    transition: border-color 0.14s, background 0.14s;
+    min-height: 32px;
+  }
+  .cs-trigger:hover { border-color: rgba(0,120,212,0.5); }
+  .cs-wrap.cs-open .cs-trigger {
+    border-color: var(--accent);
+    background: rgba(0,120,212,0.05);
+    border-bottom-color: transparent;
+  }
+
+  .cs-value {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .cs-value.cs-placeholder { color: var(--text-dim); }
+
+  .cs-arrow {
+    width: 5px;
+    height: 5px;
+    border-right: 1.5px solid var(--text-dim);
+    border-bottom: 1.5px solid var(--text-dim);
+    transform: rotate(45deg);
+    transition: transform 0.18s ease, border-color 0.14s;
+    flex-shrink: 0;
+    margin-bottom: 2px;
+  }
+  .cs-wrap.cs-open .cs-arrow {
+    transform: rotate(-135deg);
+    margin-bottom: -2px;
+    border-color: var(--accent);
+  }
+
+  .cs-dropdown {
+    /* position/coords set by JS (fixed) so overflow:hidden ancestors don't clip */
+    position: fixed;
+    background: var(--bg3);
+    border: 1px solid var(--accent);
+    z-index: 9000;
+    overflow-y: auto;
+    display: none;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.7), 0 0 0 1px rgba(0,120,212,0.08);
+  }
+  .cs-dropdown::-webkit-scrollbar { width: 3px; }
+  .cs-dropdown::-webkit-scrollbar-track { background: var(--bg3); }
+  .cs-dropdown::-webkit-scrollbar-thumb { background: var(--border); }
+  .cs-wrap.cs-open .cs-dropdown { display: block; }
+
+  .cs-option {
+    padding: 7px 12px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text);
+    cursor: pointer;
+    transition: background 0.1s, color 0.1s;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    letter-spacing: 0.03em;
+  }
+  .cs-option:last-child { border-bottom: none; }
+  .cs-option:hover, .cs-option.cs-focused { background: rgba(0,120,212,0.1); color: var(--text-bright); }
+  .cs-option.cs-selected {
+    color: var(--accent);
+    background: rgba(0,120,212,0.07);
+    padding-left: 20px;
+    position: relative;
+  }
+  .cs-option.cs-selected::before {
+    content: '▸';
+    position: absolute;
+    left: 8px;
+    font-size: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+  }
+
+  /* Compact 2-col action grid */
+  .actions-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 5px;
+    margin-bottom: 5px;
+  }
+  .actions-grid .btn { margin-bottom: 0; font-size: 10px; padding: 6px 8px; }
+  .actions-grid .btn-full { grid-column: 1 / -1; }
 
   .btn {
     display: inline-flex;
@@ -149,26 +335,26 @@
     font-family: var(--mono);
     font-size: 11px;
     cursor: pointer;
-    transition: all 0.15s;
-    letter-spacing: 0.05em;
-    border-radius: 2px;
+    transition: all 0.12s;
+    letter-spacing: 0.06em;
+    border-radius: 0;
     width: 100%;
     justify-content: center;
     margin-bottom: 8px;
   }
 
   .btn:hover { border-color: var(--accent); color: var(--accent); }
-  .btn-primary { border-color: var(--accent); color: var(--accent); background: rgba(0,212,255,0.05); }
-  .btn-primary:hover { background: rgba(0,212,255,0.15); }
-  .btn-danger { border-color: var(--accent2); color: var(--accent2); background: rgba(255,62,108,0.05); }
-  .btn-danger:hover { background: rgba(255,62,108,0.15); }
-  .btn-success { border-color: var(--accent3); color: var(--accent3); background: rgba(57,255,20,0.05); }
-  .btn-success:hover { background: rgba(57,255,20,0.15); }
-  .btn-warn { border-color: var(--warn); color: var(--warn); background: rgba(255,174,0,0.05); }
-  .btn-warn:hover { background: rgba(255,174,0,0.15); }
+  .btn-primary { border-color: var(--accent); color: var(--accent); background: rgba(0,120,212,0.05); }
+  .btn-primary:hover { background: rgba(0,120,212,0.15); }
+  .btn-danger { border-color: var(--accent2); color: var(--accent2); background: rgba(197,15,31,0.05); }
+  .btn-danger:hover { background: rgba(197,15,31,0.15); }
+  .btn-success { border-color: var(--accent3); color: var(--accent3); background: rgba(16,124,16,0.05); }
+  .btn-success:hover { background: rgba(16,124,16,0.15); }
+  .btn-warn { border-color: var(--warn); color: var(--warn); background: rgba(202,128,0,0.05); }
+  .btn-warn:hover { background: rgba(202,128,0,0.15); }
   .btn-sm { padding: 5px 10px; font-size: 10px; width: auto; margin-bottom: 0; }
 
-  .input-group { margin-bottom: 10px; }
+  .input-group { margin-bottom: 7px; }
   .input-group label { display: block; font-size: 10px; color: var(--text-dim); margin-bottom: 4px; letter-spacing: 0.1em; }
   .input-group input, .input-group select, .input-group textarea {
     width: 100%;
@@ -178,14 +364,14 @@
     font-family: var(--mono);
     font-size: 12px;
     padding: 7px 10px;
-    border-radius: 2px;
+    border-radius: 0;
     outline: none;
     transition: border-color 0.15s;
   }
   .input-group select {
     appearance: none; -webkit-appearance: none;
     padding-right: 28px;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%235a6a7a'/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236b6158'/%3E%3C/svg%3E");
     background-repeat: no-repeat; background-position: right 10px center; cursor: pointer;
   }
   .input-group input:focus, .input-group textarea:focus, .input-group select:focus { border-color: var(--accent); }
@@ -208,23 +394,32 @@
   }
 
   .section-header {
-    font-family: var(--sans);
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.25em;
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.3em;
     text-transform: uppercase;
     color: var(--accent);
     margin-bottom: 16px;
     display: flex;
     align-items: center;
     gap: 8px;
+    opacity: 0.85;
+  }
+
+  .section-header::before {
+    content: '//';
+    color: var(--text-dim);
+    font-size: 10px;
+    letter-spacing: 0;
+    opacity: 0.6;
   }
 
   .section-header::after {
     content: '';
     flex: 1;
     height: 1px;
-    background: var(--border);
+    background: linear-gradient(to right, var(--border), transparent);
   }
 
   .stats-grid {
@@ -238,7 +433,7 @@
     background: var(--bg2);
     border: 1px solid var(--border);
     padding: 14px;
-    border-radius: 2px;
+    border-radius: 0;
     position: relative;
     overflow: hidden;
   }
@@ -265,7 +460,7 @@
     margin-bottom: 4px;
   }
 
-  .stat-card.captured .stat-value { color: var(--accent3); text-shadow: 0 0 20px rgba(57,255,20,0.4); }
+  .stat-card.captured .stat-value { color: var(--accent3); text-shadow: 0 0 20px rgba(16,124,16,0.4); }
   .stat-card.pending .stat-value { color: var(--warn); }
 
   .stat-label {
@@ -309,14 +504,14 @@
     vertical-align: middle;
   }
 
-  .data-table tr:hover td { background: rgba(0,212,255,0.03); }
+  .data-table tr:hover td { background: rgba(0,120,212,0.03); }
 
   .badge {
     display: inline-flex;
     align-items: center;
     gap: 4px;
     padding: 2px 8px;
-    border-radius: 2px;
+    border-radius: 0;
     font-size: 10px;
     letter-spacing: 0.05em;
     font-weight: 600;
@@ -324,13 +519,13 @@
 
   .badge-pending { background: rgba(255,174,0,0.1); color: var(--warn); border: 1px solid rgba(255,174,0,0.3); }
   .badge-qr_sent { background: rgba(100,160,255,0.1); color: #64a0ff; border: 1px solid rgba(100,160,255,0.3); }
-  .badge-completed { background: rgba(57,255,20,0.1); color: var(--accent3); border: 1px solid rgba(57,255,20,0.3); }
-  .badge-expired { background: rgba(255,62,108,0.1); color: var(--accent2); border: 1px solid rgba(255,62,108,0.3); }
-  .badge-error { background: rgba(255,62,108,0.1); color: var(--accent2); border: 1px solid rgba(255,62,108,0.3); }
-  .badge-initializing { background: rgba(0,212,255,0.1); color: var(--accent); border: 1px solid rgba(0,212,255,0.3); }
+  .badge-completed { background: rgba(16,124,16,0.1); color: var(--accent3); border: 1px solid rgba(16,124,16,0.3); }
+  .badge-expired { background: rgba(197,15,31,0.1); color: var(--accent2); border: 1px solid rgba(197,15,31,0.3); }
+  .badge-error { background: rgba(197,15,31,0.1); color: var(--accent2); border: 1px solid rgba(197,15,31,0.3); }
+  .badge-initializing { background: rgba(0,120,212,0.1); color: var(--accent); border: 1px solid rgba(0,120,212,0.3); }
   .badge-cancelled { background: rgba(90,106,122,0.2); color: var(--text-dim); border: 1px solid var(--border); }
-  .badge-ok { background: rgba(57,255,20,0.1); color: var(--accent3); border: 1px solid rgba(57,255,20,0.3); }
-  .badge-fail { background: rgba(255,62,108,0.1); color: var(--accent2); border: 1px solid rgba(255,62,108,0.3); }
+  .badge-ok { background: rgba(16,124,16,0.1); color: var(--accent3); border: 1px solid rgba(16,124,16,0.3); }
+  .badge-fail { background: rgba(197,15,31,0.1); color: var(--accent2); border: 1px solid rgba(197,15,31,0.3); }
 
   .user-code {
     font-family: var(--mono);
@@ -338,17 +533,17 @@
     font-weight: 700;
     letter-spacing: 0.15em;
     color: var(--accent);
-    background: rgba(0,212,255,0.08);
+    background: rgba(0,120,212,0.08);
     padding: 3px 8px;
-    border-radius: 2px;
+    border-radius: 0;
   }
 
-  .user-code.redeemed { color: var(--accent3); background: rgba(57,255,20,0.08); }
+  .user-code.redeemed { color: var(--accent3); background: rgba(16,124,16,0.08); }
 
   .capture-log {
     background: var(--bg2);
     border: 1px solid var(--border);
-    border-radius: 2px;
+    border-radius: 0;
     overflow: hidden;
     margin-bottom: 24px;
   }
@@ -375,14 +570,14 @@
 
   .log-entry {
     padding: 6px 10px;
-    border-radius: 2px;
+    border-radius: 0;
     display: flex;
     gap: 12px;
     align-items: baseline;
   }
 
-  .log-entry.success { background: rgba(57,255,20,0.05); }
-  .log-entry.info { background: rgba(0,212,255,0.03); }
+  .log-entry.success { background: rgba(16,124,16,0.05); }
+  .log-entry.info { background: rgba(0,120,212,0.03); }
 
   .log-time { color: var(--text-dim); font-size: 10px; min-width: 80px; }
   .log-email { color: var(--accent); }
@@ -414,6 +609,12 @@
 
   .tab-content { display: none; }
   .tab-content.active { display: block; }
+  .graph-subtabs { display:flex; gap:0; border-bottom:1px solid var(--border); margin-bottom:16px; }
+  .graph-subtab { background:none; border:none; border-bottom:2px solid transparent; color:var(--text-dim); font-family:var(--mono); font-size:10px; letter-spacing:0.12em; text-transform:uppercase; padding:8px 16px; cursor:pointer; margin-bottom:-1px; }
+  .graph-subtab:hover { color:var(--text); }
+  .graph-subtab.active { color:var(--accent); border-bottom-color:var(--accent); }
+  .graph-sub { display:none; }
+  .graph-sub.active { display:block; }
 
   /* Graph ops layout */
   .graph-layout {
@@ -437,7 +638,7 @@
   #graphOutput {
     background: var(--bg2);
     border: 1px solid var(--border);
-    border-radius: 2px;
+    border-radius: 0;
     padding: 16px;
     font-size: 12px;
     overflow-x: hidden;  /* inner .table-wrap handles horizontal scroll */
@@ -482,7 +683,7 @@
 
   .upload-area {
     border: 2px dashed var(--border);
-    border-radius: 2px;
+    border-radius: 0;
     padding: 24px;
     text-align: center;
     cursor: pointer;
@@ -490,8 +691,8 @@
     margin-bottom: 12px;
   }
 
-  .upload-area:hover { border-color: var(--accent); background: rgba(0,212,255,0.03); }
-  .upload-area.drag-over { border-color: var(--accent); background: rgba(0,212,255,0.08); }
+  .upload-area:hover { border-color: var(--accent); background: rgba(0,120,212,0.03); }
+  .upload-area.drag-over { border-color: var(--accent); background: rgba(0,120,212,0.08); }
   .upload-icon { font-size: 24px; margin-bottom: 8px; }
   .upload-text { font-size: 11px; color: var(--text-dim); }
 
@@ -514,16 +715,17 @@
   .config-card {
     background: var(--bg2);
     border: 1px solid var(--border);
-    border-radius: 2px;
+    border-left: 2px solid var(--accent);
+    border-radius: 0;
     padding: 20px;
   }
 
   .config-card-title {
     font-size: 10px;
     font-weight: 600;
-    letter-spacing: 0.2em;
+    letter-spacing: 0.25em;
     text-transform: uppercase;
-    color: var(--accent);
+    color: var(--text-bright);
     margin-bottom: 16px;
     padding-bottom: 8px;
     border-bottom: 1px solid var(--border);
@@ -560,7 +762,7 @@
   .mail-layout {
     display: grid; grid-template-columns: 200px 340px 1fr; gap: 0;
     height: calc(100vh - 260px); border: 1px solid var(--border);
-    border-radius: 2px; overflow: hidden;
+    border-radius: 0; overflow: hidden;
   }
   .mail-folders {
     background: var(--bg2); border-right: 1px solid var(--border);
@@ -572,9 +774,9 @@
     transition: background 0.1s;
   }
   .mail-folder-item:hover { background: rgba(0,212,255,0.06); }
-  .mail-folder-item.active { background: rgba(0,212,255,0.1); color: var(--accent); }
+  .mail-folder-item.active { background: rgba(0,120,212,0.1); color: var(--accent); }
   .mail-folder-badge {
-    font-size: 10px; background: rgba(0,212,255,0.15); color: var(--accent);
+    font-size: 10px; background: rgba(0,120,212,0.15); color: var(--accent);
     border-radius: 10px; padding: 1px 6px; min-width: 20px; text-align: center;
   }
   .mail-messages {
@@ -585,7 +787,7 @@
     cursor: pointer; transition: background 0.1s;
   }
   .mail-message-item:hover { background: rgba(0,212,255,0.04); }
-  .mail-message-item.active { background: rgba(0,212,255,0.08); border-left: 2px solid var(--accent); }
+  .mail-message-item.active { background: rgba(0,120,212,0.08); border-left: 2px solid var(--accent); }
   .mail-message-item.unread .msg-subject { color: var(--text-bright); font-weight: 600; }
   .msg-from { font-size: 11px; color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .msg-subject { font-size: 11px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 2px 0; }
@@ -610,7 +812,7 @@
   .teams-layout {
     display: grid; grid-template-columns: 260px 1fr; gap: 0;
     height: calc(100vh - 260px); border: 1px solid var(--border);
-    border-radius: 2px; overflow: hidden;
+    border-radius: 0; overflow: hidden;
   }
   .teams-list-panel {
     background: var(--bg2); border-right: 1px solid var(--border);
@@ -631,8 +833,8 @@
     padding: 10px 14px; border-bottom: 1px solid rgba(30,39,51,0.5);
     cursor: pointer; transition: background 0.1s;
   }
-  .teams-item:hover { background: rgba(0,212,255,0.05); }
-  .teams-item.active { background: rgba(0,212,255,0.1); border-left: 2px solid var(--accent); }
+  .teams-item:hover { background: rgba(0,120,212,0.05); }
+  .teams-item.active { background: rgba(0,120,212,0.1); border-left: 2px solid var(--accent); }
   .teams-item-name { font-size: 11px; color: var(--text-bright); }
   .teams-item-sub { font-size: 10px; color: var(--text-dim); margin-top: 2px; }
   .teams-messages-panel {
@@ -647,13 +849,13 @@
     flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px;
   }
   .chat-bubble {
-    max-width: 70%; padding: 8px 12px; border-radius: 4px; font-size: 11px; line-height: 1.5;
+    max-width: 70%; padding: 8px 12px; border-radius: 0; font-size: 11px; line-height: 1.5;
   }
   .chat-bubble.incoming {
     background: var(--bg3); border: 1px solid var(--border); align-self: flex-start;
   }
   .chat-bubble.outgoing {
-    background: rgba(0,212,255,0.1); border: 1px solid rgba(0,212,255,0.25); align-self: flex-end;
+    background: rgba(0,120,212,0.1); border: 1px solid rgba(0,212,255,0.25); align-self: flex-end;
   }
   .chat-sender { font-size: 10px; color: var(--accent); margin-bottom: 3px; font-weight: 600; }
   .chat-time { font-size: 10px; color: var(--text-dim); margin-top: 3px; }
@@ -664,7 +866,7 @@
   .teams-send-area textarea {
     flex: 1; background: var(--bg3); border: 1px solid var(--border);
     color: var(--text); font-family: var(--mono); font-size: 12px;
-    padding: 7px 10px; border-radius: 2px; outline: none; resize: none;
+    padding: 7px 10px; border-radius: 0; outline: none; resize: none;
     min-height: 36px; max-height: 100px; transition: border-color 0.15s;
   }
   .teams-send-area textarea:focus { border-color: var(--accent); }
@@ -683,7 +885,7 @@
   .search-wrap input {
     width: 100%; background: var(--bg3); border: 1px solid var(--border);
     color: var(--text); font-family: var(--mono); font-size: 12px;
-    padding: 6px 10px 6px 30px; border-radius: 2px; outline: none;
+    padding: 6px 10px 6px 30px; border-radius: 0; outline: none;
     transition: border-color 0.15s;
   }
   .search-wrap input:focus { border-color: var(--accent); }
@@ -700,17 +902,17 @@
   .filter-chip {
     padding: 2px 8px; font-size: 10px; font-family: var(--mono);
     background: transparent; border: 1px solid var(--border);
-    color: var(--text-dim); border-radius: 2px; cursor: pointer;
+    color: var(--text-dim); border-radius: 0; cursor: pointer;
     transition: all 0.12s; letter-spacing: 0.05em;
   }
   .filter-chip:hover { border-color: var(--accent); color: var(--text); }
   .filter-chip.active {
-    background: rgba(0,212,255,0.1); border-color: var(--accent);
+    background: rgba(0,120,212,0.1); border-color: var(--accent);
     color: var(--accent);
   }
   .detail-panel {
     margin-top: 16px; background: var(--bg2); border: 1px solid var(--border);
-    border-radius: 2px; overflow: hidden;
+    border-radius: 0; overflow: hidden;
   }
   .detail-panel-header {
     padding: 10px 14px; border-bottom: 1px solid var(--border);
@@ -728,7 +930,7 @@
   .detail-body { padding: 14px; max-height: 400px; overflow-y: auto; }
   .kv-grid {
     display: grid; grid-template-columns: 160px 1fr; gap: 0;
-    border: 1px solid var(--border); border-radius: 2px; overflow: hidden;
+    border: 1px solid var(--border); border-radius: 0; overflow: hidden;
   }
   .kv-key { padding: 6px 10px; background: var(--bg3); color: var(--text-dim); font-size: 10px; border-bottom: 1px solid var(--border); }
   .kv-val { padding: 6px 10px; background: var(--bg2); color: var(--text-bright); font-size: 11px; border-bottom: 1px solid var(--border); word-break: break-all; }
@@ -752,7 +954,7 @@
     z-index: 500; display: flex; align-items: center; justify-content: center;
   }
   .modal-box {
-    background: var(--bg2); border: 1px solid var(--border); border-radius: 4px;
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 0;
     width: 560px; max-height: 80vh; overflow: auto;
   }
   .modal-header {
@@ -767,12 +969,12 @@
   .tab-target-bar {
     display: flex; gap: 8px; align-items: center; margin-bottom: 14px;
     padding: 8px 10px; background: var(--bg2); border: 1px solid var(--border);
-    border-radius: 2px;
+    border-radius: 0;
   }
   .tab-target-bar label { font-size: 9px; font-weight:600; color: var(--text-dim); white-space: nowrap; letter-spacing: 0.2em; text-transform:uppercase; }
   .tab-target-bar input[type="text"] {
     background: var(--bg3); border: 1px solid var(--border); color: var(--text);
-    font-family: var(--mono); font-size: 12px; padding: 6px 10px; border-radius: 2px;
+    font-family: var(--mono); font-size: 12px; padding: 6px 10px; border-radius: 0;
     outline: none; transition: border-color 0.15s; flex: 1; min-width: 120px;
   }
   .tab-target-bar input[type="text"]:focus { border-color: var(--accent); }
@@ -781,8 +983,8 @@
     flex: 1; min-width: 180px;
     background: var(--bg3); border: 1px solid var(--border); color: var(--text);
     font-family: var(--mono); font-size: 12px; padding: 6px 28px 6px 10px;
-    border-radius: 2px; outline: none; appearance: none; -webkit-appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%235a6a7a'/%3E%3C/svg%3E");
+    border-radius: 0; outline: none; appearance: none; -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236b6158'/%3E%3C/svg%3E");
     background-repeat: no-repeat; background-position: right 10px center;
     cursor: pointer; transition: border-color 0.15s;
   }
@@ -792,142 +994,174 @@
 </head>
 <body>
 
-<div class="header">
-  <div class="header-logo">ENTRAITH</div>
-  <div class="header-sep">//</div>
-  <div class="header-title">Device Code Operator Console</div>
-  <div class="header-right">
-    <div class="status-dot" id="connectionDot"></div>
-    <span id="connectionStatus" style="font-size:10px;color:var(--text-dim)">CONNECTED</span>
-    <button class="btn btn-sm btn-danger" onclick="doLogout()" style="margin-bottom:0">⎋ Logout</button>
+<div class="topbar">
+  <div class="header">
+    <div class="header-logo">ENTRAITH</div>
+    <div class="header-sep">//</div>
+    <div class="header-title">Device Code Operator Console</div>
+    <div class="header-right">
+      <div class="status-dot" id="connectionDot"></div>
+      <span id="connectionStatus" style="font-size:10px;color:var(--text-dim)">—</span>
+      <span id="currentUserBadge" style="font-size:10px;color:var(--text-dim);letter-spacing:0.1em"></span>
+      <button id="btnUsersPanel" class="btn btn-sm" onclick="showUsersModal()" style="margin-bottom:0;display:none">Users</button>
+      <button class="btn btn-sm btn-danger" onclick="doLogout()" style="margin-bottom:0">⎋ Logout</button>
+    </div>
   </div>
+  <nav>
+    <a href="/" class="active">Operations</a>
+    <a href="/tools">Advanced Tools</a>
+    <a href="/infra">Infrastructure</a>
+  </nav>
 </div>
-<nav>
-  <a href="/" class="active">Operations</a>
-  <a href="/tools">Advanced Tools</a>
-  <a href="/infra">Infrastructure</a>
-</nav>
 
 <div class="layout">
   
   <div class="sidebar">
 
+    <!-- New Campaign — collapsible -->
     <div class="sidebar-section">
-      <div class="sidebar-label">New Campaign</div>
-      <div class="input-group">
-        <label>Campaign Name</label>
-        <input type="text" id="campName" placeholder="q1-finance-dc">
+      <div class="sidebar-toggle collapsed" onclick="toggleCollapse(this)">
+        <span>New Campaign</span><span class="toggle-arrow"></span>
       </div>
-      <div class="input-group">
-        <label>Description (optional)</label>
-        <input type="text" id="campDesc" placeholder="Q1 Finance awareness sim">
+      <div class="collapsible-body hidden">
+        <div class="input-group">
+          <label>Campaign Name</label>
+          <input type="text" id="campName" placeholder="q1-finance-dc">
+        </div>
+        <div class="input-group">
+          <label>Description (optional)</label>
+          <input type="text" id="campDesc" placeholder="Q1 Finance awareness sim">
+        </div>
+        <button class="btn btn-primary" onclick="createCampaign()">⊕ Create Campaign</button>
       </div>
-      <button class="btn btn-primary" onclick="createCampaign()">⊕ Create Campaign</button>
     </div>
 
+    <!-- Campaigns list — always visible -->
     <div class="sidebar-section">
       <div class="sidebar-label">Campaigns</div>
       <div id="campaignList" style="font-size:11px;color:var(--text-dim)">No campaigns yet</div>
     </div>
 
+    <!-- Import Targets — collapsible -->
     <div class="sidebar-section">
-      <div class="sidebar-label">Import Targets</div>
-      <div class="upload-area" id="uploadArea" onclick="document.getElementById('csvFile').click()">
-        <div class="upload-icon">📋</div>
-        <div class="upload-text">Drop CSV or click to browse<br><span style="font-size:10px;opacity:0.6">columns: email, display_name, department, region, group</span></div>
+      <div class="sidebar-toggle collapsed" onclick="toggleCollapse(this)">
+        <span>Import Targets</span><span class="toggle-arrow"></span>
       </div>
-      <input type="file" id="csvFile" accept=".csv,.txt" style="display:none" onchange="importCSV(this)">
-      <div class="input-group">
-        <label>Or paste emails (one per line)</label>
-        <textarea id="emailPaste" placeholder="user1@corp.com&#10;user2@corp.com"></textarea>
+      <div class="collapsible-body hidden">
+        <div class="upload-area" id="uploadArea" onclick="document.getElementById('csvFile').click()">
+          <div class="upload-icon">📋</div>
+          <div class="upload-text">Drop CSV or click to browse<br><span style="font-size:10px;opacity:0.6">email, display_name, dept, region, group</span></div>
+        </div>
+        <input type="file" id="csvFile" accept=".csv,.txt" style="display:none" onchange="importCSV(this)">
+        <div class="input-group" style="margin-top:6px">
+          <label>Or paste emails (one per line)</label>
+          <textarea id="emailPaste" placeholder="user1@corp.com&#10;user2@corp.com" style="min-height:60px"></textarea>
+        </div>
+        <button class="btn" onclick="importPasted()">↑ Import Pasted</button>
       </div>
-      <button class="btn" onclick="importPasted()">↑ Import Pasted</button>
     </div>
 
+    <!-- Phishing — collapsible, contains mode selector + per-mode options -->
     <div class="sidebar-section">
-      <div class="sidebar-label">Phishing Mode</div>
-      <select id="phishingMode" onchange="updatePhishingMode()" style="width:100%;background:var(--bg2);color:var(--text);border:1px solid var(--border);padding:6px 8px;border-radius:2px;font-size:11px">
-        <option value="normal">Normal Phishing</option>
-        <option value="qr">QR Phishing</option>
-      </select>
+      <div class="sidebar-toggle" onclick="toggleCollapse(this)">
+        <span>Phishing</span><span class="toggle-arrow"></span>
+      </div>
+      <div class="collapsible-body">
+        <div class="input-group">
+          <label>Mode</label>
+          <select id="phishingMode" onchange="updatePhishingMode()">
+            <option value="normal">Normal</option>
+            <option value="qr">QR Code</option>
+            <option value="intune">Intune</option>
+          </select>
+        </div>
+
+        <!-- Normal phishing sub-section -->
+        <div id="sectionNormalPhishing">
+          <div class="input-group">
+            <label>Sender Profile</label>
+            <select id="selectedProfile">
+              <option value="">— no profile —</option>
+            </select>
+          </div>
+          <div class="input-group">
+            <label>Email Template</label>
+            <select id="selectedTemplate">
+              <option value="">— no template —</option>
+            </select>
+          </div>
+          <button class="btn btn-warn" onclick="sendPhishingEmails()">✉ Send All Phishing Emails</button>
+        </div>
+
+        <!-- QR phishing sub-section -->
+        <div id="sectionQRPhishing" style="display:none">
+          <div class="input-group">
+            <label>Sender Profile</label>
+            <select id="qrProfile">
+              <option value="">— no profile —</option>
+            </select>
+          </div>
+          <div class="input-group">
+            <label>QR Template <span style="color:var(--text-dim)">({{QRC}})</span></label>
+            <select id="qrTemplate">
+              <option value="">— no template —</option>
+            </select>
+          </div>
+          <div class="input-group">
+            <label>DC Template <span style="color:var(--text-dim)">(on scan)</span></label>
+            <select id="qrDcTemplate">
+              <option value="">— no template —</option>
+            </select>
+          </div>
+          <div class="input-group">
+            <label>Public Base URL</label>
+            <input id="qrBaseUrl" type="text" placeholder="https://your-server.com">
+          </div>
+          <div class="actions-grid">
+            <button class="btn btn-warn btn-full" onclick="sendQREmails()">⬛ Send QR Emails</button>
+            <button class="btn btn-full" onclick="switchTab('qrscans', document.querySelector('.tab[data-tab=qrscans]'))">👁 QR Scan Status</button>
+          </div>
+        </div>
+
+        <!-- Intune phishing sub-section -->
+        <div id="sectionIntunePhishing" style="display:none">
+          <div class="input-group">
+            <label>Sender Profile</label>
+            <select id="intuneProfile">
+              <option value="">— no profile —</option>
+            </select>
+          </div>
+          <div class="input-group">
+            <label>Intune Template <span style="color:var(--text-dim)">({{URL}})</span></label>
+            <select id="intuneTemplate">
+              <option value="">— no template —</option>
+            </select>
+          </div>
+          <div class="input-group">
+            <label>Public Base URL</label>
+            <input id="intuneBaseUrl" type="text" placeholder="https://your-server.com">
+          </div>
+          <div class="actions-grid">
+            <button class="btn btn-primary btn-full" onclick="sendIntuneEmails()">📱 Send Intune Emails</button>
+            <button class="btn btn-full" onclick="switchTab('intunecaptures', document.querySelector('.tab[data-tab=intunecaptures]'))">👁 Intune Captures</button>
+          </div>
+        </div>
+      </div>
     </div>
 
-    <div id="sectionNormalPhishing" class="sidebar-section">
-      <div class="sidebar-label">Phishing Mail</div>
-      <div class="input-group">
-        <label>Sender Profile</label>
-        <select id="selectedProfile">
-          <option value="">— no profile —</option>
-        </select>
-      </div>
-      <div class="input-group">
-        <label>Email Template</label>
-        <select id="selectedTemplate">
-          <option value="">— no template —</option>
-        </select>
-      </div>
-      <button class="btn btn-warn" onclick="sendPhishingEmails()">✉ Send All Phishing Emails</button>
-    </div>
-
-    <div id="sectionQRPhishing" class="sidebar-section" style="display:none">
-      <div class="sidebar-label">QR Phishing</div>
-      <div class="input-group">
-        <label>Sender Profile</label>
-        <select id="qrProfile">
-          <option value="">— no profile —</option>
-        </select>
-      </div>
-      <div class="input-group">
-        <label>QR Email Template <span style="color:var(--text-dim)">(use {{QRC}})</span></label>
-        <select id="qrTemplate">
-          <option value="">— no template —</option>
-        </select>
-      </div>
-      <div class="input-group">
-        <label>DC Email Template <span style="color:var(--text-dim)">(sent on scan)</span></label>
-        <select id="qrDcTemplate">
-          <option value="">— no template —</option>
-        </select>
-      </div>
-      <div class="input-group">
-        <label>Public Base URL</label>
-        <input id="qrBaseUrl" type="text" placeholder="https://your-server.com">
-      </div>
-      <button class="btn btn-warn" onclick="sendQREmails()">⬛ Send QR Emails</button>
-      <button class="btn btn-sm" onclick="switchTab('qrscans', document.querySelector('.tab[data-tab=qrscans]'))" style="width:100%;margin-top:4px">👁 View QR Scan Status</button>
-    </div>
-
-    <div class="sidebar-section">
-      <div class="sidebar-label">Intune Phishing</div>
-      <div class="input-group">
-        <label>Sender Profile</label>
-        <select id="intuneProfile">
-          <option value="">— no profile —</option>
-        </select>
-      </div>
-      <div class="input-group">
-        <label>Intune Template <span style="color:var(--text-dim)">(use {{URL}})</span></label>
-        <select id="intuneTemplate">
-          <option value="">— no template —</option>
-        </select>
-      </div>
-      <div class="input-group">
-        <label>Public Base URL</label>
-        <input id="intuneBaseUrl" type="text" placeholder="https://your-server.com">
-      </div>
-      <button class="btn btn-primary" onclick="sendIntuneEmails()">📱 Send Intune Emails</button>
-      <button class="btn btn-sm" onclick="switchTab('intunecaptures', document.querySelector('.tab[data-tab=intunecaptures]'))" style="width:100%;margin-top:4px">👁 View Intune Captures</button>
-    </div>
-
+    <!-- Campaign Actions — always visible, compact grid -->
     <div class="sidebar-section">
       <div class="sidebar-label">Campaign Actions</div>
       <span id="actionLaunchRegen">
-        <button class="btn btn-success" onclick="launchCampaign()">▶ Launch Campaign</button>
-        <button class="btn btn-warn btn-sm" onclick="regenAll()" style="width:100%;margin-bottom:8px">↻ Regen All Codes</button>
+        <button id="btnLaunchStop" class="btn btn-success" style="margin-bottom:5px" onclick="launchStopToggle()">▶ Launch Campaign</button>
       </span>
-      <button class="btn btn-danger" onclick="stopCampaign()">■ Stop Campaign</button>
-      <button class="btn btn-primary" onclick="exportCampaign()">↓ Export Campaign</button>
-      <button class="btn btn-danger" onclick="confirmDeleteCampaign()">🗑 Delete Campaign</button>
+      <div class="actions-grid">
+        <button class="btn btn-primary" onclick="showRenameModal()">✎ Rename</button>
+        <button class="btn" onclick="duplicateCampaign()">⎘ Duplicate</button>
+        <button class="btn" onclick="showCampaignStats()">◎ Stats</button>
+        <button class="btn" onclick="exportCampaign()">↓ Export</button>
+        <button class="btn btn-danger btn-full" onclick="confirmDeleteCampaign()">✕ Delete Campaign</button>
+      </div>
     </div>
 
   </div>
@@ -972,13 +1206,9 @@
       <div class="tabs">
         <button class="tab active" onclick="switchTab('sessions', this)">Sessions</button>
         <button class="tab" onclick="switchTab('tokens', this)">Tokens</button>
-        <button class="tab" onclick="switchTab('mail', this)">Mail</button>
         <button class="tab" onclick="switchTab('qrscans', this)" data-tab="qrscans">QR Scans</button>
         <button class="tab" onclick="switchTab('intunecaptures', this)" data-tab="intunecaptures">Intune</button>
         <button class="tab" onclick="switchTab('broker', this)">Broker</button>
-        <button class="tab" onclick="switchTab('teams', this)">Teams</button>
-        <button class="tab" onclick="switchTab('files', this)">Files</button>
-        <button class="tab" onclick="switchTab('users', this)">Users</button>
         <button class="tab" onclick="switchTab('graph', this)">Graph Ops</button>
         <button class="tab" onclick="switchTab('targets', this)">Targets</button>
         <button class="tab" onclick="switchTab('emails', this)">Emails</button>
@@ -986,7 +1216,10 @@
 
       
       <div id="tab-sessions" class="tab-content active">
-        <div class="section-header">Live Sessions</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <div class="section-header" style="margin-bottom:0">Live Sessions</div>
+          <button class="btn btn-sm btn-warn" onclick="regenAll()" style="width:auto;margin-bottom:0">↻ Regen All Codes</button>
+        </div>
         <div class="table-wrap">
           <table class="data-table">
             <thead>
@@ -1041,82 +1274,230 @@
 
       
       <div id="tab-graph" class="tab-content">
-        <div class="section-header">Graph API Operations</div>
-
-        
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">
-          <label style="font-size:10px;letter-spacing:0.15em;text-transform:uppercase;color:var(--text-dim)">Target</label>
-          <select id="graphTargetSelect" onchange="graphTargetChanged()" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:12px;padding:6px 28px 6px 10px;border-radius:2px;min-width:220px;outline:none;appearance:none;-webkit-appearance:none;background-image:url('data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'10\' height=\'6\' viewBox=\'0 0 10 6\'%3E%3Cpath d=\'M0 0l5 6 5-6z\' fill=\'%235a6a7a\'/%3E%3C/svg%3E');background-repeat:no-repeat;background-position:right 10px center;cursor:pointer">
-            <option value="">— select captured target —</option>
-          </select>
+        <div class="graph-subtabs">
+          <button class="graph-subtab active" onclick="switchGraphSub('enum', this)">Enumeration</button>
+          <button class="graph-subtab" onclick="switchGraphSub('mail', this)">Mail</button>
+          <button class="graph-subtab" onclick="switchGraphSub('teams', this)">Teams</button>
+          <button class="graph-subtab" onclick="switchGraphSub('files', this)">Files</button>
+          <button class="graph-subtab" onclick="switchGraphSub('users', this)">Users</button>
         </div>
 
-        
-        <div class="graph-layout">
-          <div class="graph-sidebar">
-            <div class="config-card">
-              <div class="config-card-title">Enumeration</div>
-              <button class="btn btn-sm" style="width:100%;margin-bottom:4px" onclick="graphOp('me')">👤 Whoami (/me)</button>
-              <button class="btn btn-sm" style="width:100%;margin-bottom:4px" onclick="graphOp('groups')">🏢 List Groups</button>
-              <button class="btn btn-sm" style="width:100%;margin-bottom:4px" onclick="graphOp('owned-groups')">✏ Owned / Modifiable Groups</button>
-              <div style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-dim);margin:12px 0 6px">Search Users</div>
-              <div class="input-group">
-                <input type="text" id="graphSearchQuery" placeholder="keyword / *">
+        <div id="graph-sub-enum" class="graph-sub active">
+          <div class="section-header">Graph API Operations</div>
+
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+            <label style="font-size:10px;letter-spacing:0.15em;text-transform:uppercase;color:var(--text-dim)">Target</label>
+            <select id="graphTargetSelect" onchange="graphTargetChanged()" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:12px;padding:6px 28px 6px 10px;border-radius:0;min-width:220px;outline:none;appearance:none;-webkit-appearance:none;background-image:url('data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'10\' height=\'6\' viewBox=\'0 0 10 6\'%3E%3Cpath d=\'M0 0l5 6 5-6z\' fill=\'%233d5166\'/%3E%3C/svg%3E');background-repeat:no-repeat;background-position:right 10px center;cursor:pointer">
+              <option value="">— select captured target —</option>
+            </select>
+          </div>
+
+          <div class="graph-layout">
+            <div class="graph-sidebar">
+              <div class="config-card">
+                <div class="config-card-title">Enumeration</div>
+                <button class="btn btn-sm" style="width:100%;margin-bottom:4px" onclick="graphOp('me')">👤 Whoami (/me)</button>
+                <button class="btn btn-sm" style="width:100%;margin-bottom:4px" onclick="graphOp('groups')">🏢 List Groups</button>
+                <button class="btn btn-sm" style="width:100%;margin-bottom:4px" onclick="graphOp('owned-groups')">✏ Owned / Modifiable Groups</button>
+                <div style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-dim);margin:12px 0 6px">Search Users</div>
+                <div class="input-group">
+                  <input type="text" id="graphSearchQuery" placeholder="keyword / *">
+                </div>
+                <button class="btn btn-sm" style="width:100%;margin-bottom:4px" onclick="graphSearch('users')">🔍 Search Users</button>
               </div>
-              <button class="btn btn-sm" style="width:100%;margin-bottom:4px" onclick="graphSearch('users')">🔍 Search Users</button>
+            </div>
+            <div class="graph-output-panel">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px">
+                <span style="font-size:10px;letter-spacing:0.15em;text-transform:uppercase;color:var(--text-dim)" id="graphOpLabel">Output</span>
+                <div style="display:flex;gap:6px">
+                  <button class="btn btn-sm" id="graphRawBtn" onclick="graphToggleRaw()" style="display:none">{ } Raw</button>
+                  <button class="btn btn-sm" id="graphDlBtn" onclick="graphDownloadResult()" style="display:none">↓ JSON</button>
+                </div>
+              </div>
+              <div id="graphOutput">Select a target and operation...</div>
             </div>
           </div>
-          <div class="graph-output-panel">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px">
-              <span style="font-size:10px;letter-spacing:0.15em;text-transform:uppercase;color:var(--text-dim)" id="graphOpLabel">Output</span>
+
+          <div class="config-card" style="margin-top:16px">
+            <div class="config-card-title" style="display:flex;justify-content:space-between;align-items:center">
+              <span>App Registrations</span>
               <div style="display:flex;gap:6px">
-                <button class="btn btn-sm" id="graphRawBtn" onclick="graphToggleRaw()" style="display:none">{ } Raw</button>
-                <button class="btn btn-sm" id="graphDlBtn" onclick="graphDownloadResult()" style="display:none">↓ JSON</button>
+                <button class="btn btn-sm" id="graphAppsDlBtn" onclick="graphDumpDownload('apps')" style="display:none">↓ JSON</button>
               </div>
             </div>
-            <div id="graphOutput">Select a target and operation...</div>
+            <div style="font-size:11px;color:var(--text-dim);margin-bottom:12px">Enumerate all registered applications and service principals in the tenant.</div>
+            <button class="btn btn-sm btn-primary" onclick="graphDump('apps')" style="width:auto">▶ Dump App Registrations</button>
+            <div id="graphAppsOutput" style="margin-top:12px;background:var(--bg);border:1px solid var(--border);padding:12px;font-size:11px;color:var(--text-dim);min-height:40px;max-height:320px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;border-radius:0;display:none"></div>
+          </div>
+
+          <div class="config-card" style="margin-top:16px">
+            <div class="config-card-title" style="display:flex;justify-content:space-between;align-items:center">
+              <span>Conditional Access Policies</span>
+              <div style="display:flex;gap:6px">
+                <button class="btn btn-sm" id="graphCaDlBtn" onclick="graphDumpDownload('conditional-access')" style="display:none">↓ JSON</button>
+              </div>
+            </div>
+            <div style="font-size:11px;color:var(--text-dim);margin-bottom:12px">Retrieve all Conditional Access policies configured in the tenant. Requires privileged role.</div>
+            <button class="btn btn-sm btn-primary" onclick="graphDump('conditional-access')" style="width:auto">▶ Dump Conditional Access</button>
+            <div id="graphCaOutput" style="margin-top:12px;background:var(--bg);border:1px solid var(--border);padding:12px;font-size:11px;color:var(--text-dim);min-height:40px;max-height:320px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;border-radius:0;display:none"></div>
+          </div>
+
+          <div class="config-card" style="margin-top:16px;margin-bottom:8px">
+            <div class="config-card-title" style="display:flex;justify-content:space-between;align-items:center">
+              <span>OAuth2 Permission Grants</span>
+              <div style="display:flex;gap:6px">
+                <button class="btn btn-sm" id="graphGrantsDlBtn" onclick="graphDumpDownload('grants')" style="display:none">↓ JSON</button>
+              </div>
+            </div>
+            <div style="font-size:11px;color:var(--text-dim);margin-bottom:12px">List all delegated OAuth2 permission grants — shows which apps have been granted access on behalf of users.</div>
+            <button class="btn btn-sm btn-primary" onclick="graphDump('grants')" style="width:auto">▶ Dump OAuth2 Grants</button>
+            <div id="graphGrantsOutput" style="margin-top:12px;background:var(--bg);border:1px solid var(--border);padding:12px;font-size:11px;color:var(--text-dim);min-height:40px;max-height:320px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;border-radius:0;display:none"></div>
           </div>
         </div>
 
-        
-        <div class="config-card" style="margin-top:16px">
-          <div class="config-card-title" style="display:flex;justify-content:space-between;align-items:center">
-            <span>App Registrations</span>
-            <div style="display:flex;gap:6px">
-              <button class="btn btn-sm" id="graphAppsDlBtn" onclick="graphDumpDownload('apps')" style="display:none">↓ JSON</button>
+        <div id="graph-sub-mail" class="graph-sub">
+          <div class="tab-target-bar">
+            <label>TARGET</label>
+            <select id="mailTargetSelect"><option value="">— select captured target —</option></select>
+            <button class="btn btn-sm btn-primary" onclick="loadMailFolders()">Load Mail</button>
+            <button class="btn btn-sm btn-success" onclick="mailCompose()">✉ Compose</button>
+            <button class="btn btn-sm" onclick="discoverMailboxes()" title="Discover accessible shared mailboxes">📬 Mailboxes</button>
+          </div>
+          <div class="mail-layout">
+            <div class="mail-folders" id="mailFolderPanel">
+              <div style="padding:8px 14px;font-size:9px;letter-spacing:0.2em;text-transform:uppercase;color:var(--text-dim)">Folders</div>
+              <div id="mailFolderList"><div style="padding:12px 14px;font-size:11px;color:var(--text-dim)">Load mail to see folders</div></div>
+            </div>
+            <div class="mail-messages" id="mailMessagePanel">
+              <div style="padding:4px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+                <span style="font-size:9px;letter-spacing:0.2em;text-transform:uppercase;color:var(--text-dim)">Messages</span>
+                <select id="mailOrderSelect" data-no-cs onchange="mailLoadMessages(0)" style="font-size:10px;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:0;padding:2px 4px">
+                  <option value="desc">Newest first</option>
+                  <option value="asc">Oldest first</option>
+                </select>
+              </div>
+              <div style="flex:1;overflow-y:auto" id="mailMessageList"><div style="padding:20px;font-size:11px;color:var(--text-dim);text-align:center">Select a folder</div></div>
+              <div id="mailMessagePager" style="padding:4px 8px;border-top:1px solid var(--border);background:var(--bg2);flex-shrink:0"></div>
+            </div>
+            <div class="mail-viewer" id="mailViewerPanel">
+              <div class="mail-viewer-header" id="mailViewerHeader">
+                <div style="font-size:11px;color:var(--text-dim)">Select a message to read</div>
+                <div class="mail-viewer-actions" id="mailViewerActions"></div>
+              </div>
+              <div class="mail-viewer-body">
+                <iframe id="mailBodyFrame" sandbox="allow-same-origin" srcdoc="<html><body style='background:#f5f5f5;color:#333;font-family:sans-serif;padding:20px'><p style='color:#888'>No message selected</p></body></html>"></iframe>
+              </div>
             </div>
           </div>
-          <div style="font-size:11px;color:var(--text-dim);margin-bottom:12px">Enumerate all registered applications and service principals in the tenant.</div>
-          <button class="btn btn-sm btn-primary" onclick="graphDump('apps')" style="width:auto">▶ Dump App Registrations</button>
-          <div id="graphAppsOutput" style="margin-top:12px;background:var(--bg);border:1px solid var(--border);padding:12px;font-size:11px;color:var(--text-dim);min-height:40px;max-height:320px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;border-radius:2px;display:none"></div>
         </div>
 
-        
-        <div class="config-card" style="margin-top:16px">
-          <div class="config-card-title" style="display:flex;justify-content:space-between;align-items:center">
-            <span>Conditional Access Policies</span>
-            <div style="display:flex;gap:6px">
-              <button class="btn btn-sm" id="graphCaDlBtn" onclick="graphDumpDownload('conditional-access')" style="display:none">↓ JSON</button>
+        <div id="graph-sub-teams" class="graph-sub">
+          <div class="tab-target-bar">
+            <label>TARGET</label>
+            <select id="teamsTargetSelect"><option value="">— select captured target —</option></select>
+            <button class="btn btn-sm btn-primary" onclick="teamsLoad('teams')">Load Teams</button>
+            <button class="btn btn-sm" onclick="teamsLoad('chats')">Load Chats</button>
+            <button class="btn btn-sm btn-success" onclick="teamsNewChat()">+ New Chat</button>
+          </div>
+          <div class="teams-layout">
+            <div class="teams-list-panel">
+              <div class="teams-list-tabs">
+                <button class="teams-list-tab active" id="teamsTabTeams" onclick="teamsLoad('teams')">Teams</button>
+                <button class="teams-list-tab" id="teamsTabChats" onclick="teamsLoad('chats')">Chats</button>
+              </div>
+              <div id="teamsListBody" style="overflow-y:auto;flex:1"><div style="padding:14px;font-size:11px;color:var(--text-dim)">Load teams or chats above</div></div>
+            </div>
+            <div class="teams-messages-panel">
+              <div class="teams-msg-header">
+                <span id="teamsConvLabel">Select a team channel or chat</span>
+                <button class="btn btn-sm" id="teamsRefreshBtn" onclick="teamsRefreshMessages()" style="display:none">↻</button>
+              </div>
+              <div class="teams-msg-list" id="teamsMsgList"><div style="padding:20px;font-size:11px;color:var(--text-dim);text-align:center">No conversation selected</div></div>
+              <div class="teams-send-area" id="teamsSendArea" style="display:none">
+                <textarea id="teamsMsgInput" placeholder="Type a message..." rows="1" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();teamsSend();}"></textarea>
+                <button class="btn btn-sm btn-primary" style="margin-bottom:0;white-space:nowrap" onclick="teamsSend()">↑ Send</button>
+              </div>
             </div>
           </div>
-          <div style="font-size:11px;color:var(--text-dim);margin-bottom:12px">Retrieve all Conditional Access policies configured in the tenant. Requires privileged role.</div>
-          <button class="btn btn-sm btn-primary" onclick="graphDump('conditional-access')" style="width:auto">▶ Dump Conditional Access</button>
-          <div id="graphCaOutput" style="margin-top:12px;background:var(--bg);border:1px solid var(--border);padding:12px;font-size:11px;color:var(--text-dim);min-height:40px;max-height:320px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;border-radius:2px;display:none"></div>
         </div>
 
-        
-        <div class="config-card" style="margin-top:16px;margin-bottom:8px">
-          <div class="config-card-title" style="display:flex;justify-content:space-between;align-items:center">
-            <span>OAuth2 Permission Grants</span>
-            <div style="display:flex;gap:6px">
-              <button class="btn btn-sm" id="graphGrantsDlBtn" onclick="graphDumpDownload('grants')" style="display:none">↓ JSON</button>
+        <div id="graph-sub-files" class="graph-sub">
+          <div class="tab-target-bar">
+            <label>TARGET</label>
+            <select id="filesTargetSelect"><option value="">— select captured target —</option></select>
+            <button class="btn btn-sm btn-primary" onclick="filesOpen('root','OneDrive')">📁 Browse Drive</button>
+            <button class="btn btn-sm" onclick="filesLoadRecent()">⏱ Recent</button>
+            <input type="text" id="filesSearchQ" placeholder="Search files...">
+            <button class="btn btn-sm" onclick="filesSearch()">🔍</button>
+            <label class="btn btn-sm btn-success" style="cursor:pointer;margin-bottom:0">
+              ↑ Upload
+              <input type="file" id="filesUploadInput" style="display:none" onchange="filesUpload(this)">
+            </label>
+          </div>
+          <div id="filesOutput" style="background:var(--bg2);border:1px solid var(--border);border-radius:0;padding:16px;min-height:200px;overflow-x:auto">
+            <span style="color:var(--text-dim)">Select a target and browse or search files</span>
+          </div>
+        </div>
+
+        <div id="graph-sub-users" class="graph-sub">
+          <div class="tab-target-bar">
+            <label>TARGET</label>
+            <select id="usersTargetSelect"><option value="">— select captured target —</option></select>
+            <button class="btn btn-sm btn-primary" onclick="usersLoad()">Load Users &amp; Groups</button>
+          </div>
+          <div class="users-layout" id="usersLayout">
+            <div>
+              <div class="section-header">Users</div>
+              <div class="filter-bar">
+                <div class="filter-bar-row">
+                  <div class="search-wrap">
+                    <input type="text" id="usersFilter" placeholder="Search users..." oninput="usersApplyFilter()">
+                  </div>
+                  <span id="usersCount" style="font-size:10px;color:var(--text-dim);white-space:nowrap"></span>
+                </div>
+                <div class="filter-chips">
+                  <span class="filter-chip-label">Fields:</span>
+                  <button class="filter-chip active" data-field="displayName" onclick="toggleFilterChip(this,'users')">Name</button>
+                  <button class="filter-chip active" data-field="mail" onclick="toggleFilterChip(this,'users')">Email</button>
+                  <button class="filter-chip active" data-field="department" onclick="toggleFilterChip(this,'users')">Dept</button>
+                  <button class="filter-chip active" data-field="jobTitle" onclick="toggleFilterChip(this,'users')">Title</button>
+                  <button class="filter-chip" data-field="userPrincipalName" onclick="toggleFilterChip(this,'users')">UPN</button>
+                  <button class="filter-chip" data-field="officeLocation" onclick="toggleFilterChip(this,'users')">Office</button>
+                  <button class="filter-chip" data-field="accountEnabled" onclick="toggleFilterChip(this,'users')">Enabled</button>
+                </div>
+              </div>
+              <div class="table-wrap" id="usersTableWrap">
+                <div style="padding:20px;text-align:center;color:var(--text-dim);font-size:11px">No users loaded yet</div>
+              </div>
+              <div id="usersPager" class="pager"></div>
+            </div>
+            <div>
+              <div class="section-header">Groups</div>
+              <div class="filter-bar">
+                <div class="filter-bar-row">
+                  <div class="search-wrap">
+                    <input type="text" id="groupsFilter" placeholder="Search groups..." oninput="groupsApplyFilter()">
+                  </div>
+                  <span id="groupsCount" style="font-size:10px;color:var(--text-dim);white-space:nowrap"></span>
+                </div>
+                <div class="filter-chips">
+                  <span class="filter-chip-label">Fields:</span>
+                  <button class="filter-chip active" data-field="displayName" onclick="toggleFilterChip(this,'groups')">Name</button>
+                  <button class="filter-chip active" data-field="description" onclick="toggleFilterChip(this,'groups')">Description</button>
+                  <button class="filter-chip active" data-field="mail" onclick="toggleFilterChip(this,'groups')">Mail</button>
+                  <button class="filter-chip" data-field="groupType" onclick="toggleFilterChip(this,'groups')">Type</button>
+                  <button class="filter-chip" data-field="id" onclick="toggleFilterChip(this,'groups')">ID</button>
+                </div>
+              </div>
+              <div class="table-wrap" id="groupsTableWrap">
+                <div style="padding:20px;text-align:center;color:var(--text-dim);font-size:11px">No groups loaded yet</div>
+              </div>
+              <div id="groupsPager" class="pager"></div>
             </div>
           </div>
-          <div style="font-size:11px;color:var(--text-dim);margin-bottom:12px">List all delegated OAuth2 permission grants — shows which apps have been granted access on behalf of users.</div>
-          <button class="btn btn-sm btn-primary" onclick="graphDump('grants')" style="width:auto">▶ Dump OAuth2 Grants</button>
-          <div id="graphGrantsOutput" style="margin-top:12px;background:var(--bg);border:1px solid var(--border);padding:12px;font-size:11px;color:var(--text-dim);min-height:40px;max-height:320px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;border-radius:2px;display:none"></div>
+          <div id="userDetailPanel" class="detail-panel" style="display:none"></div>
+          <div id="groupDetailPanel" class="detail-panel" style="display:none"></div>
         </div>
-
       </div>
 
       
@@ -1164,44 +1545,6 @@
       </div>
 
       
-      <div id="tab-mail" class="tab-content">
-        <div class="tab-target-bar">
-          <label>TARGET</label>
-          <select id="mailTargetSelect"><option value="">— select captured target —</option></select>
-          <button class="btn btn-sm btn-primary" onclick="loadMailFolders()">Load Mail</button>
-          <button class="btn btn-sm btn-success" onclick="mailCompose()">✉ Compose</button>
-          <button class="btn btn-sm" onclick="discoverMailboxes()" title="Discover accessible shared mailboxes">📬 Mailboxes</button>
-        </div>
-        <div class="mail-layout">
-          
-          <div class="mail-folders" id="mailFolderPanel">
-            <div style="padding:8px 14px;font-size:9px;letter-spacing:0.2em;text-transform:uppercase;color:var(--text-dim)">Folders</div>
-            <div id="mailFolderList"><div style="padding:12px 14px;font-size:11px;color:var(--text-dim)">Load mail to see folders</div></div>
-          </div>
-          
-          <div class="mail-messages" id="mailMessagePanel">
-            <div style="padding:4px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
-              <span style="font-size:9px;letter-spacing:0.2em;text-transform:uppercase;color:var(--text-dim)">Messages</span>
-              <select id="mailOrderSelect" onchange="mailLoadMessages(0)" style="font-size:10px;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:3px;padding:2px 4px">
-                <option value="desc">Newest first</option>
-                <option value="asc">Oldest first</option>
-              </select>
-            </div>
-            <div style="flex:1;overflow-y:auto" id="mailMessageList"><div style="padding:20px;font-size:11px;color:var(--text-dim);text-align:center">Select a folder</div></div>
-            <div id="mailMessagePager" style="padding:4px 8px;border-top:1px solid var(--border);background:var(--bg2);flex-shrink:0"></div>
-          </div>
-          
-          <div class="mail-viewer" id="mailViewerPanel">
-            <div class="mail-viewer-header" id="mailViewerHeader">
-              <div style="font-size:11px;color:var(--text-dim)">Select a message to read</div>
-              <div class="mail-viewer-actions" id="mailViewerActions"></div>
-            </div>
-            <div class="mail-viewer-body">
-              <iframe id="mailBodyFrame" sandbox="allow-same-origin" srcdoc="<html><body style='background:#f5f5f5;color:#333;font-family:sans-serif;padding:20px'><p style='color:#888'>No message selected</p></body></html>"></iframe>
-            </div>
-          </div>
-        </div>
-      </div>
 
       
       <div id="tab-qrscans" class="tab-content">
@@ -1284,7 +1627,7 @@
             <span>qrlanding.html — Injected on scan</span>
             <button class="btn btn-sm" onclick="copyBrokerCode()">📋 Copy</button>
           </div>
-          <pre id="brokerCodePreview" style="background:var(--bg);border:1px solid var(--border);border-radius:2px;padding:14px;font-size:11px;color:var(--accent3);overflow-x:auto;max-height:400px;margin:0;white-space:pre-wrap;word-break:break-all">Loading...</pre>
+          <pre id="brokerCodePreview" style="background:var(--bg);border:1px solid var(--border);border-radius:0;padding:14px;font-size:11px;color:var(--accent3);overflow-x:auto;max-height:400px;margin:0;white-space:pre-wrap;word-break:break-all">Loading...</pre>
         </div>
         <div class="capture-log" style="margin-bottom:16px">
           <div class="capture-log-header">
@@ -1356,123 +1699,38 @@
       </div>
 
       
-      <div id="tab-teams" class="tab-content">
-        <div class="tab-target-bar">
-          <label>TARGET</label>
-          <select id="teamsTargetSelect"><option value="">— select captured target —</option></select>
-          <button class="btn btn-sm btn-primary" onclick="teamsLoad('teams')">Load Teams</button>
-          <button class="btn btn-sm" onclick="teamsLoad('chats')">Load Chats</button>
-          <button class="btn btn-sm btn-success" onclick="teamsNewChat()">+ New Chat</button>
-        </div>
-        <div class="teams-layout">
-          
-          <div class="teams-list-panel">
-            <div class="teams-list-tabs">
-              <button class="teams-list-tab active" id="teamsTabTeams" onclick="teamsLoad('teams')">Teams</button>
-              <button class="teams-list-tab" id="teamsTabChats" onclick="teamsLoad('chats')">Chats</button>
-            </div>
-            <div id="teamsListBody" style="overflow-y:auto;flex:1"><div style="padding:14px;font-size:11px;color:var(--text-dim)">Load teams or chats above</div></div>
-          </div>
-          
-          <div class="teams-messages-panel">
-            <div class="teams-msg-header">
-              <span id="teamsConvLabel">Select a team channel or chat</span>
-              <button class="btn btn-sm" id="teamsRefreshBtn" onclick="teamsRefreshMessages()" style="display:none">↻</button>
-            </div>
-            <div class="teams-msg-list" id="teamsMsgList"><div style="padding:20px;font-size:11px;color:var(--text-dim);text-align:center">No conversation selected</div></div>
-            <div class="teams-send-area" id="teamsSendArea" style="display:none">
-              <textarea id="teamsMsgInput" placeholder="Type a message..." rows="1" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();teamsSend();}"></textarea>
-              <button class="btn btn-sm btn-primary" style="margin-bottom:0;white-space:nowrap" onclick="teamsSend()">↑ Send</button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      
-      <div id="tab-files" class="tab-content">
-        <div class="tab-target-bar">
-          <label>TARGET</label>
-          <select id="filesTargetSelect"><option value="">— select captured target —</option></select>
-          <button class="btn btn-sm btn-primary" onclick="filesOpen('root','OneDrive')">📁 Browse Drive</button>
-          <button class="btn btn-sm" onclick="filesLoadRecent()">⏱ Recent</button>
-          <input type="text" id="filesSearchQ" placeholder="Search files...">
-          <button class="btn btn-sm" onclick="filesSearch()">🔍</button>
-          <label class="btn btn-sm btn-success" style="cursor:pointer;margin-bottom:0">
-            ↑ Upload
-            <input type="file" id="filesUploadInput" style="display:none" onchange="filesUpload(this)">
-          </label>
-        </div>
-        <div id="filesOutput" style="background:var(--bg2);border:1px solid var(--border);border-radius:2px;padding:16px;min-height:200px;overflow-x:auto">
-          <span style="color:var(--text-dim)">Select a target and browse or search files</span>
-        </div>
-      </div>
-
-      
-      <div id="tab-users" class="tab-content">
-        <div class="tab-target-bar">
-          <label>TARGET</label>
-          <select id="usersTargetSelect"><option value="">— select captured target —</option></select>
-          <button class="btn btn-sm btn-primary" onclick="usersLoad()">Load Users &amp; Groups</button>
-        </div>
-        <div class="users-layout" id="usersLayout">
-          
-          <div>
-            <div class="section-header">Users</div>
-            <div class="filter-bar">
-              <div class="filter-bar-row">
-                <div class="search-wrap">
-                  <input type="text" id="usersFilter" placeholder="Search users..." oninput="usersApplyFilter()">
-                </div>
-                <span id="usersCount" style="font-size:10px;color:var(--text-dim);white-space:nowrap"></span>
-              </div>
-              <div class="filter-chips">
-                <span class="filter-chip-label">Fields:</span>
-                <button class="filter-chip active" data-field="displayName" onclick="toggleFilterChip(this,'users')">Name</button>
-                <button class="filter-chip active" data-field="mail" onclick="toggleFilterChip(this,'users')">Email</button>
-                <button class="filter-chip active" data-field="department" onclick="toggleFilterChip(this,'users')">Dept</button>
-                <button class="filter-chip active" data-field="jobTitle" onclick="toggleFilterChip(this,'users')">Title</button>
-                <button class="filter-chip" data-field="userPrincipalName" onclick="toggleFilterChip(this,'users')">UPN</button>
-                <button class="filter-chip" data-field="officeLocation" onclick="toggleFilterChip(this,'users')">Office</button>
-                <button class="filter-chip" data-field="accountEnabled" onclick="toggleFilterChip(this,'users')">Enabled</button>
-              </div>
-            </div>
-            <div class="table-wrap" id="usersTableWrap">
-              <div style="padding:20px;text-align:center;color:var(--text-dim);font-size:11px">No users loaded yet</div>
-            </div>
-            <div id="usersPager" class="pager"></div>
-          </div>
-          
-          <div>
-            <div class="section-header">Groups</div>
-            <div class="filter-bar">
-              <div class="filter-bar-row">
-                <div class="search-wrap">
-                  <input type="text" id="groupsFilter" placeholder="Search groups..." oninput="groupsApplyFilter()">
-                </div>
-                <span id="groupsCount" style="font-size:10px;color:var(--text-dim);white-space:nowrap"></span>
-              </div>
-              <div class="filter-chips">
-                <span class="filter-chip-label">Fields:</span>
-                <button class="filter-chip active" data-field="displayName" onclick="toggleFilterChip(this,'groups')">Name</button>
-                <button class="filter-chip active" data-field="description" onclick="toggleFilterChip(this,'groups')">Description</button>
-                <button class="filter-chip active" data-field="mail" onclick="toggleFilterChip(this,'groups')">Mail</button>
-                <button class="filter-chip" data-field="groupType" onclick="toggleFilterChip(this,'groups')">Type</button>
-                <button class="filter-chip" data-field="id" onclick="toggleFilterChip(this,'groups')">ID</button>
-              </div>
-            </div>
-            <div class="table-wrap" id="groupsTableWrap">
-              <div style="padding:20px;text-align:center;color:var(--text-dim);font-size:11px">No groups loaded yet</div>
-            </div>
-            <div id="groupsPager" class="pager"></div>
-          </div>
-        </div>
-        
-        <div id="userDetailPanel" class="detail-panel" style="display:none"></div>
-        <div id="groupDetailPanel" class="detail-panel" style="display:none"></div>
-      </div>
 
     </div>
 
+  </div>
+</div>
+
+<div id="renameModal" class="modal-overlay" style="display:none">
+  <div class="modal-box" style="max-width:440px">
+    <div class="modal-header">
+      <span class="modal-header-title">Rename Campaign</span>
+      <button class="modal-close" onclick="document.getElementById('renameModal').style.display='none'">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="input-group"><label>Name</label><input type="text" id="renameNameInput"></div>
+      <div class="input-group"><label>Description</label><input type="text" id="renameDescInput"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-sm" onclick="document.getElementById('renameModal').style.display='none'">Cancel</button>
+      <button class="btn btn-sm btn-primary" onclick="submitRename()">Save</button>
+    </div>
+  </div>
+</div>
+
+<div id="statsModal" class="modal-overlay" style="display:none">
+  <div class="modal-box" style="max-width:500px">
+    <div class="modal-header">
+      <span class="modal-header-title">Campaign Summary</span>
+      <button class="modal-close" onclick="document.getElementById('statsModal').style.display='none'">✕</button>
+    </div>
+    <div class="modal-body" id="statsModalBody">
+      <div style="color:var(--text-dim);font-size:11px">Loading...</div>
+    </div>
   </div>
 </div>
 
@@ -1534,7 +1792,7 @@
 <div id="notification" style="display:none" class="notification"></div>
 
 <div id="previewModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:300;display:none;align-items:center;justify-content:center">
-  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:4px;width:700px;max-height:80vh;overflow:auto;padding:0">
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:0;width:700px;max-height:80vh;overflow:auto;padding:0">
     <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
       <span style="font-size:11px;letter-spacing:0.15em;text-transform:uppercase;color:var(--accent)">Template Preview</span>
       <button onclick="closePreview()" style="background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:16px">✕</button>
@@ -1625,7 +1883,7 @@ async function api(method, path, body) {
     if (r.status === 401) { showLoginOverlay(); return { error: 'Session expired — please log in again.' }; }
     if (r.status === 403) return { error: 'Access denied — insufficient permissions for this operation.' };
     if (r.status === 404) return { error: 'Resource not found.' };
-    if (!r.ok && r.status >= 500) return { error: 'Server error — check operator logs.' };
+    if (!r.ok && r.status >= 500) { try { const e = await r.json(); if (e && e.error) e.error = friendlyError(e.error); return e; } catch { return { error: 'Server error — check operator logs.' }; } }
     const data = await r.json();
     if (data && data.error) data.error = friendlyError(data.error);
     return data;
@@ -1692,6 +1950,7 @@ async function launchCampaign() {
     ? `Campaign launched — ${result.started || 'all'} targets started, ${result.skipped} already active`
     : 'Campaign launched — polling started for all targets';
   notify(msg);
+  updateLaunchStopBtn('running');
   startEventStream();
 }
 
@@ -1732,6 +1991,7 @@ async function stopCampaign() {
   if (!activeCampaignID) return;
   await api('POST', '/campaigns/' + activeCampaignID + '/stop');
   notify('Campaign stopped');
+  updateLaunchStopBtn('aborted');
   const s = openCampaigns.get(activeCampaignID);
   if (s && s.eventSource) { s.eventSource.close(); s.eventSource = null; }
 }
@@ -1771,6 +2031,10 @@ async function selectCampaign(id, name) {
   renderCampaignList(null); // refresh active highlight
   loadTargets();
   loadEmailResults();
+  // Reflect running state on the Launch/Stop toggle button
+  api('GET', '/campaigns/' + id).then(c => {
+    if (c && c.status) updateLaunchStopBtn(c.status);
+  }).catch(() => {});
   startEventStream();
 }
 
@@ -1803,7 +2067,7 @@ function renderCampaignTabs() {
   bar.style.display = 'flex';
   bar.innerHTML = [...openCampaigns.values()].map(s => {
     const active = s.id === activeCampaignID;
-    return `<div style="display:flex;align-items:center;gap:4px;padding:4px 10px;border:1px solid ${active?'var(--accent)':'var(--border)'};border-bottom:none;border-radius:2px 2px 0 0;background:${active?'var(--bg2)':'var(--bg1)'};cursor:pointer;font-size:11px">
+    return `<div style="display:flex;align-items:center;gap:4px;padding:4px 10px;border:1px solid ${active?'var(--accent)':'var(--border)'};border-bottom:none;border-radius:0 2px 0 0;background:${active?'var(--bg2)':'var(--bg1)'};cursor:pointer;font-size:11px">
       <span style="color:${active?'var(--accent)':'var(--text-dim)'}" onclick="selectCampaign('${escH(s.id)}','${escH(s.name)}')">${escH(s.name)}</span>
       <span onclick="closeCampaignTab('${escH(s.id)}')" style="color:var(--text-dim);cursor:pointer;margin-left:4px;line-height:1" title="Close tab">✕</span>
     </div>`;
@@ -1816,7 +2080,7 @@ function renderCampaignList(camps) {
   const data = camps || (el._lastCamps || []);
   if (camps) el._lastCamps = camps;
   el.innerHTML = data.map(c => `
-    <div data-camp-id="${escH(c.id)}" style="padding:8px;border:1px solid var(--border);border-radius:2px;margin-bottom:6px;cursor:pointer${activeCampaignID===c.id?';border-color:var(--accent)':''}" onclick="selectCampaign('${escH(c.id)}','${escH(c.name||c.id)}')">
+    <div data-camp-id="${escH(c.id)}" style="padding:8px;border:1px solid var(--border);border-radius:0;margin-bottom:6px;cursor:pointer${activeCampaignID===c.id?';border-color:var(--accent)':''}" onclick="selectCampaign('${escH(c.id)}','${escH(c.name||c.id)}')">
       <div style="color:var(--accent);font-size:11px">${escH(c.name || c.id)}</div>
       <div class="camp-status" style="color:var(--text-dim);font-size:10px">${c.status || 'draft'}</div>
     </div>
@@ -1833,7 +2097,11 @@ async function importCSV(input) {
   const r = await fetch('/api/campaigns/' + activeCampaignID + '/targets/import', { method: 'POST', body: form });
   const result = await r.json();
   if (result.error) { notify(result.error, true); return; }
-  notify('Imported ' + result.imported + ' targets, skipped ' + result.skipped);
+  if (result.imported === 0 && result.skipped > 0) {
+    notify(result.skipped + ' duplicate' + (result.skipped > 1 ? 's' : '') + ' — all targets already exist in this campaign', true);
+  } else {
+    notify('Imported ' + result.imported + ' targets' + (result.skipped ? ', skipped ' + result.skipped + ' duplicate' + (result.skipped > 1 ? 's' : '') : ''));
+  }
   loadTargets();
 }
 
@@ -1850,7 +2118,11 @@ async function importPasted() {
   });
   const result = await r.json();
   if (result.error) { notify(result.error, true); return; }
-  notify('Imported ' + result.imported + ' targets');
+  if (result.imported === 0 && result.skipped > 0) {
+    notify(result.skipped + ' duplicate' + (result.skipped > 1 ? 's' : '') + ' — all targets already exist in this campaign', true);
+  } else {
+    notify('Imported ' + result.imported + ' targets' + (result.skipped ? ', skipped ' + result.skipped + ' duplicate' + (result.skipped > 1 ? 's' : '') : ''));
+  }
   document.getElementById('emailPaste').value = '';
   loadTargets();
 }
@@ -1933,10 +2205,9 @@ async function sendEmailToSession(targetId, email, btn) {
 
 function updatePhishingMode() {
   const mode = document.getElementById('phishingMode').value;
-  const isQR = mode === 'qr';
-  document.getElementById('sectionNormalPhishing').style.display = isQR ? 'none' : '';
-  document.getElementById('sectionQRPhishing').style.display = isQR ? '' : 'none';
-  document.getElementById('actionLaunchRegen').style.display = isQR ? 'none' : '';
+  document.getElementById('sectionNormalPhishing').style.display = mode === 'normal' ? '' : 'none';
+  document.getElementById('sectionQRPhishing').style.display = mode === 'qr' ? '' : 'none';
+  document.getElementById('sectionIntunePhishing').style.display = mode === 'intune' ? '' : 'none';
 }
 
 async function sendQREmails(targetId, email, btn) {
@@ -2102,6 +2373,103 @@ async function confirmDeleteCampaign() {
   loadCampaigns();
 }
 
+// ─── Launch/Stop toggle ────────────────────────────────────────────────────────
+function updateLaunchStopBtn(status) {
+  const btn = document.getElementById('btnLaunchStop');
+  if (!btn) return;
+  const running = (status === 'running');
+  if (running) {
+    btn.textContent = '■ Stop Campaign';
+    btn.className = 'btn btn-danger';
+  } else {
+    btn.textContent = '▶ Launch Campaign';
+    btn.className = 'btn btn-success';
+  }
+  btn._running = running;
+}
+
+async function launchStopToggle() {
+  const btn = document.getElementById('btnLaunchStop');
+  if (btn && btn._running) {
+    await stopCampaign();
+  } else {
+    await launchCampaign();
+  }
+}
+
+// ─── Rename Campaign ──────────────────────────────────────────────────────────
+function showRenameModal() {
+  if (!activeCampaignID) { notify('Select a campaign first', true); return; }
+  const s = openCampaigns.get(activeCampaignID);
+  document.getElementById('renameNameInput').value = s ? (s.name || '') : '';
+  document.getElementById('renameDescInput').value = s ? (s.description || '') : '';
+  document.getElementById('renameModal').style.display = 'flex';
+}
+
+async function submitRename() {
+  if (!activeCampaignID) return;
+  const name = document.getElementById('renameNameInput').value.trim();
+  const description = document.getElementById('renameDescInput').value.trim();
+  if (!name) { notify('Name is required', true); return; }
+  const result = await api('PATCH', '/campaigns/' + activeCampaignID, { name, description });
+  if (result.error) { notify(result.error, true); return; }
+  document.getElementById('renameModal').style.display = 'none';
+  const s = openCampaigns.get(activeCampaignID);
+  if (s) s.name = name;
+  notify('Campaign renamed');
+  loadCampaigns();
+}
+
+// ─── Duplicate Campaign ────────────────────────────────────────────────────────
+async function duplicateCampaign() {
+  if (!activeCampaignID) { notify('Select a campaign first', true); return; }
+  const result = await api('POST', '/campaigns/' + activeCampaignID + '/duplicate');
+  if (result.error) { notify(result.error, true); return; }
+  notify('Campaign duplicated: ' + result.name);
+  loadCampaigns();
+}
+
+// ─── Campaign Stats ───────────────────────────────────────────────────────────
+async function showCampaignStats() {
+  if (!activeCampaignID) { notify('Select a campaign first', true); return; }
+  document.getElementById('statsModal').style.display = 'flex';
+  document.getElementById('statsModalBody').innerHTML = '<div style="color:var(--text-dim);font-size:11px">Loading...</div>';
+
+  const camp = await api('GET', '/campaigns/' + activeCampaignID).catch(() => null);
+  if (!camp || camp.error) {
+    document.getElementById('statsModalBody').innerHTML = '<div style="color:var(--accent2)">Failed to load</div>';
+    return;
+  }
+
+  const total = parseInt(document.getElementById('statTargets').textContent) || 0;
+  const captured = parseInt(document.getElementById('statCaptured').textContent) || 0;
+  const pending = parseInt(document.getElementById('statPending').textContent) || 0;
+  const expired = parseInt(document.getElementById('statExpired').textContent) || 0;
+  const rate = total > 0 ? ((captured / total) * 100).toFixed(1) : '0.0';
+  const started = camp.started_at ? new Date(camp.started_at).toLocaleString() : '—';
+  const created = camp.created_at ? new Date(camp.created_at).toLocaleString() : '—';
+
+  const rows = [
+    ['Campaign ID', camp.id],
+    ['Name', camp.name],
+    ['Description', camp.description || '—'],
+    ['Status', camp.status || '—'],
+    ['Created', created],
+    ['Launched', started],
+    ['Targets', total],
+    ['Tokens Captured', captured + (total > 0 ? '  (' + rate + '% capture rate)' : '')],
+    ['Pending Auth', pending],
+    ['Expired', expired],
+  ];
+
+  document.getElementById('statsModalBody').innerHTML = rows.map(([k, v]) =>
+    `<div style="display:flex;gap:16px;padding:6px 0;border-bottom:1px solid var(--border)">
+      <span style="font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-dim);min-width:130px;flex-shrink:0">${k}</span>
+      <span style="font-size:12px;color:var(--text-bright)">${v}</span>
+    </div>`
+  ).join('');
+}
+
 // ─── SSE ─────────────────────────────────────────────────────────────────────
 function startEventStream() {
   const id = activeCampaignID;
@@ -2109,6 +2477,8 @@ function startEventStream() {
   const s = openCampaigns.get(id);
   if (!s) return;
   if (s.eventSource) s.eventSource.close();
+  document.getElementById('connectionDot').style.background = 'var(--text-dim)';
+  document.getElementById('connectionStatus').textContent = 'CONNECTING';
   s.eventSource = new EventSource('/api/campaigns/' + id + '/events');
   s.eventSource.onmessage = (e) => {
     try {
@@ -2146,6 +2516,7 @@ function updateDashboard(data) {
   document.getElementById('statExpired').textContent = expired;
 
   if (data.status && activeCampaignID) {
+    updateLaunchStopBtn(data.status);
     const listEl = document.getElementById('campaignList');
     if (listEl) {
       const row = listEl.querySelector(`[data-camp-id="${CSS.escape(activeCampaignID)}"] .camp-status`);
@@ -2226,24 +2597,42 @@ function renderNewTokens(completed) {
 async function loadTokenLog() {
   if (!activeCampaignID) return;
   const tokens = await api('GET', '/campaigns/' + activeCampaignID + '/tokens');
-  if (!Array.isArray(tokens) || tokens.length === 0) return;
+  if (!Array.isArray(tokens)) return;
 
   tokensAll = tokens;
   tokensSetPage(tokensPage);
 
-  // Populate all target dropdowns
+  // Populate all target dropdowns with captured + exchanged tokens.
+  const capturedTokens = tokens.filter(t => t.source !== 'exchange');
+  const exchangedTokens = tokens.filter(t => t.source === 'exchange');
   const selectors = ['graphTargetSelect','mailTargetSelect','teamsTargetSelect','filesTargetSelect','usersTargetSelect'];
   selectors.forEach(selId => {
     const sel = document.getElementById(selId);
     if (!sel) return;
     const prev = sel.value;
-    while (sel.options.length > 1) sel.remove(1);
-    tokens.forEach(t => {
-      const opt = document.createElement('option');
-      opt.value = t.target_id;
-      opt.textContent = (t.upn || t.target_email);
-      sel.appendChild(opt);
-    });
+    sel.innerHTML = sel.options[0]?.value === '' ? sel.options[0].outerHTML : '<option value="">— select target —</option>';
+    if (capturedTokens.length) {
+      const grp = document.createElement('optgroup');
+      grp.label = 'Captured';
+      capturedTokens.forEach(t => {
+        const opt = document.createElement('option');
+        opt.value = t.target_id;
+        opt.textContent = t.upn || t.target_email;
+        grp.appendChild(opt);
+      });
+      sel.appendChild(grp);
+    }
+    if (exchangedTokens.length) {
+      const grp = document.createElement('optgroup');
+      grp.label = 'Exchanged';
+      exchangedTokens.forEach(t => {
+        const opt = document.createElement('option');
+        opt.value = t.target_id;
+        opt.textContent = (t.upn || t.target_email) + ' · ' + (t.label || '');
+        grp.appendChild(opt);
+      });
+      sel.appendChild(grp);
+    }
     if (prev) sel.value = prev;
   });
 
@@ -2251,8 +2640,10 @@ async function loadTokenLog() {
   const log = document.getElementById('tokenLog');
   if (log.querySelector('div[style*="Waiting"]')) log.innerHTML = '';
   tokens.forEach(t => {
-    if (tokensSeen.has(t.target_id)) return;
-    tokensSeen.add(t.target_id);
+    if (t.source === 'exchange') return; // exchange tokens don't go in the live capture log
+    const logKey = t.target_id + (t.label||'');
+    if (tokensSeen.has(logKey)) return;
+    tokensSeen.add(logKey);
     const identity = t.upn || t.target_email;
     const entry = document.createElement('div');
     entry.className = 'log-entry success';
@@ -2279,15 +2670,19 @@ function tokensSetPage(p) {
   tbody.innerHTML = items.map(t => {
     const identity = escH(t.upn || t.target_email);
     const tid = encodeURIComponent(t.target_id);
+    const isExchange = t.source === 'exchange';
+    const labelBadge = isExchange
+      ? `<span style="display:inline-block;background:var(--bg3);border:1px solid var(--accent);color:var(--accent);font-size:9px;padding:1px 5px;border-radius:3px;margin-left:5px;vertical-align:middle">${escH(t.label)}</span>`
+      : '';
     return `<tr>
-      <td style="color:var(--text-bright)">${escH(t.target_email)}</td>
-      <td style="color:var(--accent3)">${identity}</td>
+      <td style="color:var(--text-bright)">${escH(t.target_email)}${labelBadge}</td>
+      <td style="color:var(--accent3)">${isExchange ? '<span style="color:var(--text-dim)">—</span>' : identity}</td>
       <td style="color:var(--text-dim);font-size:11px">${formatTime(t.redeemed_at)}</td>
       <td style="color:var(--text-dim);font-size:10px;max-width:140px;overflow:hidden;text-overflow:ellipsis">${escH((t.scope||'').split(' ').slice(0,3).join(' '))}</td>
       <td><div style="display:flex;gap:4px;flex-wrap:wrap">
         <button class="btn btn-sm" onclick="dlToken('${cid}','${tid}','access-token','')">↓ AT</button>
-        <button class="btn btn-sm" onclick="dlToken('${cid}','${tid}','refresh-token','')">↓ RT</button>
-        <button class="btn btn-sm btn-primary" onclick="refreshUserToken('${cid}','${tid}','${escH(t.target_email)}',this)">↺ Refresh</button>
+        ${t.refresh_token ? `<button class="btn btn-sm" onclick="dlToken('${cid}','${tid}','refresh-token','')">↓ RT</button>` : ''}
+        ${!isExchange ? `<button class="btn btn-sm btn-primary" onclick="refreshUserToken('${cid}','${tid}','${escH(t.target_email)}',this)">↺ Refresh</button>` : `<button class="btn btn-sm btn-primary" onclick="refreshExchangedToken('${cid}','${tid}','${escH(t.label||'')}',this)">↺ Refresh</button>`}
       </div></td>
     </tr>`;
   }).join('');
@@ -2319,6 +2714,29 @@ async function refreshUserToken(campaignID, targetID, email, btn) {
   loadTokenLog();
 }
 
+async function refreshExchangedToken(campaignID, targetID, label, btn) {
+  btn.disabled = true;
+  btn.textContent = '…';
+  const result = await api('POST', '/campaigns/' + campaignID + '/tokens/' + targetID + '/exchange-refresh', { label });
+  btn.disabled = false;
+  btn.textContent = '↺ Refresh';
+  if (result.error) {
+    notify('Refresh failed for "' + label + '": ' + result.error, true);
+    return;
+  }
+  notify('"' + label + '" token refreshed');
+  loadTokenLog();
+}
+
+// ─── Sidebar accordion ────────────────────────────────────────────────────────
+function toggleCollapse(headerEl) {
+  headerEl.classList.toggle('collapsed');
+  const body = headerEl.nextElementSibling;
+  if (body && body.classList.contains('collapsible-body')) {
+    body.classList.toggle('hidden');
+  }
+}
+
 // ─── Tab switching ────────────────────────────────────────────────────────────
 function switchTab(name, btn) {
   document.querySelectorAll('#campaignView .tab').forEach(t => t.classList.remove('active'));
@@ -2327,14 +2745,18 @@ function switchTab(name, btn) {
   document.getElementById('tab-' + name).classList.add('active');
   if (name === 'tokens')  loadTokenLog();
   if (name === 'graph')   loadTokenLog();
-  if (name === 'mail')    { loadTokenLog(); }
-  if (name === 'teams')   { loadTokenLog(); }
-  if (name === 'files')   { loadTokenLog(); }
-  if (name === 'users')   { loadTokenLog(); }
   if (name === 'emails')   loadEmailResults();
   if (name === 'targets')  targetsSetPage(1);
   if (name === 'sessions') { sessionsPage = 1; sessionsRenderPage(1); }
   if (name === 'qrscans') loadQRScans();
+}
+
+function switchGraphSub(name, btn) {
+  document.querySelectorAll('.graph-subtab').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.graph-sub').forEach(s => s.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('graph-sub-' + name).classList.add('active');
+  loadTokenLog();
 }
 
 // ─── Graph Ops ────────────────────────────────────────────────────────────────
@@ -2455,7 +2877,7 @@ function renderKV(obj, op) {
       <div style="padding:7px 12px;background:${bg};color:var(--text-bright);font-size:12px;border-bottom:1px solid var(--border);word-break:break-all">${renderVal(v, k)}</div>`;
   }).join('');
 
-  return banner + `<div style="overflow-x:auto"><div style="display:grid;grid-template-columns:200px 1fr;border:1px solid var(--border);border-radius:2px;overflow:hidden;min-width:360px">${rows}</div></div>`;
+  return banner + `<div style="overflow-x:auto"><div style="display:grid;grid-template-columns:200px 1fr;border:1px solid var(--border);border-radius:0;overflow:hidden;min-width:360px">${rows}</div></div>`;
 }
 
 function renderApps(d) {
@@ -2527,7 +2949,9 @@ function flatKeys(obj) {
 
 function truncate(s, n) { return s.length > n ? s.substring(0, n) : s; }
 function escH(s) { return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-function badge(v,c) { return `<span style="background:${c}22;color:${c};border:1px solid ${c}44;border-radius:2px;padding:1px 5px;font-size:10px;white-space:nowrap">${escH(v)}</span>`; }
+// Exchange-token option values use "tid|label" composite — strip the label suffix.
+function parseTid(v) { const i = (v||'').indexOf('|'); return i >= 0 ? v.slice(0, i) : v; }
+function badge(v,c) { return `<span style="background:${c}22;color:${c};border:1px solid ${c}44;border-radius:0;padding:1px 5px;font-size:10px;white-space:nowrap">${escH(v)}</span>`; }
 function empty(msg) { return `<div style="padding:32px;text-align:center;color:var(--text-dim);font-size:11px">${escH(msg)}</div>`; }
 function section(title, n) { return `<div style="font-size:10px;letter-spacing:0.15em;text-transform:uppercase;color:var(--accent);margin:16px 0 8px">${escH(title)} (${n})</div>`; }
 
@@ -2536,7 +2960,7 @@ function section(title, n) { return `<div style="font-size:10px;letter-spacing:0
 let driveStack = []; // breadcrumb stack: [{id, name}]
 
 async function driveOpen(itemID, name) {
-  const targetID = document.getElementById('graphTargetSelect').value;
+  const targetID = parseTid(document.getElementById('graphTargetSelect').value);
   if (!targetID || !activeCampaignID) { notify('Select a captured target first', true); return; }
 
   if (itemID === 'root') {
@@ -2668,7 +3092,7 @@ function fileIcon(name) {
 // ── dispatchers ───────────────────────────────────────────────────────────────
 
 async function graphOp(op) {
-  const targetID = document.getElementById('graphTargetSelect').value;
+  const targetID = parseTid(document.getElementById('graphTargetSelect').value);
   if (!targetID || !activeCampaignID) { notify('Select a captured target first', true); return; }
   graphLoading(op);
   try {
@@ -2678,7 +3102,7 @@ async function graphOp(op) {
 }
 
 async function graphSearch(type) {
-  const targetID = document.getElementById('graphTargetSelect').value;
+  const targetID = parseTid(document.getElementById('graphTargetSelect').value);
   if (!targetID || !activeCampaignID) { notify('Select a captured target first', true); return; }
   const query = document.getElementById('graphSearchQuery').value.trim() || '*';
   graphLoading(type + ': ' + query);
@@ -2695,7 +3119,7 @@ async function graphSearch(type) {
 const graphDumpResults = {};
 
 async function graphDump(op) {
-  const targetID = document.getElementById('graphTargetSelect').value;
+  const targetID = parseTid(document.getElementById('graphTargetSelect').value);
   if (!targetID || !activeCampaignID) { notify('Select a captured target first', true); return; }
 
   const outputMap = { apps: 'graphAppsOutput', 'conditional-access': 'graphCaOutput', grants: 'graphGrantsOutput' };
@@ -2738,7 +3162,7 @@ function graphDumpDownload(op) {
 
 // discoverMailboxes — runs from the Mail tab
 async function discoverMailboxes() {
-  const targetID = document.getElementById('mailTargetSelect').value;
+  const targetID = parseTid(document.getElementById('mailTargetSelect').value);
   if (!targetID || !activeCampaignID) { notify('Select a captured target first', true); return; }
   notify('Discovering shared mailboxes...');
   try {
@@ -3025,7 +3449,10 @@ const mailState = { targetId: '', mailboxId: '', folderId: '', folderName: 'Inbo
 function getTarget(selectId) {
   const sel = document.getElementById(selectId);
   if (!sel || !sel.value) { notify('Select a captured target first', true); return null; }
-  return sel.value;
+  // Exchange-token options use "tid|label" composite values — strip the label.
+  const v = sel.value;
+  const i = v.indexOf('|');
+  return i >= 0 ? v.slice(0, i) : v;
 }
 function mailGetTarget()  { return getTarget('mailTargetSelect'); }
 
@@ -3444,27 +3871,44 @@ function toggleFilterChip(btn, type) {
 function usersGetTarget() { return getTarget('usersTargetSelect'); }
 
 async function usersLoad() {
+  if (!activeCampaignID) { notify('Select a campaign first', true); return; }
   const tid = usersGetTarget();
   if (!tid) return;
+  const errHtml = msg => `<div style="padding:16px;text-align:center;color:var(--accent2)">${msg}</div>`;
   document.getElementById('usersTableWrap').innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-dim)">⏳ Loading users...</div>';
   document.getElementById('groupsTableWrap').innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-dim)">⏳ Loading groups...</div>';
-  const [ur, gr] = await Promise.all([
-    apiFetch('/campaigns/' + activeCampaignID + '/graph/' + encodeURIComponent(tid) + '/mailboxes'),
-    apiFetch('/campaigns/' + activeCampaignID + '/graph/' + encodeURIComponent(tid) + '/groups')
-  ]);
-  if (ur) {
-    const ud = await ur.json();
-    usersState.all = ud.value || [];
-    usersState.filtered = usersState.all.slice();
-    usersState.page = 1;
-    usersRenderTable();
-  }
-  if (gr) {
-    const gd = await gr.json();
-    usersState.groupsAll = gd.value || [];
-    usersState.groupsFiltered = usersState.groupsAll.slice();
-    usersState.groupsPage = 1;
-    groupsRenderTable();
+  try {
+    const [ur, gr] = await Promise.all([
+      apiFetch('/campaigns/' + activeCampaignID + '/graph/' + encodeURIComponent(tid) + '/mailboxes'),
+      apiFetch('/campaigns/' + activeCampaignID + '/graph/' + encodeURIComponent(tid) + '/groups')
+    ]);
+    if (ur && ur.ok) {
+      const ud = await ur.json();
+      usersState.all = ud.value || [];
+      usersState.filtered = usersState.all.slice();
+      usersState.page = 1;
+      usersRenderTable();
+    } else if (ur) {
+      const e = await ur.json().catch(() => ({}));
+      document.getElementById('usersTableWrap').innerHTML = errHtml('Error: ' + (e.error || ur.status));
+    } else {
+      document.getElementById('usersTableWrap').innerHTML = errHtml('Request failed');
+    }
+    if (gr && gr.ok) {
+      const gd = await gr.json();
+      usersState.groupsAll = gd.value || [];
+      usersState.groupsFiltered = usersState.groupsAll.slice();
+      usersState.groupsPage = 1;
+      groupsRenderTable();
+    } else if (gr) {
+      const e = await gr.json().catch(() => ({}));
+      document.getElementById('groupsTableWrap').innerHTML = errHtml('Error: ' + (e.error || gr.status));
+    } else {
+      document.getElementById('groupsTableWrap').innerHTML = errHtml('Request failed');
+    }
+  } catch (err) {
+    document.getElementById('usersTableWrap').innerHTML = errHtml('Network error: ' + err.message);
+    document.getElementById('groupsTableWrap').innerHTML = errHtml('Network error: ' + err.message);
   }
 }
 
@@ -3489,19 +3933,30 @@ function usersApplyFilter() {
   usersRenderTable();
 }
 
+const userColDefs = [
+  { field: 'displayName',       header: 'Name',    cell: u => escH(u.displayName||'—'),                     style: 'color:var(--text-bright);cursor:pointer', click: true },
+  { field: 'mail',              header: 'Email',   cell: u => escH(u.mail||u.userPrincipalName||'—'),        style: 'color:var(--accent);font-size:11px' },
+  { field: 'jobTitle',          header: 'Title',   cell: u => escH(u.jobTitle||'—'),                         style: 'color:var(--text-dim);font-size:11px' },
+  { field: 'department',        header: 'Dept',    cell: u => escH(u.department||'—'),                       style: 'color:var(--text-dim);font-size:11px' },
+  { field: 'userPrincipalName', header: 'UPN',     cell: u => escH(u.userPrincipalName||'—'),                style: 'font-size:10px;color:var(--text-dim)' },
+  { field: 'officeLocation',    header: 'Office',  cell: u => escH(u.officeLocation||'—'),                   style: 'font-size:11px;color:var(--text-dim)' },
+  { field: 'accountEnabled',    header: 'Enabled', cell: u => u.accountEnabled == null ? '—' : (u.accountEnabled ? 'Yes' : 'No'), style: 'font-size:11px' },
+];
+
 function usersRenderTable() {
   const { items, page, totalPages, total } = paginate(usersState.filtered, usersState.page);
   document.getElementById('usersCount').textContent = total + ' users';
   const el = document.getElementById('usersTableWrap');
   if (!items.length) { el.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-dim)">No users</div>'; document.getElementById('usersPager').innerHTML=''; return; }
-  el.innerHTML = `<table class="data-table"><thead><tr><th>Display Name</th><th>Email</th><th>Title</th><th>Dept</th><th></th></tr></thead><tbody>` +
-    items.map(u => `<tr>
-      <td style="color:var(--text-bright);cursor:pointer" onclick="usersShowDetail('${escH(u.id||u.userPrincipalName)}')">${escH(u.displayName||'—')}</td>
-      <td style="color:var(--accent);font-size:11px">${escH(u.mail||u.userPrincipalName||'—')}</td>
-      <td style="color:var(--text-dim);font-size:11px">${escH(u.jobTitle||'—')}</td>
-      <td style="color:var(--text-dim);font-size:11px">${escH(u.department||'—')}</td>
-      <td><button class="btn btn-sm" onclick="usersShowDetail('${escH(u.id||u.userPrincipalName)}')">→</button></td>
-    </tr>`).join('') + '</tbody></table>';
+  const cols = userColDefs.filter(c => usersFilterFields.has(c.field));
+  const thead = '<tr>' + cols.map(c => `<th>${c.header}</th>`).join('') + '<th></th></tr>';
+  const tbody = items.map(u => {
+    const uid = escH(u.id||u.userPrincipalName);
+    const tds = cols.map(c => `<td style="${c.style||''}"${c.click ? ` onclick="usersShowDetail('${uid}')"` : ''}>${c.cell(u)}</td>`).join('');
+    return `<tr>${tds}<td><button class="btn btn-sm" onclick="usersShowDetail('${uid}')">→</button></td></tr>`;
+  }).join('');
+  el.innerHTML = `<table class="data-table"><thead>${thead}</thead><tbody>${tbody}</tbody></table>`;
+  el.scrollTop = 0;
   renderPager('usersPager', page, totalPages, total, 'usersPrevPage', 'usersNextPage');
 }
 function usersPrevPage() { usersState.page--; usersRenderTable(); }
@@ -3989,6 +4444,359 @@ switchTab = function(tab, btn) {
     initBrokerTab();
   }
 };
+
+// ─── Role & session user ──────────────────────────────────────────────────────
+let currentUserRole = 'operator';
+
+async function initSessionUser() {
+  try {
+    const data = await api('GET', '/auth/check').catch(() => null);
+    if (!data || data.error) return;
+    currentUserRole = data.role || 'operator';
+    document.getElementById('currentUserBadge').textContent = data.username + ' [' + data.role + ']';
+    if (data.role === 'admin') {
+      document.getElementById('btnUsersPanel').style.display = '';
+    }
+    if (data.must_change_password) {
+      document.getElementById('forcePasswordModal').style.display = 'flex';
+    }
+  } catch(_) {}
+}
+initSessionUser();
+
+// ─── Force password change modal ─────────────────────────────────────────────
+async function submitForcePasswordChange() {
+  const np = document.getElementById('forceNewPassword').value;
+  const cp = document.getElementById('forceConfirmPassword').value;
+  const errEl = document.getElementById('forcePasswordError');
+  errEl.style.display = 'none';
+  if (np.length < 8) { errEl.textContent = 'Minimum 8 characters'; errEl.style.display = ''; return; }
+  if (np !== cp)     { errEl.textContent = 'Passwords do not match'; errEl.style.display = ''; return; }
+  const res = await fetch('/api/auth/change-password', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    credentials: 'same-origin',
+    body: JSON.stringify({new_password: np})
+  });
+  const data = await res.json().catch(() => ({}));
+  if (data.error) { errEl.textContent = data.error; errEl.style.display = ''; return; }
+  document.getElementById('forcePasswordModal').style.display = 'none';
+  notify('Password updated successfully');
+}
+
+// ─── Users management ─────────────────────────────────────────────────────────
+function showUsersModal() {
+  document.getElementById('usersModal').style.display = 'flex';
+  loadUsers();
+}
+function hideUsersModal() {
+  document.getElementById('usersModal').style.display = 'none';
+}
+
+function generateUserPassword() {
+  const chars = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789!@#$%';
+  const arr = new Uint8Array(16);
+  crypto.getRandomValues(arr);
+  document.getElementById('newUserPassword').value = Array.from(arr).map(b => chars[b % chars.length]).join('');
+}
+
+async function loadUsers() {
+  const tbody = document.getElementById('usersTableBody');
+  tbody.innerHTML = '<tr><td colspan="5" style="padding:16px;color:var(--text-dim);text-align:center">Loading…</td></tr>';
+  const users = await api('GET', '/users');
+  if (!Array.isArray(users)) {
+    tbody.innerHTML = '<tr><td colspan="5" style="padding:16px;color:var(--accent2)">Error loading users</td></tr>';
+    return;
+  }
+  if (users.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" style="padding:16px;color:var(--text-dim);text-align:center">No users found</td></tr>';
+    return;
+  }
+  tbody.innerHTML = users.map(u => `
+    <tr style="border-bottom:1px solid var(--border)">
+      <td style="padding:8px 6px;color:var(--text-bright)">${escH(u.username)}</td>
+      <td style="padding:8px 6px"><span style="color:${u.role==='admin'?'var(--accent)':'var(--text-dim)'};font-size:10px;letter-spacing:0.1em;text-transform:uppercase">${u.role}</span></td>
+      <td style="padding:8px 6px;color:var(--text-dim);font-size:11px">${new Date(u.created_at).toLocaleDateString()}</td>
+      <td style="padding:8px 6px">${u.must_change_password
+        ? '<span style="color:var(--warn);font-size:10px;letter-spacing:0.05em">MUST CHANGE PW</span>'
+        : '<span style="color:var(--accent3);font-size:10px">ACTIVE</span>'}</td>
+      <td style="padding:8px 6px;text-align:right;white-space:nowrap">
+        <button class="btn btn-sm" style="width:auto;margin:0 2px;padding:4px 8px" onclick="resetUserPw('${escH(u.id)}','${escH(u.username)}')">Reset PW</button>
+        <button class="btn btn-sm btn-danger" style="width:auto;margin:0 2px;padding:4px 8px" onclick="deleteUserConfirm('${escH(u.id)}','${escH(u.username)}')">Delete</button>
+      </td>
+    </tr>`).join('');
+}
+
+async function createUser() {
+  const username = document.getElementById('newUserUsername').value.trim();
+  const password = document.getElementById('newUserPassword').value;
+  const role = document.getElementById('newUserRole').value;
+  if (!username || !password) { notify('Username and password required', true); return; }
+  const res = await api('POST', '/users', {username, password, role});
+  if (res.error) { notify(res.error, true); return; }
+  notify('User created: ' + username);
+  document.getElementById('newUserUsername').value = '';
+  document.getElementById('newUserPassword').value = '';
+  loadUsers();
+}
+
+async function resetUserPw(id, username) {
+  const pw = prompt('New password for "' + username + '":');
+  if (!pw) return;
+  const res = await api('POST', '/users/' + id + '/reset-password', {password: pw});
+  if (res.error) { notify(res.error, true); return; }
+  notify('Password reset for ' + username + ' — will be prompted to change on next login');
+  loadUsers();
+}
+
+async function deleteUserConfirm(id, username) {
+  if (!confirm('Delete user "' + username + '"?\nThis cannot be undone.')) return;
+  const res = await api('DELETE', '/users/' + id);
+  if (res.error) { notify(res.error, true); return; }
+  notify('User deleted: ' + username);
+  loadUsers();
+}
+
+// ─── Custom Select ────────────────────────────────────────────────────────────
+(function () {
+  const nativeHTML          = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML');
+  const nativeValue         = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value');
+  const nativeSelectedIndex = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'selectedIndex');
+
+  function initCustomSelect(select) {
+    if (select._csInit || select.dataset.noCs !== undefined || !select.parentNode) return;
+    select._csInit = true;
+
+    // Wrap
+    const wrap = document.createElement('div');
+    wrap.className = 'cs-wrap';
+    select.parentNode.insertBefore(wrap, select);
+    wrap.appendChild(select);
+
+    // Trigger
+    const trigger = document.createElement('div');
+    trigger.className = 'cs-trigger';
+    const valueEl = document.createElement('span');
+    valueEl.className = 'cs-value';
+    const arrow = document.createElement('span');
+    arrow.className = 'cs-arrow';
+    trigger.appendChild(valueEl);
+    trigger.appendChild(arrow);
+    wrap.appendChild(trigger);
+
+    // Dropdown panel
+    const dropdown = document.createElement('div');
+    dropdown.className = 'cs-dropdown';
+    wrap.appendChild(dropdown);
+
+    // Sync displayed value from the native select state
+    const syncValue = () => {
+      const opt = select.options[select.selectedIndex];
+      if (opt) {
+        valueEl.textContent = opt.text;
+        valueEl.classList.toggle('cs-placeholder', opt.value === '');
+      } else {
+        valueEl.textContent = '';
+        valueEl.classList.add('cs-placeholder');
+      }
+      dropdown.querySelectorAll('.cs-option').forEach(o =>
+        o.classList.toggle('cs-selected', o.dataset.value === nativeValue.get.call(select))
+      );
+    };
+
+    // Build clickable option list
+    const buildOptions = () => {
+      dropdown.innerHTML = '';
+      const cur = nativeValue.get.call(select);
+      Array.from(select.options).forEach(opt => {
+        const o = document.createElement('div');
+        o.className = 'cs-option' + (opt.value === cur ? ' cs-selected' : '');
+        o.dataset.value = opt.value;
+        o.textContent = opt.text;
+        o.addEventListener('mousedown', e => e.preventDefault()); // keep trigger focused
+        o.addEventListener('click', e => {
+          e.stopPropagation();
+          nativeValue.set.call(select, opt.value);
+          select.dispatchEvent(new Event('change', { bubbles: true }));
+          syncValue();
+          closeDropdown();
+        });
+        dropdown.appendChild(o);
+      });
+    };
+
+    const positionDropdown = () => {
+      const rect = trigger.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom - 6;
+      const spaceAbove = rect.top - 6;
+      // Prefer below; flip above if more room there
+      if (spaceBelow >= 60 || spaceBelow >= spaceAbove) {
+        dropdown.style.top    = (rect.bottom) + 'px';
+        dropdown.style.bottom = 'auto';
+        dropdown.style.maxHeight = Math.max(60, spaceBelow) + 'px';
+      } else {
+        dropdown.style.bottom = (window.innerHeight - rect.top) + 'px';
+        dropdown.style.top    = 'auto';
+        dropdown.style.maxHeight = Math.max(60, spaceAbove) + 'px';
+      }
+      dropdown.style.left  = rect.left + 'px';
+      dropdown.style.width = rect.width + 'px';
+    };
+
+    const openDropdown = () => {
+      document.querySelectorAll('.cs-wrap.cs-open').forEach(w => { if (w !== wrap) w.classList.remove('cs-open'); });
+      buildOptions();
+      positionDropdown();
+      wrap.classList.add('cs-open');
+    };
+    const closeDropdown = () => wrap.classList.remove('cs-open');
+
+    trigger.setAttribute('tabindex', '0');
+
+    trigger.addEventListener('click', e => {
+      e.stopPropagation();
+      wrap.classList.contains('cs-open') ? closeDropdown() : openDropdown();
+    });
+    document.addEventListener('click', closeDropdown);
+
+    // Keyboard navigation
+    trigger.addEventListener('keydown', e => {
+      const opts = Array.from(dropdown.querySelectorAll('.cs-option'));
+      const isOpen = wrap.classList.contains('cs-open');
+
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        if (!isOpen) { openDropdown(); return; }
+        const focused = dropdown.querySelector('.cs-focused');
+        if (focused) focused.click();
+        return;
+      }
+      if (e.key === 'Escape' || e.key === 'Tab') {
+        closeDropdown();
+        return;
+      }
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (!isOpen) { openDropdown(); return; }
+        const cur = dropdown.querySelector('.cs-focused');
+        let idx = cur ? opts.indexOf(cur) : -1;
+        opts.forEach(o => o.classList.remove('cs-focused'));
+        if (e.key === 'ArrowDown') idx = Math.min(idx + 1, opts.length - 1);
+        else idx = Math.max(idx - 1, 0);
+        if (opts[idx]) {
+          opts[idx].classList.add('cs-focused');
+          opts[idx].scrollIntoView({ block: 'nearest' });
+        }
+      }
+    });
+
+    // Intercept innerHTML writes (option population from existing JS)
+    Object.defineProperty(select, 'innerHTML', {
+      configurable: true,
+      get() { return nativeHTML.get.call(this); },
+      set(v) {
+        nativeHTML.set.call(this, v);
+        syncValue();
+        if (wrap.classList.contains('cs-open')) buildOptions();
+      }
+    });
+
+    // Intercept value writes (select.value = '...' from existing JS)
+    Object.defineProperty(select, 'value', {
+      configurable: true,
+      get() { return nativeValue.get.call(this); },
+      set(v) {
+        nativeValue.set.call(this, v);
+        syncValue();
+      }
+    });
+
+    // Intercept selectedIndex writes (select.selectedIndex = N from existing JS)
+    Object.defineProperty(select, 'selectedIndex', {
+      configurable: true,
+      get() { return nativeSelectedIndex.get.call(this); },
+      set(v) {
+        nativeSelectedIndex.set.call(this, v);
+        syncValue();
+      }
+    });
+
+    syncValue();
+  }
+
+  window.initAllCustomSelects = function () {
+    document.querySelectorAll('select:not([data-no-cs])').forEach(initCustomSelect);
+  };
+})();
+
+initAllCustomSelects();
 </script>
+
+<!-- Force password change modal -->
+<div id="forcePasswordModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(18,16,14,0.97);z-index:9999;align-items:center;justify-content:center">
+  <div style="background:var(--bg2);border:1px solid var(--border);padding:36px;width:420px;max-width:90vw;border-radius:0">
+    <div style="font-size:9px;letter-spacing:0.3em;text-transform:uppercase;color:var(--accent);margin-bottom:6px">Security Notice</div>
+    <div style="font-size:15px;color:var(--text-bright);font-weight:600;margin-bottom:4px">Password Change Required</div>
+    <div style="font-size:11px;color:var(--text-dim);margin-bottom:24px;line-height:1.6">Your account requires a password change before you can continue. Set a strong password of at least 8 characters.</div>
+    <div class="input-group">
+      <label>New Password</label>
+      <input type="password" id="forceNewPassword" placeholder="Minimum 8 characters" autocomplete="new-password">
+    </div>
+    <div class="input-group">
+      <label>Confirm Password</label>
+      <input type="password" id="forceConfirmPassword" placeholder="Repeat password" autocomplete="new-password">
+    </div>
+    <div id="forcePasswordError" style="color:var(--accent2);font-size:11px;margin-bottom:10px;display:none"></div>
+    <button class="btn btn-primary" onclick="submitForcePasswordChange()">Set Password & Continue</button>
+  </div>
+</div>
+
+<!-- Users management modal (admin only) -->
+<div id="usersModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(18,16,14,0.92);z-index:1000;align-items:flex-start;justify-content:center;overflow-y:auto;padding:40px 16px">
+  <div style="background:var(--bg2);border:1px solid var(--border);padding:28px;width:100%;max-width:720px;border-radius:0">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px">
+      <div>
+        <div style="font-size:9px;letter-spacing:0.3em;text-transform:uppercase;color:var(--accent);margin-bottom:2px">Admin</div>
+        <div style="font-size:14px;color:var(--text-bright);font-weight:600">User Management</div>
+      </div>
+      <button class="btn btn-sm" onclick="hideUsersModal()" style="width:auto;margin:0">✕ Close</button>
+    </div>
+
+    <div style="background:var(--bg3);border:1px solid var(--border);padding:18px;margin-bottom:20px;border-radius:0">
+      <div style="font-size:9px;letter-spacing:0.2em;text-transform:uppercase;color:var(--text-dim);margin-bottom:14px">Create User</div>
+      <div class="input-row">
+        <div class="input-group"><label>Username</label><input type="text" id="newUserUsername" placeholder="operator1" autocomplete="off"></div>
+        <div class="input-group" style="max-width:140px"><label>Role</label>
+          <select id="newUserRole">
+            <option value="operator">Operator</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:flex-end">
+        <div class="input-group" style="flex:1;margin-bottom:0"><label>Password</label><input type="text" id="newUserPassword" placeholder="Auto-generate or type…" autocomplete="off"></div>
+        <button class="btn btn-sm" onclick="generateUserPassword()" style="width:auto;margin-bottom:0;white-space:nowrap;height:36px">⟳ Generate</button>
+      </div>
+      <div style="font-size:10px;color:var(--text-dim);margin:8px 0 12px">New users will be required to change their password on first login.</div>
+      <button class="btn btn-primary" onclick="createUser()" style="width:auto">+ Create User</button>
+    </div>
+
+    <table style="width:100%;border-collapse:collapse">
+      <thead>
+        <tr style="border-bottom:1px solid var(--border)">
+          <th style="text-align:left;padding:8px 6px;font-size:10px;color:var(--text-dim);letter-spacing:0.1em;font-weight:500">USERNAME</th>
+          <th style="text-align:left;padding:8px 6px;font-size:10px;color:var(--text-dim);letter-spacing:0.1em;font-weight:500">ROLE</th>
+          <th style="text-align:left;padding:8px 6px;font-size:10px;color:var(--text-dim);letter-spacing:0.1em;font-weight:500">CREATED</th>
+          <th style="text-align:left;padding:8px 6px;font-size:10px;color:var(--text-dim);letter-spacing:0.1em;font-weight:500">STATUS</th>
+          <th style="padding:8px 6px"></th>
+        </tr>
+      </thead>
+      <tbody id="usersTableBody">
+        <tr><td colspan="5" style="padding:16px;color:var(--text-dim);text-align:center">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
 </body>
 </html>

@@ -229,6 +229,27 @@ func (s *Store) migrate() error {
 		return err
 	}
 
+	// Exchanged token cache — tokens obtained via manual Token Exchange.
+	if _, err := s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS exchanged_tokens (
+			id           TEXT PRIMARY KEY,
+			campaign_id  TEXT NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+			target_id    TEXT NOT NULL,
+			target_email TEXT NOT NULL,
+			label        TEXT NOT NULL DEFAULT '',
+			access_token TEXT NOT NULL DEFAULT '',
+			refresh_token TEXT NOT NULL DEFAULT '',
+			scope        TEXT NOT NULL DEFAULT '',
+			expires_in   INTEGER NOT NULL DEFAULT 0,
+			obtained_at  DATETIME NOT NULL,
+			tenant_id    TEXT NOT NULL DEFAULT ''
+		);
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_exchanged_campaign_target_label
+			ON exchanged_tokens(campaign_id, target_id, label)
+	`); err != nil {
+		return err
+	}
+
 	// Additive column migrations — ignore "duplicate column name" errors so
 	// existing databases are upgraded transparently on first run.
 	for _, alter := range []string{
@@ -238,10 +259,21 @@ func (s *Store) migrate() error {
 		`ALTER TABLE campaigns ADD COLUMN qr_dc_template_id TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE campaigns ADD COLUMN qr_dc_profile_id TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE qr_scans ADD COLUMN scan_count INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'operator'`,
+		`ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE campaigns ADD COLUMN owner_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE sender_profiles ADD COLUMN owner_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE sender_profiles ADD COLUMN auth_method TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE exchanged_tokens ADD COLUMN req_scope TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE exchanged_tokens ADD COLUMN req_resource TEXT NOT NULL DEFAULT ''`,
 	} {
 		if _, aerr := s.db.Exec(alter); aerr != nil && !isDuplicateColumnErr(aerr) {
 			return aerr
 		}
+	}
+	// Ensure the bootstrap admin account has the admin role after upgrading existing databases.
+	if _, err := s.db.Exec(`UPDATE users SET role='admin' WHERE username='admin'`); err != nil {
+		return err
 	}
 	return nil
 }
@@ -267,26 +299,27 @@ type CampaignRow struct {
 	QRBaseURL      string
 	QRDCTemplateID string
 	QRDCProfileID  string
+	OwnerID        string
 }
 
 func (s *Store) UpsertCampaign(c CampaignRow) error {
 	_, err := s.db.Exec(`
-		INSERT INTO campaigns (id, name, description, status, created_at, started_at, completed_at, artifacts_path, exports_path, qr_base_url, qr_dc_template_id, qr_dc_profile_id)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO campaigns (id, name, description, status, created_at, started_at, completed_at, artifacts_path, exports_path, qr_base_url, qr_dc_template_id, qr_dc_profile_id, owner_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			name=excluded.name, description=excluded.description, status=excluded.status,
 			started_at=excluded.started_at, completed_at=excluded.completed_at,
 			artifacts_path=excluded.artifacts_path, exports_path=excluded.exports_path,
 			qr_base_url=excluded.qr_base_url, qr_dc_template_id=excluded.qr_dc_template_id,
-			qr_dc_profile_id=excluded.qr_dc_profile_id`,
+			qr_dc_profile_id=excluded.qr_dc_profile_id, owner_id=excluded.owner_id`,
 		c.ID, c.Name, c.Description, c.Status, c.CreatedAt, c.StartedAt, c.CompletedAt,
-		c.ArtifactsPath, c.ExportsPath, c.QRBaseURL, c.QRDCTemplateID, c.QRDCProfileID,
+		c.ArtifactsPath, c.ExportsPath, c.QRBaseURL, c.QRDCTemplateID, c.QRDCProfileID, c.OwnerID,
 	)
 	return err
 }
 
 func (s *Store) LoadCampaigns() ([]CampaignRow, error) {
-	rows, err := s.db.Query(`SELECT id, name, description, status, created_at, started_at, completed_at, artifacts_path, exports_path, qr_base_url, qr_dc_template_id, qr_dc_profile_id FROM campaigns`)
+	rows, err := s.db.Query(`SELECT id, name, description, status, created_at, started_at, completed_at, artifacts_path, exports_path, qr_base_url, qr_dc_template_id, qr_dc_profile_id, owner_id FROM campaigns`)
 	if err != nil {
 		return nil, err
 	}
@@ -296,7 +329,7 @@ func (s *Store) LoadCampaigns() ([]CampaignRow, error) {
 		var c CampaignRow
 		if err := rows.Scan(&c.ID, &c.Name, &c.Description, &c.Status,
 			&c.CreatedAt, &c.StartedAt, &c.CompletedAt, &c.ArtifactsPath, &c.ExportsPath,
-			&c.QRBaseURL, &c.QRDCTemplateID, &c.QRDCProfileID); err != nil {
+			&c.QRBaseURL, &c.QRDCTemplateID, &c.QRDCProfileID, &c.OwnerID); err != nil {
 			return nil, err
 		}
 		out = append(out, c)
@@ -516,6 +549,84 @@ func (s *Store) LoadTokens(campaignID string) ([]TokenRow, error) {
 }
 
 // ─────────────────────────────────────────────
+// Exchanged Tokens
+// ─────────────────────────────────────────────
+
+type ExchangedTokenRow struct {
+	ID           string
+	CampaignID   string
+	TargetID     string
+	TargetEmail  string
+	Label        string
+	AccessToken  string
+	RefreshToken string
+	Scope        string
+	ExpiresIn    int
+	ObtainedAt   time.Time
+	TenantID     string
+	ReqScope     string // original requested scope (v2)
+	ReqResource  string // original requested resource (v1)
+}
+
+func (s *Store) InsertExchangedToken(t ExchangedTokenRow) error {
+	_, err := s.db.Exec(`
+		INSERT INTO exchanged_tokens (id, campaign_id, target_id, target_email, label, access_token, refresh_token, scope, expires_in, obtained_at, tenant_id, req_scope, req_resource)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(campaign_id, target_id, label) DO UPDATE SET
+			access_token=excluded.access_token,
+			refresh_token=excluded.refresh_token,
+			scope=excluded.scope,
+			expires_in=excluded.expires_in,
+			obtained_at=excluded.obtained_at,
+			tenant_id=excluded.tenant_id,
+			req_scope=excluded.req_scope,
+			req_resource=excluded.req_resource`,
+		t.ID, t.CampaignID, t.TargetID, t.TargetEmail, t.Label,
+		t.AccessToken, t.RefreshToken, t.Scope, t.ExpiresIn, t.ObtainedAt, t.TenantID,
+		t.ReqScope, t.ReqResource,
+	)
+	return err
+}
+
+func (s *Store) LoadExchangedTokens(campaignID string) ([]ExchangedTokenRow, error) {
+	rows, err := s.db.Query(`
+		SELECT id, campaign_id, target_id, target_email, label, access_token, refresh_token, scope, expires_in, obtained_at, tenant_id, req_scope, req_resource
+		FROM exchanged_tokens WHERE campaign_id=? ORDER BY obtained_at DESC`, campaignID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ExchangedTokenRow
+	for rows.Next() {
+		var t ExchangedTokenRow
+		if err := rows.Scan(&t.ID, &t.CampaignID, &t.TargetID, &t.TargetEmail, &t.Label,
+			&t.AccessToken, &t.RefreshToken, &t.Scope, &t.ExpiresIn, &t.ObtainedAt, &t.TenantID,
+			&t.ReqScope, &t.ReqResource); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) LoadExchangedToken(campaignID, targetID, label string) (*ExchangedTokenRow, error) {
+	row := s.db.QueryRow(`
+		SELECT id, campaign_id, target_id, target_email, label, access_token, refresh_token, scope, expires_in, obtained_at, tenant_id, req_scope, req_resource
+		FROM exchanged_tokens WHERE campaign_id=? AND target_id=? AND label=?`,
+		campaignID, targetID, label)
+	var t ExchangedTokenRow
+	if err := row.Scan(&t.ID, &t.CampaignID, &t.TargetID, &t.TargetEmail, &t.Label,
+		&t.AccessToken, &t.RefreshToken, &t.Scope, &t.ExpiresIn, &t.ObtainedAt, &t.TenantID,
+		&t.ReqScope, &t.ReqResource); err != nil {
+		if err.Error() == "sql: no rows in result set" {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &t, nil
+}
+
+// ─────────────────────────────────────────────
 // Email Results
 // ─────────────────────────────────────────────
 
@@ -572,7 +683,9 @@ type SenderProfileRow struct {
 	FromAddress string
 	FromName    string
 	ImplicitTLS bool
+	AuthMethod  string
 	CreatedAt   time.Time
+	OwnerID     string
 }
 
 func (s *Store) UpsertSenderProfile(p SenderProfileRow) error {
@@ -581,20 +694,21 @@ func (s *Store) UpsertSenderProfile(p SenderProfileRow) error {
 		tls = 1
 	}
 	_, err := s.db.Exec(`
-		INSERT INTO sender_profiles (id, name, host, port, username, password, from_address, from_name, implicit_tls, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO sender_profiles (id, name, host, port, username, password, from_address, from_name, implicit_tls, auth_method, created_at, owner_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			name=excluded.name, host=excluded.host, port=excluded.port,
 			username=excluded.username, password=excluded.password,
 			from_address=excluded.from_address, from_name=excluded.from_name,
-			implicit_tls=excluded.implicit_tls`,
-		p.ID, p.Name, p.Host, p.Port, p.Username, p.Password, p.FromAddress, p.FromName, tls, p.CreatedAt,
+			implicit_tls=excluded.implicit_tls, auth_method=excluded.auth_method,
+			owner_id=excluded.owner_id`,
+		p.ID, p.Name, p.Host, p.Port, p.Username, p.Password, p.FromAddress, p.FromName, tls, p.AuthMethod, p.CreatedAt, p.OwnerID,
 	)
 	return err
 }
 
 func (s *Store) LoadSenderProfiles() ([]SenderProfileRow, error) {
-	rows, err := s.db.Query(`SELECT id, name, host, port, username, password, from_address, from_name, implicit_tls, created_at FROM sender_profiles`)
+	rows, err := s.db.Query(`SELECT id, name, host, port, username, password, from_address, from_name, implicit_tls, COALESCE(auth_method,''), created_at, COALESCE(owner_id,'') FROM sender_profiles`)
 	if err != nil {
 		return nil, err
 	}
@@ -604,7 +718,27 @@ func (s *Store) LoadSenderProfiles() ([]SenderProfileRow, error) {
 		var p SenderProfileRow
 		var tls int
 		if err := rows.Scan(&p.ID, &p.Name, &p.Host, &p.Port, &p.Username, &p.Password,
-			&p.FromAddress, &p.FromName, &tls, &p.CreatedAt); err != nil {
+			&p.FromAddress, &p.FromName, &tls, &p.AuthMethod, &p.CreatedAt, &p.OwnerID); err != nil {
+			return nil, err
+		}
+		p.ImplicitTLS = tls == 1
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) LoadSenderProfilesByOwner(ownerID string) ([]SenderProfileRow, error) {
+	rows, err := s.db.Query(`SELECT id, name, host, port, username, password, from_address, from_name, implicit_tls, COALESCE(auth_method,''), created_at, COALESCE(owner_id,'') FROM sender_profiles WHERE owner_id=? OR owner_id=''`, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []SenderProfileRow
+	for rows.Next() {
+		var p SenderProfileRow
+		var tls int
+		if err := rows.Scan(&p.ID, &p.Name, &p.Host, &p.Port, &p.Username, &p.Password,
+			&p.FromAddress, &p.FromName, &tls, &p.AuthMethod, &p.CreatedAt, &p.OwnerID); err != nil {
 			return nil, err
 		}
 		p.ImplicitTLS = tls == 1
@@ -742,32 +876,101 @@ func orEmptyER(s []EmailResultRow) []EmailResultRow { return orEmpty(s) }
 // ─────────────────────────────────────────────
 
 type UserRow struct {
-	ID           string
-	Username     string
-	PasswordHash string
-	Salt         string
-	CreatedAt    time.Time
+	ID                 string
+	Username           string
+	PasswordHash       string
+	Salt               string
+	CreatedAt          time.Time
+	Role               string
+	MustChangePassword bool
 }
 
 func (s *Store) CreateUser(id, username, passwordHash, salt string) error {
+	return s.CreateUserFull(id, username, passwordHash, salt, "admin", false)
+}
+
+func (s *Store) CreateUserFull(id, username, passwordHash, salt, role string, mustChangePassword bool) error {
+	mcp := 0
+	if mustChangePassword {
+		mcp = 1
+	}
 	_, err := s.db.Exec(
-		`INSERT INTO users (id, username, password_hash, salt, created_at) VALUES (?, ?, ?, ?, ?)`,
-		id, username, passwordHash, salt, time.Now().UTC(),
+		`INSERT INTO users (id, username, password_hash, salt, created_at, role, must_change_password) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		id, username, passwordHash, salt, time.Now().UTC(), role, mcp,
 	)
 	return err
 }
 
 func (s *Store) GetUserByUsername(username string) (*UserRow, error) {
 	row := s.db.QueryRow(
-		`SELECT id, username, password_hash, salt, created_at FROM users WHERE username=?`, username)
+		`SELECT id, username, password_hash, salt, created_at, COALESCE(role,'operator'), COALESCE(must_change_password,0) FROM users WHERE username=?`, username)
 	var u UserRow
-	if err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Salt, &u.CreatedAt); err != nil {
+	var mcp int
+	if err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Salt, &u.CreatedAt, &u.Role, &mcp); err != nil {
 		if err.Error() == "sql: no rows in result set" {
 			return nil, nil
 		}
 		return nil, err
 	}
+	u.MustChangePassword = mcp == 1
 	return &u, nil
+}
+
+func (s *Store) GetUserByID(id string) (*UserRow, error) {
+	row := s.db.QueryRow(
+		`SELECT id, username, password_hash, salt, created_at, COALESCE(role,'operator'), COALESCE(must_change_password,0) FROM users WHERE id=?`, id)
+	var u UserRow
+	var mcp int
+	if err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Salt, &u.CreatedAt, &u.Role, &mcp); err != nil {
+		if strings.Contains(err.Error(), "no rows") {
+			return nil, nil
+		}
+		return nil, err
+	}
+	u.MustChangePassword = mcp == 1
+	return &u, nil
+}
+
+func (s *Store) ListUsers() ([]UserRow, error) {
+	rows, err := s.db.Query(`SELECT id, username, password_hash, salt, created_at, COALESCE(role,'operator'), COALESCE(must_change_password,0) FROM users ORDER BY created_at`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []UserRow
+	for rows.Next() {
+		var u UserRow
+		var mcp int
+		if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Salt, &u.CreatedAt, &u.Role, &mcp); err != nil {
+			return nil, err
+		}
+		u.MustChangePassword = mcp == 1
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) UpdateUserByID(id, username, role string, mustChangePassword bool) error {
+	mcp := 0
+	if mustChangePassword {
+		mcp = 1
+	}
+	_, err := s.db.Exec(`UPDATE users SET username=?, role=?, must_change_password=? WHERE id=?`, username, role, mcp, id)
+	return err
+}
+
+func (s *Store) UpdateUserPasswordByID(id, passwordHash, salt string, mustChangePassword bool) error {
+	mcp := 0
+	if mustChangePassword {
+		mcp = 1
+	}
+	_, err := s.db.Exec(`UPDATE users SET password_hash=?, salt=?, must_change_password=? WHERE id=?`, passwordHash, salt, mcp, id)
+	return err
+}
+
+func (s *Store) DeleteUser(id string) error {
+	_, err := s.db.Exec(`DELETE FROM users WHERE id=?`, id)
+	return err
 }
 
 func (s *Store) CountUsers() (int, error) {
@@ -782,6 +985,24 @@ func (s *Store) UpdateUserPassword(username, passwordHash, salt string) error {
 		passwordHash, salt, username,
 	)
 	return err
+}
+
+// ListAdminUserIDs returns the IDs of all users with role='admin'.
+func (s *Store) ListAdminUserIDs() ([]string, error) {
+	rows, err := s.db.Query(`SELECT id FROM users WHERE role='admin'`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 // ─────────────────────────────────────────────

