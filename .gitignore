@@ -33,4 +33,6 @@ go.work.sum
 .vscode/
 # Notes
 add.txt
+fix.md
+fix.txt
 .claude/
