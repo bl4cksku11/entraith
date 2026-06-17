@@ -199,6 +199,7 @@ func (h *Handler) Routes() http.Handler {
 	// Persistence modules (mutating) — all recorded in the deployment ledger
 	mux.HandleFunc("POST /api/campaigns/{id}/graph/{targetId}/ca-exclusion", h.graphCreateCAExclusion)
 	mux.HandleFunc("POST /api/campaigns/{id}/graph/{targetId}/add-app-password", h.graphAddAppPassword)
+	mux.HandleFunc("POST /api/campaigns/{id}/graph/{targetId}/add-app-key", h.graphAddAppKey)
 	mux.HandleFunc("POST /api/campaigns/{id}/graph/{targetId}/assign-app-role", h.graphAssignAppRole)
 	mux.HandleFunc("POST /api/campaigns/{id}/graph/{targetId}/assign-directory-role", h.graphAssignDirectoryRole)
 	mux.HandleFunc("GET /api/campaigns/{id}/graph/{targetId}/find-sp", h.graphFindServicePrincipal)
@@ -1701,6 +1702,46 @@ func (h *Handler) graphAddAppPassword(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(result)
+}
+
+func (h *Handler) graphAddAppKey(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	targetID := r.PathValue("targetId")
+	if _, ok := h.campaignAccess(w, r, id); !ok {
+		return
+	}
+	var body struct {
+		AppObjectID string `json:"app_object_id"`
+		DisplayName string `json:"display_name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.AppObjectID == "" {
+		writeError(w, 400, "app_object_id required")
+		return
+	}
+	gc, err := h.graphClient(id, targetID)
+	if err != nil {
+		writeError(w, 404, err.Error())
+		return
+	}
+	key, err := gc.AddAppKey(context.Background(), body.AppObjectID, body.DisplayName)
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	// rollback clears keyCredentials — safe because this module targets a
+	// dedicated backdoor app (the PATCH already replaced the collection on add).
+	h.recordArtifact(ledger.Artifact{
+		CampaignID: id, TargetID: targetID, OperatorID: operatorID(r),
+		Type: ledger.TypeSPCredential, ObjectID: key.KeyID, DisplayName: "cert: " + body.DisplayName,
+		ReqMethod: "PATCH", ReqURL: "/applications/" + body.AppObjectID + " (keyCredentials)",
+		RollbackKind: ledger.RollbackGraph, RollbackMethod: "PATCH",
+		RollbackURL:        "/applications/" + body.AppObjectID,
+		RollbackBody:       `{"keyCredentials":[]}`,
+		DetectionSignature: "AuditLog: Update application – Certificates & secrets",
+		SecretRef:          "private key returned to operator once; not stored",
+		Note:               "Regla #3 cert credential (stealthier than secret) on app " + body.AppObjectID,
+	})
+	writeJSON(w, 200, key)
 }
 
 func (h *Handler) graphAssignAppRole(w http.ResponseWriter, r *http.Request) {
