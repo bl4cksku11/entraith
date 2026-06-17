@@ -250,6 +250,39 @@ func (s *Store) migrate() error {
 		return err
 	}
 
+	// Deployment ledger — every mutation pushed into a target tenant, with
+	// rollback metadata for guaranteed cleanup plus an exportable evidence and
+	// detection trail. campaign_id may be empty for artifacts deployed from the
+	// global Advanced Tools page, so there is no FK to campaigns.
+	if _, err := s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS deployed_artifacts (
+			id                  TEXT PRIMARY KEY,
+			campaign_id         TEXT NOT NULL DEFAULT '',
+			target_id           TEXT NOT NULL DEFAULT '',
+			operator_id         TEXT NOT NULL DEFAULT '',
+			type                TEXT NOT NULL,
+			tenant_id           TEXT NOT NULL DEFAULT '',
+			object_id           TEXT NOT NULL DEFAULT '',
+			display_name        TEXT NOT NULL DEFAULT '',
+			req_method          TEXT NOT NULL DEFAULT '',
+			req_url             TEXT NOT NULL DEFAULT '',
+			req_body            TEXT NOT NULL DEFAULT '',
+			rollback_kind       TEXT NOT NULL DEFAULT 'manual',
+			rollback_method     TEXT NOT NULL DEFAULT '',
+			rollback_url        TEXT NOT NULL DEFAULT '',
+			rollback_body       TEXT NOT NULL DEFAULT '',
+			detection_signature TEXT NOT NULL DEFAULT '',
+			secret_ref          TEXT NOT NULL DEFAULT '',
+			status              TEXT NOT NULL DEFAULT 'deployed',
+			note                TEXT NOT NULL DEFAULT '',
+			created_at          DATETIME NOT NULL,
+			rolled_back_at      DATETIME
+		);
+		CREATE INDEX IF NOT EXISTS idx_artifacts_campaign ON deployed_artifacts(campaign_id);
+	`); err != nil {
+		return err
+	}
+
 	// Additive column migrations — ignore "duplicate column name" errors so
 	// existing databases are upgraded transparently on first run.
 	for _, alter := range []string{
@@ -1190,6 +1223,119 @@ func (s *Store) ListWinHelloKeys() ([]WinHelloKeyRow, error) {
 
 func (s *Store) DeleteWinHelloKey(id string) error {
 	_, err := s.db.Exec(`DELETE FROM winhello_keys WHERE id=?`, id)
+	return err
+}
+
+// ─────────────────────────────────────────────
+// Deployment ledger (deployed_artifacts)
+// ─────────────────────────────────────────────
+
+type DeployedArtifactRow struct {
+	ID                 string
+	CampaignID         string
+	TargetID           string
+	OperatorID         string
+	Type               string
+	TenantID           string
+	ObjectID           string
+	DisplayName        string
+	ReqMethod          string
+	ReqURL             string
+	ReqBody            string
+	RollbackKind       string
+	RollbackMethod     string
+	RollbackURL        string
+	RollbackBody       string
+	DetectionSignature string
+	SecretRef          string
+	Status             string
+	Note               string
+	CreatedAt          time.Time
+	RolledBackAt       sql.NullTime
+}
+
+func (s *Store) InsertArtifact(r DeployedArtifactRow) error {
+	_, err := s.db.Exec(`INSERT INTO deployed_artifacts
+		(id,campaign_id,target_id,operator_id,type,tenant_id,object_id,display_name,
+		 req_method,req_url,req_body,rollback_kind,rollback_method,rollback_url,rollback_body,
+		 detection_signature,secret_ref,status,note,created_at,rolled_back_at)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		r.ID, r.CampaignID, r.TargetID, r.OperatorID, r.Type, r.TenantID, r.ObjectID, r.DisplayName,
+		r.ReqMethod, r.ReqURL, r.ReqBody, r.RollbackKind, r.RollbackMethod, r.RollbackURL, r.RollbackBody,
+		r.DetectionSignature, r.SecretRef, r.Status, r.Note, r.CreatedAt, r.RolledBackAt)
+	return err
+}
+
+const artifactCols = `id,campaign_id,target_id,operator_id,type,tenant_id,object_id,display_name,
+	req_method,req_url,req_body,rollback_kind,rollback_method,rollback_url,rollback_body,
+	detection_signature,secret_ref,status,note,created_at,rolled_back_at`
+
+func scanArtifact(rows *sql.Rows) (DeployedArtifactRow, error) {
+	var r DeployedArtifactRow
+	err := rows.Scan(&r.ID, &r.CampaignID, &r.TargetID, &r.OperatorID, &r.Type, &r.TenantID, &r.ObjectID, &r.DisplayName,
+		&r.ReqMethod, &r.ReqURL, &r.ReqBody, &r.RollbackKind, &r.RollbackMethod, &r.RollbackURL, &r.RollbackBody,
+		&r.DetectionSignature, &r.SecretRef, &r.Status, &r.Note, &r.CreatedAt, &r.RolledBackAt)
+	return r, err
+}
+
+func (s *Store) ListArtifacts() ([]DeployedArtifactRow, error) {
+	rows, err := s.db.Query(`SELECT ` + artifactCols + ` FROM deployed_artifacts ORDER BY created_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []DeployedArtifactRow
+	for rows.Next() {
+		r, err := scanArtifact(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) ListArtifactsByCampaign(campaignID string) ([]DeployedArtifactRow, error) {
+	rows, err := s.db.Query(`SELECT `+artifactCols+` FROM deployed_artifacts WHERE campaign_id=? ORDER BY created_at DESC`, campaignID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []DeployedArtifactRow
+	for rows.Next() {
+		r, err := scanArtifact(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) GetArtifact(id string) (*DeployedArtifactRow, error) {
+	rows, err := s.db.Query(`SELECT `+artifactCols+` FROM deployed_artifacts WHERE id=?`, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return nil, fmt.Errorf("artifact not found")
+	}
+	r, err := scanArtifact(rows)
+	if err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
+func (s *Store) MarkArtifactRolledBack(id string, t time.Time) error {
+	_, err := s.db.Exec(`UPDATE deployed_artifacts SET status=?, rolled_back_at=? WHERE id=?`,
+		"rolled_back", t, id)
+	return err
+}
+
+func (s *Store) UpdateArtifactStatus(id, status string) error {
+	_, err := s.db.Exec(`UPDATE deployed_artifacts SET status=? WHERE id=?`, status, id)
 	return err
 }
 

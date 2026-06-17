@@ -301,11 +301,13 @@ entraith/
 
 **`store`** — the SQLite persistence layer (`modernc.org/sqlite`, pure Go, no CGO). Opened once at startup and shared by both managers. Schema applied via `CREATE TABLE IF NOT EXISTS` on every startup (idempotent). Foreign keys with `ON DELETE CASCADE` cascade deletes from campaigns to all associated rows. Stores sessions (operator login), device certificates, PRTs, Windows Hello keys, OTP secrets, QR scan events, Intune phishing tokens and captures, and multi-operator user accounts in addition to campaign data.
 
+**`ledger`** — the deployment ledger. Records every mutation ENTRAITH pushes into a target tenant (app registration, cloned group, injected MFA method, registered device, Windows Hello key, CA policy, SP credential, role assignment) as a `deployed_artifacts` row carrying a rollback descriptor, the audit signature it triggers, and a secret-by-reference pointer. `Teardown(ctx, artifacts, rollbacker)` walks artifacts newest-first and undoes the auto-revertible (Graph-kind) ones, surfacing DRS/session-bound ones for manual cleanup. Turns memory-dependent cleanup into a guaranteed, auditable engagement teardown.
+
 **`campaigns`** — owns the `Manager` (map of campaigns, mutex-protected). Each `Campaign` holds a `*targets.Store`, a `*devicecode.Engine`, result slices, email send results, and a buffered `notify` channel for instant SSE pushes. `Manager.Load()` reads all campaigns from SQLite at startup. `Manager.Launch` orchestrates the device code flow. `Manager.SendQREmails` handles bulk or per-target QR phishing email dispatch. `Manager.SendIntuneEmails` sends Intune OAuth phishing emails with unique per-target landing page tokens. `Manager.NotifySSE` wakes any open SSE connections for a campaign immediately.
 
 **`devicecode`** — the core engine. One `Engine` per campaign (in-memory only). Holds a `map[targetID]*Session`. Each `Session` carries a `cancel context.CancelFunc` — if a target scans a QR code a second time, the old polling goroutine is cancelled before a new session is stored, preventing stale polling of the invalidated code. `StartPolling` spawns one goroutine per target with a per-session child context. Results delivered via buffered channel. All requests use a consistent, spoofed User-Agent. The standalone `RefreshAccessToken` exchanges a `refresh_token` for a new pair.
 
-**`graph`** — stateless Graph API client. `graph.New(accessToken)` wraps a Bearer token and exposes methods for every supported post-exploitation operation. All methods accept a `context.Context`. Covers full mail operations (browse folders, read/send/reply/forward/delete/attach), OneDrive (list, download, upload, delete, recent, shared), Teams (teams, channels, chats, messages, create chat, send), groups (info, members, transitive members, owners, drives, sites, app roles), users (info, member-of, batch), apps, grants, conditional access, auth methods, and M365 cross-resource search.
+**`graph`** — stateless Graph API client. `graph.New(accessToken)` wraps a Bearer token and exposes methods for every supported post-exploitation operation. All methods accept a `context.Context`. Covers full mail operations (browse folders, read/send/reply/forward/delete/attach), OneDrive (list, download, upload, delete, recent, shared), Teams (teams, channels, chats, messages, create chat, send), groups (info, members, transitive members, owners, drives, sites, app roles), users (info, member-of, batch), apps, grants, conditional access, auth methods, and M365 cross-resource search. Also exposes the mutating persistence operations — `CreateConditionalAccessPolicy`, `AddAppPassword` (SP credential backdoor), `AssignAppRole`, `AssignDirectoryRole`, `GetServicePrincipalByAppID` — and `RollbackCall`, a generic authenticated DELETE/PATCH used by the deployment-ledger teardown to undo deployed artifacts.
 
 **`mfa`** — client for the My Sign-ins API (`mysignins.microsoft.com`). Requires an access token scoped to resource `19db86c3-b2b9-44cc-b339-36da233a3be2` (obtained automatically by exchanging the captured refresh token). Supports listing, adding, and deleting MFA methods; TOTP registration (with server-side `GenerateTOTP` for live code display); and FIDO2 key registration flow.
 
@@ -319,7 +321,7 @@ entraith/
 
 **`mailer`** — stateless send logic plus an in-memory manager for profiles and templates. Persistence injected by `main.go` via `SetPersistence(...)` callbacks. `Render` performs simple string replacement. `buildMIME` constructs RFC 5322 messages with per-message random `Message-ID` and MIME boundary from `crypto/rand`.
 
-**`api`** — `Handler` holds pointers to all managers. `Routes()` returns a configured `*http.ServeMux` with all endpoints. Handles auth (login/logout/check/change-password), RBAC-gated user management (admin vs. operator), all campaign operations, Graph Ops, MFA, device certs, PRTs, Windows Hello, OTP secrets, token exchange, webhook management, public QR scan endpoints (`GET /qr/{token}`, `POST /qr/{token}/confirm`), and public Intune phishing endpoints (`GET /intune/{token}`, `POST /intune/capture`). The SSE handler (`streamEvents`) pushes an initial snapshot on connect and reacts to both the 2-second ticker and the campaign's `notify` channel.
+**`api`** — `Handler` holds pointers to all managers. `Routes()` returns a configured `*http.ServeMux` with all endpoints. Handles auth (login/logout/check/change-password), RBAC-gated user management (admin vs. operator), all campaign operations, Graph Ops, MFA, device certs, PRTs, Windows Hello, OTP secrets, token exchange, the deployment ledger and one-click teardown, webhook management, public QR scan endpoints (`GET /qr/{token}`, `POST /qr/{token}/confirm`), and public Intune phishing endpoints (`GET /intune/{token}`, `POST /intune/capture`). The SSE handler (`streamEvents`) pushes an initial snapshot on connect and reacts to both the 2-second ticker and the campaign's `notify` channel.
 
 **`web`** — five embedded HTML files (`go:embed`). No external JS dependencies. All pages communicate exclusively via the REST API and SSE for live updates. `qrlanding.html` is public-facing and served to targets who scan a QR code — it fires a background confirm POST then redirects. Operator sessions are enforced server-side by `pageGuard` in `main.go` — unauthenticated requests are redirected to `/login?next=<path>`.
 
@@ -732,6 +734,32 @@ Common resources for v1.0 exchange:
 | Key Vault | `https://vault.azure.net` |
 | My Sign-ins (MFA) | `19db86c3-b2b9-44cc-b339-36da233a3be2` |
 
+### Persistence modules
+
+The **Graph Actions** page exposes mutating persistence operations. Every one is recorded in the [deployment ledger](#deployment-ledger-and-teardown) with a rollback descriptor, so nothing deployed into the client tenant is forgotten.
+
+| Module | What it does | Rollback |
+|--------|--------------|----------|
+| **CA Exclusion Policy** | Creates a Conditional Access policy that enforces a control (MFA) on everyone *except* the operator. Defaults to `enabledForReportingButNotEnforced` (report-only); the operator opts into `enabled`. | `DELETE /identity/conditionalAccess/policies/{id}` (auto) |
+| **SP Backdoor — Add Client Secret** | Adds a password credential to an application (`addPassword`). The secret is shown **once** and never stored in the ledger; only the `keyId` is kept for revocation. | `POST /applications/{id}/removePassword` (auto) |
+| **Assign App Role** | Grants an application permission (app role) to a principal SP on a resource SP — e.g. `RoleManagement.ReadWrite.Directory` on the Graph SP. Includes a **Find Graph SP** helper. | `DELETE /servicePrincipals/{resource}/appRoleAssignedTo/{id}` (auto) |
+| **Assign Directory Role** | Assigns a directory role (defaults to Global Administrator) to a principal at a scope. | `DELETE /roleManagement/directory/roleAssignments/{id}` (auto) |
+
+These are GA / Security-Admin-level techniques — they require a captured token that already holds the matching directory privilege. They do not escalate privilege by themselves.
+
+### Deployment ledger and teardown
+
+Every mutation ENTRAITH pushes into a target tenant — the persistence modules above, plus app/group deploys, injected MFA methods, registered devices and Windows Hello keys — is logged in the `deployed_artifacts` ledger. Open **🧹 Deployment Ledger** (Advanced Tools sidebar) to review and revert.
+
+| | |
+|---|---|
+| **What is recorded** | Type, created object id, the exact call that created it, operator, campaign/target, the audit signature it triggers, a secret-by-reference pointer, and a rollback descriptor. |
+| **Auto rollback** | Graph-kind artifacts (app registration, group clone, CA policy, SP credential, app-role / directory-role assignment) revert with one click using the campaign's token. |
+| **Manual rollback** | Device registration (DRS), Windows Hello keys and injected MFA methods are session- or DRS-bound and are surfaced with explicit instructions instead of being auto-executed. |
+| **Teardown order** | `POST /api/campaigns/{id}/teardown` walks the ledger newest-first (dependants before parents) and reverts every auto-revertible artifact, returning a per-artifact result set. |
+
+The ledger doubles as an **engagement evidence trail** and a **purple-team detection map** (each row names the Entra audit event it generates).
+
 ---
 
 ## OPSEC
@@ -797,6 +825,9 @@ prts             — Primary Refresh Tokens (global)
 winhello_keys    — Windows Hello for Business NGC keys (global)
 otp_secrets      — stored TOTP secrets for live code generation (global)
 request_templates — saved custom Graph request templates (global)
+deployed_artifacts — deployment ledger: every mutation pushed into a target
+                     tenant, with rollback descriptor + detection signature
+                     (campaign_id optional, so global tools are logged too)
 ```
 
 ### Startup behaviour
@@ -1003,6 +1034,16 @@ All Graph Ops routes look up the stored access token for `{targetId}` and proxy 
 | `POST` | `.../graph/{targetId}/deploy-app` | `{display_name, redirect_uri?, scopes?}` |
 | `GET` | `.../graph/{targetId}/conditional-access` | CA policies (requires Policy.Read.All) |
 
+#### Persistence modules (mutating — logged in the deployment ledger)
+
+| Method | Path | Notes |
+|--------|------|-------|
+| `POST` | `.../graph/{targetId}/ca-exclusion` | `{display_name, exclude_user_id, state?}` — CA policy excluding the operator |
+| `POST` | `.../graph/{targetId}/add-app-password` | `{app_object_id, display_name?}` — SP credential backdoor (secret shown once) |
+| `POST` | `.../graph/{targetId}/assign-app-role` | `{resource_sp_id, principal_id, app_role_id}` — grant an application permission |
+| `POST` | `.../graph/{targetId}/assign-directory-role` | `{principal_id, role_definition_id, directory_scope_id?}` — assign a directory role |
+| `GET` | `.../graph/{targetId}/find-sp` | `?appId=` — resolve a service principal by appId (defaults to Microsoft Graph) |
+
 #### Search and custom
 
 | Method | Path | Notes |
@@ -1052,6 +1093,15 @@ All Graph Ops routes look up the stored access token for `{targetId}` and proxy 
 | `GET` | `/api/winhello-keys` | List registered keys |
 | `POST` | `/api/winhello-keys` | `{device_cert_id, campaign_id, target_id, label}` |
 | `DELETE` | `/api/winhello-keys/{id}` | Delete |
+
+### Deployment ledger / teardown
+
+| Method | Path | Notes |
+|--------|------|-------|
+| `GET` | `/api/artifacts` | List all deployed-artifact ledger entries |
+| `GET` | `/api/campaigns/{id}/artifacts` | List a campaign's deployed artifacts |
+| `POST` | `/api/artifacts/{artId}/rollback` | Revert one artifact (Graph-kind auto; else returns `skipped_manual`) |
+| `POST` | `/api/campaigns/{id}/teardown` | Revert all auto-revertible artifacts newest-first; returns `{rolled_back, failed, skipped_manual, results}` |
 
 ### OTP secrets
 

