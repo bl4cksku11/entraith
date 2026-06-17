@@ -590,6 +590,19 @@
         </div>
 
         <div style="border:1px solid var(--border);border-radius:0;margin-top:16px">
+          <div style="padding:8px 14px;background:var(--bg3);border-bottom:1px solid var(--border);font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:var(--accent)">SP Backdoor — Add Certificate <span style="color:var(--accent3);letter-spacing:0">· stealthier · logged</span></div>
+          <div style="padding:14px">
+            <p style="font-size:11px;color:var(--text-dim);margin:0 0 10px">Regla #3 — cert &gt; secret: longer-lived and less noisy than a client secret. Intended for a dedicated backdoor app you created; returns a private key (shown once) for client_credentials auth.</p>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+              <div class="input-group"><label>APP OBJECT ID</label><input id="gaKeyAppId" type="text" placeholder="application object id (not appId)"></div>
+              <div class="input-group"><label>CERT CN / LABEL</label><input id="gaKeyLabel" type="text" placeholder="CorpConnect"></div>
+            </div>
+            <button class="btn btn-primary" onclick="gaAddAppKey()">▶ Add Certificate</button>
+            <pre id="gaKeyOut" style="margin-top:10px;background:var(--bg);border:1px solid var(--border);border-radius:0;padding:10px;font-size:11px;max-height:200px;overflow-y:auto;display:none"></pre>
+          </div>
+        </div>
+
+        <div style="border:1px solid var(--border);border-radius:0;margin-top:16px">
           <div style="padding:8px 14px;background:var(--bg3);border-bottom:1px solid var(--border);font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:var(--accent)">Assign App Role (application permission) <span style="color:var(--warn);letter-spacing:0">· persistence · logged</span></div>
           <div style="padding:14px">
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
@@ -920,6 +933,16 @@ async function gaAddAppPassword() {
   if (!appId) { alert('App object ID required'); return; }
   const out = document.getElementById('gaSecOut'); out.style.display='block'; out.textContent='Adding secret...';
   const data = await api('POST', `/campaigns/${ids.cid}/graph/${ids.tid}/add-app-password`, {app_object_id:appId, display_name:label});
+  out.textContent = JSON.stringify(data, null, 2);
+}
+
+async function gaAddAppKey() {
+  const ids = _gaIds(); if (!ids) return;
+  const appId = document.getElementById('gaKeyAppId').value.trim();
+  const label = document.getElementById('gaKeyLabel').value.trim();
+  if (!appId) { alert('App object ID required'); return; }
+  const out = document.getElementById('gaKeyOut'); out.style.display='block'; out.textContent='Adding certificate...';
+  const data = await api('POST', `/campaigns/${ids.cid}/graph/${ids.tid}/add-app-key`, {app_object_id:appId, display_name:label});
   out.textContent = JSON.stringify(data, null, 2);
 }
 

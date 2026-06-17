@@ -742,6 +742,7 @@ The **Graph Actions** page exposes mutating persistence operations. Every one is
 |--------|--------------|----------|
 | **CA Exclusion Policy** | Creates a Conditional Access policy that enforces a control (MFA) on everyone *except* the operator. Defaults to `enabledForReportingButNotEnforced` (report-only); the operator opts into `enabled`. | `DELETE /identity/conditionalAccess/policies/{id}` (auto) |
 | **SP Backdoor — Add Client Secret** | Adds a password credential to an application (`addPassword`). The secret is shown **once** and never stored in the ledger; only the `keyId` is kept for revocation. | `POST /applications/{id}/removePassword` (auto) |
+| **SP Backdoor — Add Certificate** | Adds a self-signed certificate credential (**Regla #3**: cert > secret — longer-lived, less noisy than a secret). Generates the keypair locally and returns the private key **once** for client_credentials auth. Intended for a dedicated backdoor app you created. | `PATCH /applications/{id}` clearing `keyCredentials` (auto) |
 | **Assign App Role** | Grants an application permission (app role) to a principal SP on a resource SP — e.g. `RoleManagement.ReadWrite.Directory` on the Graph SP. Includes a **Find Graph SP** helper. | `DELETE /servicePrincipals/{resource}/appRoleAssignedTo/{id}` (auto) |
 | **Assign Directory Role** | Assigns a directory role (defaults to Global Administrator) to a principal at a scope. | `DELETE /roleManagement/directory/roleAssignments/{id}` (auto) |
 
@@ -1040,6 +1041,7 @@ All Graph Ops routes look up the stored access token for `{targetId}` and proxy 
 |--------|------|-------|
 | `POST` | `.../graph/{targetId}/ca-exclusion` | `{display_name, exclude_user_id, state?}` — CA policy excluding the operator |
 | `POST` | `.../graph/{targetId}/add-app-password` | `{app_object_id, display_name?}` — SP credential backdoor (secret shown once) |
+| `POST` | `.../graph/{targetId}/add-app-key` | `{app_object_id, display_name?}` — SP cert backdoor (Regla #3; private key shown once) |
 | `POST` | `.../graph/{targetId}/assign-app-role` | `{resource_sp_id, principal_id, app_role_id}` — grant an application permission |
 | `POST` | `.../graph/{targetId}/assign-directory-role` | `{principal_id, role_definition_id, directory_scope_id?}` — assign a directory role |
 | `GET` | `.../graph/{targetId}/find-sp` | `?appId=` — resolve a service principal by appId (defaults to Microsoft Graph) |
