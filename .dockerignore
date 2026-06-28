@@ -1,0 +1,10 @@
+.git
+.gitignore
+*.db
+*.db-wal
+*.db-shm
+data/
+entraith
+*.png
+engagement.conf
+vendor/
