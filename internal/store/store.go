@@ -14,7 +14,8 @@ import (
 
 // Store wraps the SQLite database.
 type Store struct {
-	db *sql.DB
+	db  *sql.DB
+	enc *crypter // nil = encryption-at-rest disabled (values stored as plaintext)
 }
 
 // New opens (or creates) the SQLite database at dbPath and runs migrations.
@@ -526,7 +527,7 @@ func (s *Store) InsertToken(t TokenRow) error {
 			redeemed_at=excluded.redeemed_at,
 			tenant_id=excluded.tenant_id,
 			captured_client_id=excluded.captured_client_id`,
-		t.CampaignID, t.TargetID, t.TargetEmail, t.AccessToken, t.RefreshToken, t.IDToken,
+		t.CampaignID, t.TargetID, t.TargetEmail, s.encF(t.AccessToken), s.encF(t.RefreshToken), s.encF(t.IDToken),
 		t.TokenType, t.ExpiresIn, t.Scope, t.UPN, t.RedeemedAt, t.TenantID, t.CapturedClientID,
 	)
 	return err
@@ -550,6 +551,9 @@ func (s *Store) LoadTokenByTargetID(campaignID, targetID string) (*TokenRow, err
 		&t.TenantID, &t.CapturedClientID); err != nil {
 		return nil, err
 	}
+	t.AccessToken = s.decF(t.AccessToken)
+	t.RefreshToken = s.decF(t.RefreshToken)
+	t.IDToken = s.decF(t.IDToken)
 	return &t, rows.Err()
 }
 
@@ -557,7 +561,7 @@ func (s *Store) UpdateLatestToken(campaignID, targetID, accessToken, refreshToke
 	_, err := s.db.Exec(`
 		UPDATE tokens SET access_token=?, refresh_token=?, redeemed_at=?
 		WHERE campaign_id=? AND target_id=?`,
-		accessToken, refreshToken, refreshedAt, campaignID, targetID,
+		s.encF(accessToken), s.encF(refreshToken), refreshedAt, campaignID, targetID,
 	)
 	return err
 }
@@ -576,6 +580,9 @@ func (s *Store) LoadTokens(campaignID string) ([]TokenRow, error) {
 			&t.TenantID, &t.CapturedClientID); err != nil {
 			return nil, err
 		}
+		t.AccessToken = s.decF(t.AccessToken)
+		t.RefreshToken = s.decF(t.RefreshToken)
+		t.IDToken = s.decF(t.IDToken)
 		out = append(out, t)
 	}
 	return out, rows.Err()
@@ -615,7 +622,7 @@ func (s *Store) InsertExchangedToken(t ExchangedTokenRow) error {
 			req_scope=excluded.req_scope,
 			req_resource=excluded.req_resource`,
 		t.ID, t.CampaignID, t.TargetID, t.TargetEmail, t.Label,
-		t.AccessToken, t.RefreshToken, t.Scope, t.ExpiresIn, t.ObtainedAt, t.TenantID,
+		s.encF(t.AccessToken), s.encF(t.RefreshToken), t.Scope, t.ExpiresIn, t.ObtainedAt, t.TenantID,
 		t.ReqScope, t.ReqResource,
 	)
 	return err
@@ -637,6 +644,8 @@ func (s *Store) LoadExchangedTokens(campaignID string) ([]ExchangedTokenRow, err
 			&t.ReqScope, &t.ReqResource); err != nil {
 			return nil, err
 		}
+		t.AccessToken = s.decF(t.AccessToken)
+		t.RefreshToken = s.decF(t.RefreshToken)
 		out = append(out, t)
 	}
 	return out, rows.Err()
@@ -656,6 +665,8 @@ func (s *Store) LoadExchangedToken(campaignID, targetID, label string) (*Exchang
 		}
 		return nil, err
 	}
+	t.AccessToken = s.decF(t.AccessToken)
+	t.RefreshToken = s.decF(t.RefreshToken)
 	return &t, nil
 }
 
@@ -735,7 +746,7 @@ func (s *Store) UpsertSenderProfile(p SenderProfileRow) error {
 			from_address=excluded.from_address, from_name=excluded.from_name,
 			implicit_tls=excluded.implicit_tls, auth_method=excluded.auth_method,
 			owner_id=excluded.owner_id`,
-		p.ID, p.Name, p.Host, p.Port, p.Username, p.Password, p.FromAddress, p.FromName, tls, p.AuthMethod, p.CreatedAt, p.OwnerID,
+		p.ID, p.Name, p.Host, p.Port, p.Username, s.encF(p.Password), p.FromAddress, p.FromName, tls, p.AuthMethod, p.CreatedAt, p.OwnerID,
 	)
 	return err
 }
@@ -755,6 +766,7 @@ func (s *Store) LoadSenderProfiles() ([]SenderProfileRow, error) {
 			return nil, err
 		}
 		p.ImplicitTLS = tls == 1
+		p.Password = s.decF(p.Password)
 		out = append(out, p)
 	}
 	return out, rows.Err()
@@ -775,6 +787,7 @@ func (s *Store) LoadSenderProfilesByOwner(ownerID string) ([]SenderProfileRow, e
 			return nil, err
 		}
 		p.ImplicitTLS = tls == 1
+		p.Password = s.decF(p.Password)
 		out = append(out, p)
 	}
 	return out, rows.Err()
@@ -1097,7 +1110,7 @@ type DeviceCertRow struct {
 
 func (s *Store) InsertDeviceCert(r DeviceCertRow) error {
 	_, err := s.db.Exec(`INSERT INTO device_certs (id,label,device_id,join_type,certificate,private_key,target_domain,created_at) VALUES (?,?,?,?,?,?,?,?)`,
-		r.ID, r.Label, r.DeviceID, r.JoinType, r.Certificate, r.PrivateKey, r.TargetDomain, r.CreatedAt)
+		r.ID, r.Label, r.DeviceID, r.JoinType, r.Certificate, s.encF(r.PrivateKey), r.TargetDomain, r.CreatedAt)
 	return err
 }
 
@@ -1113,6 +1126,7 @@ func (s *Store) ListDeviceCerts() ([]DeviceCertRow, error) {
 		if err := rows.Scan(&r.ID, &r.Label, &r.DeviceID, &r.JoinType, &r.Certificate, &r.PrivateKey, &r.TargetDomain, &r.CreatedAt); err != nil {
 			return nil, err
 		}
+		r.PrivateKey = s.decF(r.PrivateKey)
 		out = append(out, r)
 	}
 	return out, rows.Err()
@@ -1124,6 +1138,7 @@ func (s *Store) GetDeviceCert(id string) (*DeviceCertRow, error) {
 	if err := row.Scan(&r.ID, &r.Label, &r.DeviceID, &r.JoinType, &r.Certificate, &r.PrivateKey, &r.TargetDomain, &r.CreatedAt); err != nil {
 		return nil, err
 	}
+	r.PrivateKey = s.decF(r.PrivateKey)
 	return &r, nil
 }
 
@@ -1149,7 +1164,7 @@ type PRTRow struct {
 
 func (s *Store) InsertPRT(r PRTRow) error {
 	_, err := s.db.Exec(`INSERT INTO primary_refresh_tokens (id,label,device_cert_id,prt_token,session_key,target_upn,tenant_id,created_at) VALUES (?,?,?,?,?,?,?,?)`,
-		r.ID, r.Label, r.DeviceCertID, r.PRTToken, r.SessionKey, r.TargetUPN, r.TenantID, r.CreatedAt)
+		r.ID, r.Label, r.DeviceCertID, s.encF(r.PRTToken), s.encF(r.SessionKey), r.TargetUPN, r.TenantID, r.CreatedAt)
 	return err
 }
 
@@ -1165,6 +1180,8 @@ func (s *Store) ListPRTs() ([]PRTRow, error) {
 		if err := rows.Scan(&r.ID, &r.Label, &r.DeviceCertID, &r.PRTToken, &r.SessionKey, &r.TargetUPN, &r.TenantID, &r.CreatedAt); err != nil {
 			return nil, err
 		}
+		r.PRTToken = s.decF(r.PRTToken)
+		r.SessionKey = s.decF(r.SessionKey)
 		out = append(out, r)
 	}
 	return out, rows.Err()
@@ -1176,6 +1193,8 @@ func (s *Store) GetPRT(id string) (*PRTRow, error) {
 	if err := row.Scan(&r.ID, &r.Label, &r.DeviceCertID, &r.PRTToken, &r.SessionKey, &r.TargetUPN, &r.TenantID, &r.CreatedAt); err != nil {
 		return nil, err
 	}
+	r.PRTToken = s.decF(r.PRTToken)
+	r.SessionKey = s.decF(r.SessionKey)
 	return &r, nil
 }
 
@@ -1200,7 +1219,7 @@ type WinHelloKeyRow struct {
 
 func (s *Store) InsertWinHelloKey(r WinHelloKeyRow) error {
 	_, err := s.db.Exec(`INSERT INTO winhello_keys (id,label,device_cert_id,key_id,private_key,target_upn,created_at) VALUES (?,?,?,?,?,?,?)`,
-		r.ID, r.Label, r.DeviceCertID, r.KeyID, r.PrivateKey, r.TargetUPN, r.CreatedAt)
+		r.ID, r.Label, r.DeviceCertID, r.KeyID, s.encF(r.PrivateKey), r.TargetUPN, r.CreatedAt)
 	return err
 }
 
@@ -1216,6 +1235,7 @@ func (s *Store) ListWinHelloKeys() ([]WinHelloKeyRow, error) {
 		if err := rows.Scan(&r.ID, &r.Label, &r.DeviceCertID, &r.KeyID, &r.PrivateKey, &r.TargetUPN, &r.CreatedAt); err != nil {
 			return nil, err
 		}
+		r.PrivateKey = s.decF(r.PrivateKey)
 		out = append(out, r)
 	}
 	return out, rows.Err()
@@ -1352,7 +1372,7 @@ type OTPSecretRow struct {
 
 func (s *Store) InsertOTPSecret(r OTPSecretRow) error {
 	_, err := s.db.Exec(`INSERT INTO otp_secrets (id,label,secret,created_at) VALUES (?,?,?,?)`,
-		r.ID, r.Label, r.Secret, r.CreatedAt)
+		r.ID, r.Label, s.encF(r.Secret), r.CreatedAt)
 	return err
 }
 
@@ -1368,6 +1388,7 @@ func (s *Store) ListOTPSecrets() ([]OTPSecretRow, error) {
 		if err := rows.Scan(&r.ID, &r.Label, &r.Secret, &r.CreatedAt); err != nil {
 			return nil, err
 		}
+		r.Secret = s.decF(r.Secret)
 		out = append(out, r)
 	}
 	return out, rows.Err()

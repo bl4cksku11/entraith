@@ -1,14 +1,18 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/bl4cksku11/entraith/internal/api"
@@ -24,7 +28,7 @@ import (
 // HTML page. If the cookie is missing, invalid, or expired the browser is
 // redirected to /login with a ?next= parameter so the user lands back on the
 // right page after authenticating.
-func pageGuard(db *store.Store, html string) http.HandlerFunc {
+func pageGuard(db *store.Store, html string, secureCookies bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cookie, err := r.Cookie("session")
 		if err != nil || cookie.Value == "" {
@@ -40,17 +44,113 @@ func pageGuard(db *store.Store, html string) http.HandlerFunc {
 				Path:     "/",
 				MaxAge:   -1,
 				HttpOnly: true,
+				Secure:   secureCookies,
 				SameSite: http.SameSiteStrictMode,
 			})
 			redirectToLogin(w, r)
 			return
 		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		// Prevent caching of authenticated pages
-		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
-		w.Header().Set("Pragma", "no-cache")
+		setConsoleHeaders(w)
 		w.Write([]byte(html))
 	}
+}
+
+// setConsoleHeaders applies the operator-console security headers (CSP, anti
+// clickjacking, no-cache). Used only for authenticated pages and the login
+// page — never for the target-facing /qr and /intune landing pages.
+func setConsoleHeaders(w http.ResponseWriter) {
+	h := w.Header()
+	h.Set("Content-Type", "text/html; charset=utf-8")
+	// style-src/font-src permit Google Fonts (JetBrains Mono @import). The Dark
+	// SOC restyle moves to self-hosted fonts; tighten these back to 'self' then.
+	h.Set("Content-Security-Policy",
+		"default-src 'self'; script-src 'self' 'unsafe-inline'; "+
+			"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "+
+			"img-src 'self' data:; font-src 'self' data: https://fonts.gstatic.com; "+
+			"connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+	h.Set("X-Frame-Options", "DENY")
+	h.Set("X-Content-Type-Options", "nosniff")
+	h.Set("Referrer-Policy", "no-referrer")
+	h.Set("Cache-Control", "no-store, no-cache, must-revalidate")
+	h.Set("Pragma", "no-cache")
+}
+
+// consoleAllowlist restricts the operator console (login, dashboard, API,
+// webhook controls) to a set of source IPs/CIDRs. Target-facing endpoints
+// (/qr, /intune, /receive, /capture) are always reachable so phishing and
+// beacon callbacks still work from arbitrary client IPs. An empty allowlist
+// disables the restriction.
+func consoleAllowlist(cidrs []string, next http.Handler) http.Handler {
+	if len(cidrs) == 0 {
+		return next
+	}
+	var nets []*net.IPNet
+	var ips []net.IP
+	for _, c := range cidrs {
+		if _, n, err := net.ParseCIDR(c); err == nil {
+			nets = append(nets, n)
+			continue
+		}
+		if ip := net.ParseIP(c); ip != nil {
+			ips = append(ips, ip)
+		}
+	}
+	isPublicPath := func(p string) bool {
+		return strings.HasPrefix(p, "/qr/") || strings.HasPrefix(p, "/intune/") ||
+			p == "/intune/capture" || p == "/receive" || p == "/capture"
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isPublicPath(r.URL.Path) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		ip := net.ParseIP(api.ClientIP(r))
+		allowed := false
+		for _, n := range nets {
+			if ip != nil && n.Contains(ip) {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			for _, a := range ips {
+				if a.Equal(ip) {
+					allowed = true
+					break
+				}
+			}
+		}
+		if !allowed {
+			// Look like nothing is here rather than confirming a console exists.
+			http.NotFound(w, r)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// resolveEncryptionKey returns the at-rest encryption key material. Preference:
+//  1. an operator-supplied auth.secret_key from config (any length);
+//  2. otherwise a persistent random key auto-generated at <dataPath>/.entraith.key
+//     (mode 0600) so encryption is always on without manual setup.
+func resolveEncryptionKey(configured, dataPath string) ([]byte, error) {
+	if strings.TrimSpace(configured) != "" {
+		return []byte(configured), nil
+	}
+	keyPath := filepath.Join(dataPath, ".entraith.key")
+	if b, err := os.ReadFile(keyPath); err == nil && len(b) > 0 {
+		return b, nil
+	}
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		return nil, err
+	}
+	enc := []byte(hex.EncodeToString(key))
+	if err := os.WriteFile(keyPath, enc, 0600); err != nil {
+		return nil, fmt.Errorf("writing key file %s: %w", keyPath, err)
+	}
+	log.Printf("Generated at-rest encryption key: %s (mode 0600) — back this up to keep DB readable", keyPath)
+	return enc, nil
 }
 
 func redirectToLogin(w http.ResponseWriter, r *http.Request) {
@@ -151,12 +251,21 @@ func runServer() {
 	}
 	defer db.Close()
 
+	// Enable encryption-at-rest for secret columns BEFORE loading any state, so
+	// SMTP passwords, captured tokens and PRTs are decrypted on the way in.
+	encKey, err := resolveEncryptionKey(cfg.Auth.SecretKey, dataPath)
+	if err != nil {
+		log.Fatalf("Failed to resolve encryption key: %v", err)
+	}
+	if err := db.SetEncryptionKey(encKey); err != nil {
+		log.Fatalf("Failed to enable encryption-at-rest: %v", err)
+	}
+
 	// Generate admin user on first run
 	if count, err := db.CountUsers(); err == nil && count == 0 {
 		password := auth.GeneratePassword(16)
-		salt := auth.GenerateSalt()
-		hash := auth.HashPassword(password, salt)
-		if err := db.CreateUser("user-admin", "admin", hash, salt); err != nil {
+		hash := auth.HashPassword(password)
+		if err := db.CreateUser("user-admin", "admin", hash, ""); err != nil {
 			log.Fatalf("Failed to create admin user: %v", err)
 		}
 		log.Printf("╔══════════════════════════════════════════════╗")
@@ -255,21 +364,21 @@ func runServer() {
 	// Build API handler
 	webhookLogPath := filepath.Join(cfg.Storage.ArtifactsPath, "stream_monitor.log")
 	apiHandler := api.NewHandler(mgr, mailMgr, webhookLogPath, db)
+	apiHandler.SecureCookies = cfg.Server.SecureCookies
 
 	// Main router
 	mux := http.NewServeMux()
 
 	// Login page — public, no session required
 	mux.HandleFunc("GET /login", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+		setConsoleHeaders(w)
 		w.Write([]byte(web.LoginHTML))
 	})
 
 	// Protected pages — server-side session guard redirects to /login if unauthenticated
-	mux.HandleFunc("/", pageGuard(db, web.DashboardHTML))
-	mux.HandleFunc("GET /tools", pageGuard(db, web.ToolsHTML))
-	mux.HandleFunc("GET /infra", pageGuard(db, web.InfraHTML))
+	mux.HandleFunc("/", pageGuard(db, web.DashboardHTML, cfg.Server.SecureCookies))
+	mux.HandleFunc("GET /tools", pageGuard(db, web.ToolsHTML, cfg.Server.SecureCookies))
+	mux.HandleFunc("GET /infra", pageGuard(db, web.InfraHTML, cfg.Server.SecureCookies))
 
 	// API + webhook routes — single handler instance shared across all three prefixes.
 	routes := apiHandler.Routes()
@@ -294,16 +403,17 @@ func runServer() {
 	// Intune capture — public endpoint for ms-appx-web:// capture from landing page
 	mux.HandleFunc("POST /intune/capture", apiHandler.CaptureIntune)
 
-	// Health check
+	// Health check — generic, unauthenticated. Deliberately leaks no
+	// engagement/operator/client identifiers (it is reachable by anyone who
+	// finds the host). Detailed status lives behind the authenticated API.
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{
-			"status":      "ok",
-			"engagement":  cfg.Engagement.ID,
-			"client_code": cfg.Engagement.ClientCode,
-			"operator":    cfg.Engagement.Operator,
-		})
+		w.Header().Set("Cache-Control", "no-store")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
+
+	// Wrap the whole router in the console IP allowlist (no-op if unset).
+	handler := consoleAllowlist(cfg.Server.IPAllowlist, mux)
 
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	log.Printf("╔════════════════════════════════════════╗")
@@ -314,10 +424,31 @@ func runServer() {
 	log.Printf("Tenant     : %s", cfg.Campaign.TenantID)
 	log.Printf("Client ID  : %s", cfg.Campaign.ClientID)
 	log.Printf("Database   : %s", dbPath)
-	log.Printf("Listening  : http://%s", addr)
-	log.Printf("Webhook    : POST http://%s/receive  → %s", addr, webhookLogPath)
+	scheme := "http"
+	if cfg.Server.TLS {
+		scheme = "https"
+	}
+	log.Printf("Listening  : %s://%s", scheme, addr)
+	if len(cfg.Server.IPAllowlist) > 0 {
+		log.Printf("Allowlist  : console restricted to %s", strings.Join(cfg.Server.IPAllowlist, ", "))
+	}
+	log.Printf("Webhook    : POST %s://%s/receive  → %s", scheme, addr, webhookLogPath)
 
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 15 * time.Second,
+	}
+	if cfg.Server.TLS {
+		if cfg.Server.CertFile == "" || cfg.Server.KeyFile == "" {
+			log.Fatalf("server.tls is true but server.cert_file / server.key_file are not set")
+		}
+		if err := srv.ListenAndServeTLS(cfg.Server.CertFile, cfg.Server.KeyFile); err != nil {
+			log.Fatalf("Server error: %v", err)
+		}
+		return
+	}
+	if err := srv.ListenAndServe(); err != nil {
 		log.Fatalf("Server error: %v", err)
 	}
 }
@@ -379,10 +510,9 @@ func runResetAdmin() {
 	}
 
 	newPassword := auth.GeneratePassword(16)
-	newSalt := auth.GenerateSalt()
-	newHash := auth.HashPassword(newPassword, newSalt)
+	newHash := auth.HashPassword(newPassword)
 
-	if err := db.UpdateUserPassword("admin", newHash, newSalt); err != nil {
+	if err := db.UpdateUserPassword("admin", newHash, ""); err != nil {
 		log.Fatalf("Failed to reset password: %v", err)
 	}
 

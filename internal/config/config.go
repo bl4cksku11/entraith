@@ -29,9 +29,13 @@ type DatabaseConfig struct {
 }
 
 type ServerConfig struct {
-	Host string `yaml:"host"`
-	Port int    `yaml:"port"`
-	TLS  bool   `yaml:"tls"`
+	Host          string   `yaml:"host"`
+	Port          int      `yaml:"port"`
+	TLS           bool     `yaml:"tls"`            // terminate TLS natively (otherwise put a proxy in front)
+	CertFile      string   `yaml:"cert_file"`     // PEM cert when tls = true
+	KeyFile       string   `yaml:"key_file"`      // PEM key when tls = true
+	SecureCookies bool     `yaml:"secure_cookies"` // mark session cookies Secure (default true)
+	IPAllowlist   []string `yaml:"ip_allowlist"`  // CIDRs/IPs allowed to reach the operator console (empty = all)
 }
 
 type AuthConfig struct {
@@ -95,6 +99,23 @@ func Load(path string) (*Config, error) {
 	cfg.Server.Host = kv["server.host"]
 	if v, err := strconv.Atoi(kv["server.port"]); err == nil {
 		cfg.Server.Port = v
+	}
+	cfg.Server.CertFile = kv["server.cert_file"]
+	cfg.Server.KeyFile = kv["server.key_file"]
+	// Secure cookies default ON; only an explicit false/0/no disables them.
+	cfg.Server.SecureCookies = true
+	if v := strings.ToLower(kv["server.secure_cookies"]); v == "false" || v == "0" || v == "no" {
+		cfg.Server.SecureCookies = false
+	}
+	if v := strings.ToLower(kv["server.tls"]); v == "true" || v == "1" || v == "yes" {
+		cfg.Server.TLS = true
+	}
+	if v := strings.TrimSpace(kv["server.ip_allowlist"]); v != "" {
+		for _, part := range strings.Split(v, ",") {
+			if p := strings.TrimSpace(part); p != "" {
+				cfg.Server.IPAllowlist = append(cfg.Server.IPAllowlist, p)
+			}
+		}
 	}
 	cfg.Auth.SecretKey = kv["auth.secret_key"]
 	cfg.Campaign.TenantID = kv["campaign.tenant_id"]

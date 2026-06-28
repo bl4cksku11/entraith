@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -33,6 +34,10 @@ type Handler struct {
 	Store          *store.Store
 	WebhookLogPath string
 	Listener       *WebhookListener
+	Limiter        *loginLimiter
+	// SecureCookies marks session cookies Secure (HTTPS-only). Set true in
+	// production (TLS proxy in front); may be disabled for local HTTP testing.
+	SecureCookies bool
 }
 
 func NewHandler(mgr *campaigns.Manager, mail *mailer.Manager, webhookLogPath string, db *store.Store) *Handler {
@@ -42,6 +47,8 @@ func NewHandler(mgr *campaigns.Manager, mail *mailer.Manager, webhookLogPath str
 		Store:          db,
 		WebhookLogPath: webhookLogPath,
 		Listener:       NewWebhookListener(webhookLogPath),
+		Limiter:        newLoginLimiter(),
+		SecureCookies:  true,
 	}
 }
 
@@ -65,6 +72,17 @@ func writeUnauthorized(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnauthorized)
 	json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"})
+}
+
+// setAPISecurityHeaders applies hardening headers to operator API/webhook
+// responses. NOT applied to the public phishing landing pages (/qr, /intune,
+// /receive), which must look unremarkable to a target/scanner.
+func setAPISecurityHeaders(w http.ResponseWriter) {
+	h := w.Header()
+	h.Set("X-Content-Type-Options", "nosniff")
+	h.Set("X-Frame-Options", "DENY")
+	h.Set("Referrer-Policy", "no-referrer")
+	h.Set("Cache-Control", "no-store")
 }
 
 func (h *Handler) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
@@ -94,16 +112,18 @@ func (h *Handler) adminIDSet() map[string]bool {
 // On success it loads the user from DB and attaches a *sessionUser to the request context.
 func (h *Handler) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Pass through non-API paths (webhook receiver etc.)
-		if !strings.HasPrefix(r.URL.Path, "/api/") {
+		// Public, unauthenticated endpoints:
+		//   /receive                  — the always-on beacon/telemetry receiver
+		//   /api/auth/login           — credential submission
+		//   /api/auth/change-password — does its own session check (first-login flow)
+		// Everything else under /api/ AND /webhook/ requires a valid session —
+		// in particular /webhook/{start,stop,status,logs} are operator controls,
+		// not public, even though they share a mux with /receive.
+		if r.URL.Path == "/receive" || r.URL.Path == "/api/auth/login" || r.URL.Path == "/api/auth/change-password" {
 			next.ServeHTTP(w, r)
 			return
 		}
-		// Public endpoints
-		if r.URL.Path == "/api/auth/login" || r.URL.Path == "/api/auth/change-password" {
-			next.ServeHTTP(w, r)
-			return
-		}
+		setAPISecurityHeaders(w)
 		cookie, err := r.Cookie("session")
 		if err != nil || cookie.Value == "" {
 			writeUnauthorized(w)
@@ -383,14 +403,27 @@ func (h *Handler) authLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "username and password required")
 		return
 	}
+	ip := clientIP(r)
+	if ok, retry := h.Limiter.allowed(body.Username, ip); !ok {
+		w.Header().Set("Retry-After", strconv.Itoa(retry))
+		writeError(w, 429, "too many attempts — try again later")
+		return
+	}
 	user, err := h.Store.GetUserByUsername(body.Username)
 	if err != nil || user == nil {
+		h.Limiter.recordFailure(body.Username, ip)
 		writeError(w, 401, "invalid credentials")
 		return
 	}
 	if !auth.VerifyPassword(body.Password, user.PasswordHash, user.Salt) {
+		h.Limiter.recordFailure(body.Username, ip)
 		writeError(w, 401, "invalid credentials")
 		return
+	}
+	h.Limiter.recordSuccess(body.Username, ip)
+	// Transparently upgrade legacy SHA-256 hashes to argon2id on the way in.
+	if auth.NeedsRehash(user.PasswordHash) {
+		h.Store.UpdateUserPasswordByID(user.ID, auth.HashPassword(body.Password), "", user.MustChangePassword)
 	}
 	token := auth.GenerateToken()
 	expiresAt := time.Now().Add(24 * time.Hour)
@@ -404,6 +437,7 @@ func (h *Handler) authLogin(w http.ResponseWriter, r *http.Request) {
 		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   h.SecureCookies,
 		SameSite: http.SameSiteStrictMode,
 		MaxAge:   86400,
 	})
@@ -421,10 +455,13 @@ func (h *Handler) authLogout(w http.ResponseWriter, r *http.Request) {
 		h.Store.DeleteSession(cookie.Value)
 	}
 	http.SetCookie(w, &http.Cookie{
-		Name:   "session",
-		Value:  "",
-		Path:   "/",
-		MaxAge: -1,
+		Name:     "session",
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   h.SecureCookies,
+		SameSite: http.SameSiteStrictMode,
+		MaxAge:   -1,
 	})
 	writeJSON(w, 200, map[string]string{"status": "logged_out"})
 }
@@ -479,9 +516,8 @@ func (h *Handler) changePassword(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "password must be at least 8 characters")
 		return
 	}
-	newSalt := auth.GenerateSalt()
-	newHash := auth.HashPassword(body.NewPassword, newSalt)
-	if err := h.Store.UpdateUserPasswordByID(sess.UserID, newHash, newSalt, false); err != nil {
+	newHash := auth.HashPassword(body.NewPassword)
+	if err := h.Store.UpdateUserPasswordByID(sess.UserID, newHash, "", false); err != nil {
 		writeError(w, 500, "failed to update password")
 		return
 	}
@@ -533,9 +569,8 @@ func (h *Handler) createUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := "user-" + auth.GenerateToken()[:12]
-	salt := auth.GenerateSalt()
-	hash := auth.HashPassword(body.Password, salt)
-	if err := h.Store.CreateUserFull(id, body.Username, hash, salt, body.Role, true); err != nil {
+	hash := auth.HashPassword(body.Password)
+	if err := h.Store.CreateUserFull(id, body.Username, hash, "", body.Role, true); err != nil {
 		writeError(w, 500, err.Error())
 		return
 	}
@@ -596,9 +631,8 @@ func (h *Handler) resetUserPassword(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "password required")
 		return
 	}
-	salt := auth.GenerateSalt()
-	hash := auth.HashPassword(body.Password, salt)
-	if err := h.Store.UpdateUserPasswordByID(id, hash, salt, true); err != nil {
+	hash := auth.HashPassword(body.Password)
+	if err := h.Store.UpdateUserPasswordByID(id, hash, "", true); err != nil {
 		writeError(w, 500, err.Error())
 		return
 	}
