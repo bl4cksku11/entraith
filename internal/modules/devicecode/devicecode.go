@@ -243,12 +243,6 @@ func NewEngine(tenantID, clientID, scope string, pollIntervalSec int, captureV1,
 	if interval < 5*time.Second {
 		interval = 5 * time.Second // Microsoft minimum
 	}
-	// Auto-detect v1 mode: if scope is a resource URL (https:// or urn:), the
-	// operator clearly wants v1 endpoints (resource= param). No need to set
-	// capture_v1 = true in config when the scope already makes the intent clear.
-	if !captureV1 && (strings.HasPrefix(scope, "https://") || strings.HasPrefix(scope, "urn:")) {
-		captureV1 = true
-	}
 	return &Engine{
 		sessions:   make(map[string]*Session),
 		tenantID:   tenantID,
