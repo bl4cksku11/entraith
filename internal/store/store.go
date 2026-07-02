@@ -157,6 +157,7 @@ func (s *Store) migrate() error {
 			device_cert_id TEXT NOT NULL DEFAULT '',
 			prt_token      TEXT NOT NULL,
 			session_key    TEXT NOT NULL,
+			prt_cookie     TEXT NOT NULL DEFAULT '',
 			target_upn     TEXT NOT NULL DEFAULT '',
 			tenant_id      TEXT NOT NULL DEFAULT '',
 			created_at     DATETIME NOT NULL
@@ -300,6 +301,8 @@ func (s *Store) migrate() error {
 		`ALTER TABLE sender_profiles ADD COLUMN auth_method TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE exchanged_tokens ADD COLUMN req_scope TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE exchanged_tokens ADD COLUMN req_resource TEXT NOT NULL DEFAULT ''`,
+		// Captured PRT SSO cookie (x-ms-RefreshTokenCredential) for cookie-only imports.
+		`ALTER TABLE primary_refresh_tokens ADD COLUMN prt_cookie TEXT NOT NULL DEFAULT ''`,
 	} {
 		if _, aerr := s.db.Exec(alter); aerr != nil && !isDuplicateColumnErr(aerr) {
 			return aerr
@@ -1152,24 +1155,29 @@ func (s *Store) DeleteDeviceCert(id string) error {
 // ─────────────────────────────────────────────
 
 type PRTRow struct {
-	ID           string    `json:"id"`
-	Label        string    `json:"label"`
-	DeviceCertID string    `json:"device_cert_id"`
-	PRTToken     string    `json:"prt_token"`
-	SessionKey   string    `json:"session_key"`
-	TargetUPN    string    `json:"target_upn"`
-	TenantID     string    `json:"tenant_id"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID           string `json:"id"`
+	Label        string `json:"label"`
+	DeviceCertID string `json:"device_cert_id"`
+	PRTToken     string `json:"prt_token"`
+	SessionKey   string `json:"session_key"`
+	// PRTCookie holds a captured x-ms-RefreshTokenCredential PRT SSO cookie. It is
+	// set for cookie-only imports (ROADtoken/AiTM captures) where no raw PRT +
+	// session key is available; such a row cannot mint tokens but can be injected
+	// as an SSO cookie in a browser. Empty for normal (mintable) PRTs.
+	PRTCookie string    `json:"prt_cookie"`
+	TargetUPN string    `json:"target_upn"`
+	TenantID  string    `json:"tenant_id"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 func (s *Store) InsertPRT(r PRTRow) error {
-	_, err := s.db.Exec(`INSERT INTO primary_refresh_tokens (id,label,device_cert_id,prt_token,session_key,target_upn,tenant_id,created_at) VALUES (?,?,?,?,?,?,?,?)`,
-		r.ID, r.Label, r.DeviceCertID, s.encF(r.PRTToken), s.encF(r.SessionKey), r.TargetUPN, r.TenantID, r.CreatedAt)
+	_, err := s.db.Exec(`INSERT INTO primary_refresh_tokens (id,label,device_cert_id,prt_token,session_key,prt_cookie,target_upn,tenant_id,created_at) VALUES (?,?,?,?,?,?,?,?,?)`,
+		r.ID, r.Label, r.DeviceCertID, s.encF(r.PRTToken), s.encF(r.SessionKey), s.encF(r.PRTCookie), r.TargetUPN, r.TenantID, r.CreatedAt)
 	return err
 }
 
 func (s *Store) ListPRTs() ([]PRTRow, error) {
-	rows, err := s.db.Query(`SELECT id,label,device_cert_id,prt_token,session_key,target_upn,tenant_id,created_at FROM primary_refresh_tokens ORDER BY created_at DESC`)
+	rows, err := s.db.Query(`SELECT id,label,device_cert_id,prt_token,session_key,prt_cookie,target_upn,tenant_id,created_at FROM primary_refresh_tokens ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -1177,24 +1185,26 @@ func (s *Store) ListPRTs() ([]PRTRow, error) {
 	var out []PRTRow
 	for rows.Next() {
 		var r PRTRow
-		if err := rows.Scan(&r.ID, &r.Label, &r.DeviceCertID, &r.PRTToken, &r.SessionKey, &r.TargetUPN, &r.TenantID, &r.CreatedAt); err != nil {
+		if err := rows.Scan(&r.ID, &r.Label, &r.DeviceCertID, &r.PRTToken, &r.SessionKey, &r.PRTCookie, &r.TargetUPN, &r.TenantID, &r.CreatedAt); err != nil {
 			return nil, err
 		}
 		r.PRTToken = s.decF(r.PRTToken)
 		r.SessionKey = s.decF(r.SessionKey)
+		r.PRTCookie = s.decF(r.PRTCookie)
 		out = append(out, r)
 	}
 	return out, rows.Err()
 }
 
 func (s *Store) GetPRT(id string) (*PRTRow, error) {
-	row := s.db.QueryRow(`SELECT id,label,device_cert_id,prt_token,session_key,target_upn,tenant_id,created_at FROM primary_refresh_tokens WHERE id=?`, id)
+	row := s.db.QueryRow(`SELECT id,label,device_cert_id,prt_token,session_key,prt_cookie,target_upn,tenant_id,created_at FROM primary_refresh_tokens WHERE id=?`, id)
 	var r PRTRow
-	if err := row.Scan(&r.ID, &r.Label, &r.DeviceCertID, &r.PRTToken, &r.SessionKey, &r.TargetUPN, &r.TenantID, &r.CreatedAt); err != nil {
+	if err := row.Scan(&r.ID, &r.Label, &r.DeviceCertID, &r.PRTToken, &r.SessionKey, &r.PRTCookie, &r.TargetUPN, &r.TenantID, &r.CreatedAt); err != nil {
 		return nil, err
 	}
 	r.PRTToken = s.decF(r.PRTToken)
 	r.SessionKey = s.decF(r.SessionKey)
+	r.PRTCookie = s.decF(r.PRTCookie)
 	return &r, nil
 }
 

