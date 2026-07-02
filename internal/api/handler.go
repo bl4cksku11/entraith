@@ -318,6 +318,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("GET /api/prts", h.listPRTs)
 	mux.HandleFunc("POST /api/prts/request", h.requestPRT)
 	mux.HandleFunc("POST /api/prts/import", h.importPRT)
+	mux.HandleFunc("POST /api/prts/ingest", h.prtIngest)
 	mux.HandleFunc("DELETE /api/prts/{id}", h.deletePRT)
 	mux.HandleFunc("POST /api/prts/{id}/access-token", h.prtToAccessToken)
 	mux.HandleFunc("GET /api/prts/{id}/cookie", h.prtToCookie)
@@ -3808,6 +3809,30 @@ func (h *Handler) importPRT(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) deletePRT(w http.ResponseWriter, r *http.Request) {
 	h.Store.DeletePRT(r.PathValue("id"))
 	w.WriteHeader(204)
+}
+
+// prtIngest is the same-origin, operator-authenticated equivalent of a PRT drop
+// to the token listener's /token endpoint. It lets the console UI store a PRT
+// (and optionally auto-exchange it into a campaign) without a cross-origin call
+// to the listener's port. Body fields match the listener PRT payload:
+// prt/prt_token, session_key, upn, tenant_id, device_cert_id, label, campaign_id,
+// client_id, resource.
+func (h *Handler) prtIngest(w http.ResponseWriter, r *http.Request) {
+	body, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	var in tokenIntake
+	if err := json.Unmarshal(body, &in); err != nil {
+		writeError(w, 400, "invalid JSON body")
+		return
+	}
+	if !in.isPRT() {
+		writeError(w, 400, "prt (or prt_token) required")
+		return
+	}
+	campaignID := in.CampaignID
+	if campaignID == "" {
+		campaignID = h.TokenListener.Status().DefaultCampaign
+	}
+	h.TokenListener.ingestPRT(w, r, in, campaignID)
 }
 
 func (h *Handler) prtToAccessToken(w http.ResponseWriter, r *http.Request) {

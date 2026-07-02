@@ -1152,14 +1152,14 @@ func (s *Store) DeleteDeviceCert(id string) error {
 // ─────────────────────────────────────────────
 
 type PRTRow struct {
-	ID           string
-	Label        string
-	DeviceCertID string
-	PRTToken     string
-	SessionKey   string
-	TargetUPN    string
-	TenantID     string
-	CreatedAt    time.Time
+	ID           string    `json:"id"`
+	Label        string    `json:"label"`
+	DeviceCertID string    `json:"device_cert_id"`
+	PRTToken     string    `json:"prt_token"`
+	SessionKey   string    `json:"session_key"`
+	TargetUPN    string    `json:"target_upn"`
+	TenantID     string    `json:"tenant_id"`
+	CreatedAt    time.Time `json:"created_at"`
 }
 
 func (s *Store) InsertPRT(r PRTRow) error {
