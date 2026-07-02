@@ -1721,7 +1721,7 @@
 
         <div class="section-header" style="margin-top:24px">Token Listener — OAuth token intake</div>
         <div style="font-size:11px;color:var(--text-dim);margin-bottom:10px">
-          Standalone server that receives OAuth tokens pushed in from an AiTM proxy, a phishing page, or a manual drop and ingests them into this campaign — ingested tokens appear under <b>Tokens</b> and are usable by every Graph / MFA / PRT tool. <code>POST /token</code> accepts JSON or form-urlencoded. Tokens without a <code>campaign_id</code> land in the default campaign (this campaign while it is started here). The intake port is unauthenticated by design — bind it where only your infrastructure can reach it.
+          Standalone server that receives OAuth tokens pushed in from an AiTM proxy, a phishing page, or a manual drop and ingests them into this campaign — ingested tokens appear under <b>Tokens</b> and are usable by every Graph / MFA / PRT tool. <code>POST /token</code>, <code>/receive</code> or any path accepts JSON, form-urlencoded, or text/plain (a ROADtoken/AiTM landing page using <code>fetch()</code> posts to <code>/receive</code> as text/plain — that works). A captured <code>x-ms-RefreshTokenCredential</code> is imported into the PRT vault. Tokens without a <code>campaign_id</code> land in the default campaign (this campaign while it is started here). The intake port is unauthenticated by design — bind it where only your infrastructure can reach it.
         </div>
         <div class="config-grid" style="grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:16px">
           <div class="config-card">

