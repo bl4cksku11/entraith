@@ -319,6 +319,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("POST /api/prts/request", h.requestPRT)
 	mux.HandleFunc("POST /api/prts/import", h.importPRT)
 	mux.HandleFunc("POST /api/prts/ingest", h.prtIngest)
+	mux.HandleFunc("POST /api/prts/{id}/use-in-campaign", h.prtUseInCampaign)
 	mux.HandleFunc("DELETE /api/prts/{id}", h.deletePRT)
 	mux.HandleFunc("POST /api/prts/{id}/access-token", h.prtToAccessToken)
 	mux.HandleFunc("GET /api/prts/{id}/cookie", h.prtToCookie)
@@ -3833,6 +3834,48 @@ func (h *Handler) prtIngest(w http.ResponseWriter, r *http.Request) {
 		campaignID = h.TokenListener.Status().DefaultCampaign
 	}
 	h.TokenListener.ingestPRT(w, r, in, campaignID)
+}
+
+// prtUseInCampaign takes an already-stored PRT, mints a Graph access token from
+// it (needs the stored session key) and ingests that token into a campaign so it
+// is immediately usable in Graph Actions. Backs the "Use in Graph" button in the
+// Stored PRTs list.
+func (h *Handler) prtUseInCampaign(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	row, err := h.Store.GetPRT(id)
+	if err != nil {
+		writeError(w, 404, "PRT not found")
+		return
+	}
+	var body struct {
+		CampaignID string `json:"campaign_id"`
+		ClientID   string `json:"client_id"`
+		Resource   string `json:"resource"`
+	}
+	json.NewDecoder(r.Body).Decode(&body)
+	campaignID := body.CampaignID
+	if campaignID == "" {
+		campaignID = h.TokenListener.Status().DefaultCampaign
+	}
+	if campaignID == "" {
+		writeError(w, 400, "campaign_id required")
+		return
+	}
+	if _, ok := h.campaignAccess(w, r, campaignID); !ok {
+		return
+	}
+	res, err := h.TokenListener.ExchangePRTIntoCampaign(campaignID, row.ID, row.PRTToken, row.SessionKey,
+		row.TargetUPN, row.TenantID, body.ClientID, body.Resource, "prt-vault")
+	if err != nil {
+		writeError(w, 422, err.Error())
+		return
+	}
+	writeJSON(w, 200, map[string]interface{}{
+		"status":       "exchanged",
+		"campaign_id":  campaignID,
+		"target_id":    res.TargetID,
+		"target_email": res.TargetEmail,
+	})
 }
 
 func (h *Handler) prtToAccessToken(w http.ResponseWriter, r *http.Request) {

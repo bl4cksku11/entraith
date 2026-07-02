@@ -1212,19 +1212,60 @@ async function ingestPRTPanel() {
 async function loadPRTs() {
   const el = document.getElementById('prtList');
   el.innerHTML='⏳ Loading...';
-  const data = await api('GET', '/prts');
+  const [data, campData] = await Promise.all([api('GET','/prts'), api('GET','/campaigns')]);
   const prts = Array.isArray(data) ? data : [];
+  const campaigns = campData.campaigns || campData || [];
+  const campOpts = '<option value="">— campaign —</option>' +
+    campaigns.map(c=>`<option value="${escH(c.id)}">${escH(c.name)}</option>`).join('');
   if (!prts.length) { el.innerHTML='<div style="color:var(--text-dim);font-size:11px">No PRTs stored.</div>'; return; }
-  el.innerHTML = prts.map(p=>`<div class="card">
-    <div class="card-info">
-      <div class="card-label">${escH(p.label||p.id)}</div>
-      <div class="card-sub">UPN: ${escH(p.target_upn||'—')} · Tenant: ${escH(p.tenant_id||'—')} · ${new Date(p.created_at).toLocaleString()}</div>
-    </div>
-    <div class="card-actions">
-      <button class="btn btn-sm btn-danger" onclick="deletePRT('${escH(p.id)}')">✕</button>
-    </div>
-  </div>`).join('');
+  el.innerHTML = prts.map(p=>{
+    const hasKey = !!(p.session_key && p.session_key.length);
+    const useCtl = hasKey
+      ? `<div style="display:flex;gap:6px;align-items:center;margin-top:8px;flex-wrap:wrap">
+           <select id="prtUseCamp_${escH(p.id)}" style="min-width:160px">${campOpts}</select>
+           <button class="btn btn-sm btn-primary" onclick="prtUseInGraph('${escH(p.id)}')">⚡ Use in Graph</button>
+           <span id="prtUseOut_${escH(p.id)}" style="font-size:11px;color:var(--text-dim)"></span>
+         </div>`
+      : `<div style="font-size:11px;color:var(--warn);margin-top:8px">⚠ No session key stored — cannot mint tokens. Re-ingest this PRT with its session key to use it in Graph.</div>`;
+    return `<div class="card" style="flex-direction:column;align-items:stretch">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+        <div class="card-info">
+          <div class="card-label">${escH(p.label||p.id)}</div>
+          <div class="card-sub">UPN: ${escH(p.target_upn||'—')} · Tenant: ${escH(p.tenant_id||'—')} · ${new Date(p.created_at).toLocaleString()}</div>
+        </div>
+        <div class="card-actions">
+          <button class="btn btn-sm btn-danger" onclick="deletePRT('${escH(p.id)}')">✕</button>
+        </div>
+      </div>
+      ${useCtl}
+    </div>`;
+  }).join('');
   populatePRTUseSelect();
+}
+
+// prtUseInGraph exchanges an already-stored PRT for a Graph access token and
+// ingests it into the selected campaign, then offers one-click navigation to
+// Graph Ops with that identity selected.
+async function prtUseInGraph(id) {
+  const sel = document.getElementById('prtUseCamp_'+id);
+  const out = document.getElementById('prtUseOut_'+id);
+  const cid = sel ? sel.value : '';
+  if (!cid) { if (out) out.textContent = '⚠ pick a campaign'; return; }
+  if (out) out.textContent = '⏳ exchanging PRT → Graph token…';
+  const result = await api('POST', '/prts/'+id+'/use-in-campaign', { campaign_id: cid });
+  if (result.error) { if (out) out.textContent = '⚠ '+result.error; return; }
+  const who = result.target_email || result.target_id;
+  if (out) out.innerHTML = '✓ ingested as '+escH(who)+' — '+
+    `<button class="btn btn-sm" onclick="openInGraphOps('${escH(cid)}','${escH(result.target_id)}')">→ Graph Ops</button>`;
+}
+
+async function openInGraphOps(cid, tid) {
+  showSection('graph-actions');
+  const cs = document.getElementById('gaCampaignId');
+  if (cs) cs.value = cid;
+  await loadGaTargets();
+  const ts = document.getElementById('gaTargetId');
+  if (ts) ts.value = tid;
 }
 
 async function deletePRT(id) {

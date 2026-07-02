@@ -223,6 +223,8 @@ All Graph Ops routes look up the stored access token for `{targetId}` and proxy 
 | `GET` | `/api/prts` | List all stored PRTs |
 | `POST` | `/api/prts/request` | `{campaign_id, target_id, device_cert_id, client_id}` |
 | `POST` | `/api/prts/import` | Import a raw PRT |
+| `POST` | `/api/prts/ingest` | Same-origin PRT drop (console): store a PRT (`prt`/`prt_token`, `session_key`, `upn`, `tenant_id`, `device_cert_id`, `label`) and, with a `campaign_id` + session key, auto-exchange it to a Graph token ingested into the campaign |
+| `POST` | `/api/prts/{id}/use-in-campaign` | Take a stored PRT, mint a Graph access token (needs the stored session key) and ingest it into `{campaign_id, client_id?, resource?}` so it is usable in Graph Actions |
 | `DELETE` | `/api/prts/{id}` | Delete a PRT |
 | `POST` | `/api/prts/{id}/access-token` | `{resource, scope, client_id}` → access token |
 | `GET` | `/api/prts/{id}/cookie` | PRT → SSO cookie |

