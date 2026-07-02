@@ -1234,7 +1234,7 @@ async function loadPRTs() {
     } else if (isCookie) {
       useCtl = `<div style="margin-top:8px;display:flex;flex-direction:column;gap:6px">
            <div style="font-size:11px;color:var(--text-dim)">Inyección SSO en navegador · <b>no</b> acuña tokens (sin session key)</div>
-           <div id="prtFresh_${escH(p.id)}" class="prt-fresh" data-exp="${expMs}" style="font-size:11px;font-weight:600">⏱ …</div>
+           <div id="prtFresh_${escH(p.id)}" class="prt-fresh" data-exp="${expMs}" data-created="${Date.parse(p.created_at)||0}" style="font-size:11px;font-weight:600">⏱ …</div>
            <div style="display:flex;gap:6px;flex-wrap:wrap">
              <button class="btn btn-sm btn-primary" onclick="prtGetCookieInline('${escH(p.id)}')">📋 Cookie / inyectar</button>
            </div>
@@ -1353,12 +1353,23 @@ function startPRTFreshnessTicker(){
 function tickPRTFreshness(){
   document.querySelectorAll('.prt-fresh').forEach(el=>{
     const exp = parseInt(el.dataset.exp||'0',10);
-    if(!exp){ el.textContent='⏱ frescura desconocida'; el.style.color='var(--warn)'; return; }
-    const rem = Math.floor((exp - Date.now())/1000);
-    if(rem<=0){ el.innerHTML='⛔ EXPIRADO — recaptura el PRT cookie'; el.style.color='var(--accent2)'; return; }
-    const mm = Math.floor(rem/60), ss = rem%60;
-    el.textContent = '⏱ úsalo antes de '+new Date(exp).toLocaleTimeString()+' · quedan '+mm+'m '+(ss<10?'0':'')+ss+'s';
-    el.style.color = rem<60 ? 'var(--accent2)' : 'var(--warn)';
+    if(exp){
+      const rem = Math.floor((exp - Date.now())/1000);
+      if(rem<=0){ el.innerHTML='⛔ EXPIRADO — recaptura el PRT cookie'; el.style.color='var(--accent2)'; return; }
+      const mm = Math.floor(rem/60), ss = rem%60;
+      el.textContent = '⏱ úsalo antes de '+new Date(exp).toLocaleTimeString()+' · quedan '+mm+'m '+(ss<10?'0':'')+ss+'s';
+      el.style.color = rem<60 ? 'var(--accent2)' : 'var(--warn)';
+      return;
+    }
+    // Cookies kdf_ver:2 (BrowserCore) no traen exp — mostramos la edad desde la
+    // captura. Un PRT cookie vive solo unos minutos, así que a los ~5 min lo
+    // marcamos como probablemente expirado.
+    const created = parseInt(el.dataset.created||'0',10);
+    if(!created){ el.textContent='⏱ frescura desconocida'; el.style.color='var(--warn)'; return; }
+    const age = Math.floor((Date.now() - created)/1000);
+    const mm = Math.floor(age/60), ss = age%60;
+    el.textContent = (age>300?'⚠ ':'⏱ ')+'capturado hace '+mm+'m '+(ss<10?'0':'')+ss+'s · los PRT cookies duran ~minutos'+(age>300?' (posiblemente expirado)':'');
+    el.style.color = age>300 ? 'var(--accent2)' : 'var(--warn)';
   });
 }
 
