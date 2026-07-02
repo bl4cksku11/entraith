@@ -16,6 +16,8 @@ The console holds live tokens for the client tenant, so treat the host it runs o
 
 **Webhook controls.** `/receive` is the always-on beacon receiver and stays public. The control endpoints (`/webhook/start`, `/webhook/stop`, `/webhook/status`, `/webhook/logs`) require an operator session.
 
+**Token listener.** The token-intake server (`POST /token`) runs on its own port and is unauthenticated by design — an external AiTM proxy or phishing page has to be able to reach it. Bind it where only your infrastructure can, or front it with a redirector; it is not covered by `server.ip_allowlist` (that guards the console). Its `/api/token-listener/*` controls require an operator session. Ingested tokens are encrypted at rest like any capture, and the `token_listener.log` audit trail records only redacted token fingerprints (prefix + length), never usable token material.
+
 **Network restriction.** `server.ip_allowlist` limits the console to known source IPs while leaving the phishing and beacon endpoints open. A non-allowed source gets a 404 instead of a login page.
 
 ## Encryption key

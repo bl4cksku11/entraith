@@ -284,6 +284,21 @@ Saved custom Graph API request templates (stored globally, used in the custom re
 
 The webhook log file is `stream_monitor.log` under `storage.artifacts_path`.
 
+### Token listener
+
+A standalone OAuth-token intake server that ingests tokens (from an AiTM proxy, phishing page, or manual drop) into a campaign. The **intake endpoint runs on its own port** (default 8000) and is unauthenticated by design; the `/api/token-listener/*` control endpoints require an operator session. See [configuration.md](configuration.md#token-listener) for the payload format.
+
+| Method | Path | Auth | Notes |
+|--------|------|------|-------|
+| `POST` | `/token` (intake port) | public | Ingest one token. JSON or form-urlencoded. Body: `access_token`/`refresh_token`/`id_token` (≥1), `campaign_id`, `target_id`/`target_email`, `token_type`, `expires_in`, `scope`, `source`. Returns `{status:"ingested", campaign_id, target_id, target_email, upn}` |
+| `GET`  | `/health` (intake port) | public | `{status:"ok"}` |
+| `GET`  | `/api/token-listener/status` | session | `{running, port, started_at, received, ingested, log_path, default_campaign, default_port}` |
+| `POST` | `/api/token-listener/start` | session | Optional `{port, default_campaign}`. Port falls back to `listener.token_port` (8000). A supplied `default_campaign` must exist |
+| `POST` | `/api/token-listener/stop` | session | Graceful shutdown (5s timeout) |
+| `GET`  | `/api/token-listener/logs` | session | `{entries, status}` — last 100 redacted `token_ingest` entries |
+
+The token listener log file is `token_listener.log` under `storage.artifacts_path`. Token material is redacted in the log.
+
 ### Sender profiles
 
 | Method | Path | Notes |

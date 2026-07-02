@@ -196,8 +196,10 @@ entraith/
 │   │   │                        # Auth (RBAC: admin / operator), user management,
 │   │   │                        # campaigns, targets, Graph Ops, MFA, Intune phishing,
 │   │   │                        # device certs, PRTs, WinHello, OTP, token exchange
-│   │   └── webhook.go           # Standalone webhook listener goroutine
-│   │                            # Start/stop/log the secondary HTTP listener
+│   │   ├── webhook.go           # Standalone webhook listener goroutine
+│   │   │                        # Start/stop/log the secondary HTTP listener
+│   │   └── tokenlistener.go     # Standalone OAuth token-intake server
+│   │                            # POST /token → ingest into a campaign (JSON/form)
 │   │
 │   └── web/
 │       ├── pages.go             # go:embed declarations for all HTML files

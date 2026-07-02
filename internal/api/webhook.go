@@ -356,6 +356,13 @@ func parseLogLine(line string) WebhookEntry {
 		e.Format = v
 		line = rest
 	}
+	// The current log format writes `type=<kind>` between format= and payload=.
+	// Parse it when present; legacy lines without it fall straight through to
+	// payload= below (cutField is a no-op when the key is absent).
+	if v, rest, ok := cutField(line, "type="); ok {
+		e.Type = v
+		line = rest
+	}
 	if after, ok := strings.CutPrefix(strings.TrimSpace(line), "payload="); ok {
 		e.Body = after
 	}

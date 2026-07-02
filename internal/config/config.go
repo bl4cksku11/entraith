@@ -15,6 +15,7 @@ type Config struct {
 	Auth       AuthConfig       `yaml:"auth"`
 	Campaign   CampaignConfig   `yaml:"campaign"`
 	Storage    StorageConfig    `yaml:"storage"`
+	Listener   ListenerConfig   `yaml:"listener"`
 }
 
 type EngagementConfig struct {
@@ -56,6 +57,15 @@ type CampaignConfig struct {
 type StorageConfig struct {
 	ArtifactsPath string `yaml:"artifacts_path"`
 	ExportsPath   string `yaml:"exports_path"`
+}
+
+// ListenerConfig controls the standalone token-intake listener — a separate
+// server that receives OAuth tokens pushed in from an AiTM proxy / phishing page
+// / manual drop and ingests them into a campaign.
+type ListenerConfig struct {
+	TokenPort       int    `yaml:"token_port"`       // intake port (default 8000)
+	TokenAutostart  bool   `yaml:"token_autostart"`  // start the listener at boot
+	DefaultCampaign string `yaml:"default_campaign"` // campaign for tokens without an explicit campaign_id
 }
 
 func Load(path string) (*Config, error) {
@@ -136,6 +146,14 @@ func Load(path string) (*Config, error) {
 	cfg.Storage.ArtifactsPath = kv["storage.artifacts_path"]
 	cfg.Storage.ExportsPath = kv["storage.exports_path"]
 
+	if v, err := strconv.Atoi(kv["listener.token_port"]); err == nil {
+		cfg.Listener.TokenPort = v
+	}
+	if v := strings.ToLower(kv["listener.token_autostart"]); v == "true" || v == "1" || v == "yes" {
+		cfg.Listener.TokenAutostart = true
+	}
+	cfg.Listener.DefaultCampaign = kv["listener.default_campaign"]
+
 	setDefaults(cfg)
 	return cfg, nil
 }
@@ -164,5 +182,8 @@ func setDefaults(cfg *Config) {
 	}
 	if cfg.Storage.ExportsPath == "" {
 		cfg.Storage.ExportsPath = "/opt/entraith/data/exports"
+	}
+	if cfg.Listener.TokenPort == 0 {
+		cfg.Listener.TokenPort = 8000
 	}
 }

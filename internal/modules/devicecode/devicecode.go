@@ -137,6 +137,39 @@ type jwtClaims struct {
 	OID      string `json:"oid"`
 	UPN      string `json:"upn"`
 	UniqName string `json:"unique_name"`
+	PrefUser string `json:"preferred_username"` // common on id_tokens
+	Email    string `json:"email"`              // fallback identity claim
+}
+
+// CapturedClaims is the identity metadata extracted from a captured token's JWT,
+// used to correlate an out-of-band token to a tenant/target on ingest.
+type CapturedClaims struct {
+	TenantID string
+	ClientID string // appid (v1) or azp (v2)
+	UPN      string // best available principal: upn → preferred_username → unique_name → email
+}
+
+// ExtractClaims parses a captured JWT (access or id token) and returns the
+// identity metadata we use to correlate the token to a tenant/target. It does
+// NO signature verification — we trust the token because we captured it.
+func ExtractClaims(token string) (CapturedClaims, error) {
+	c, err := extractJWTClaims(token)
+	if err != nil {
+		return CapturedClaims{}, err
+	}
+	out := CapturedClaims{TenantID: c.TenantID}
+	if c.AppID != "" {
+		out.ClientID = c.AppID
+	} else {
+		out.ClientID = c.AZP
+	}
+	for _, v := range []string{c.UPN, c.PrefUser, c.UniqName, c.Email} {
+		if v != "" {
+			out.UPN = v
+			break
+		}
+	}
+	return out, nil
 }
 
 // extractJWTClaims parses the payload of a JWT (no signature verification —

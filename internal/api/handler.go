@@ -34,6 +34,7 @@ type Handler struct {
 	Store          *store.Store
 	WebhookLogPath string
 	Listener       *WebhookListener
+	TokenListener  *TokenListener
 	Limiter        *loginLimiter
 	// SecureCookies marks session cookies Secure (HTTPS-only). Set true in
 	// production (TLS proxy in front); may be disabled for local HTTP testing.
@@ -47,6 +48,7 @@ func NewHandler(mgr *campaigns.Manager, mail *mailer.Manager, webhookLogPath str
 		Store:          db,
 		WebhookLogPath: webhookLogPath,
 		Listener:       NewWebhookListener(webhookLogPath),
+		TokenListener:  NewTokenListener(mgr, webhookLogPath, ""),
 		Limiter:        newLoginLimiter(),
 		SecureCookies:  true,
 	}
@@ -358,6 +360,13 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("POST /webhook/start", h.webhookStart)
 	mux.HandleFunc("POST /webhook/stop", h.webhookStop)
 	mux.HandleFunc("GET /webhook/logs", h.webhookLogs)
+
+	// Token listener control — operator-only (behind the /api/ auth middleware).
+	// The intake server itself runs on its own port; these just drive it.
+	mux.HandleFunc("GET /api/token-listener/status", h.tokenListenerStatus)
+	mux.HandleFunc("POST /api/token-listener/start", h.tokenListenerStart)
+	mux.HandleFunc("POST /api/token-listener/stop", h.tokenListenerStop)
+	mux.HandleFunc("GET /api/token-listener/logs", h.tokenListenerLogs)
 
 	// Sender profiles
 	mux.HandleFunc("GET /api/mailer/profiles", h.listProfiles)
@@ -2188,6 +2197,65 @@ func (h *Handler) webhookLogs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]interface{}{
 		"entries": entries,
 		"total":   h.Listener.Status().Entries,
+	})
+}
+
+// ─── Token listener control handlers ─────────────────────────────────────────
+
+func (h *Handler) tokenListenerStatus(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, 200, h.TokenListener.Status())
+}
+
+// tokenListenerStart starts the standalone token intake server. Both fields are
+// optional: an unset port falls back to the configured default (listener.token_port,
+// 8000 if unset); default_campaign, when given, is where tokens without an
+// explicit campaign_id are ingested.
+func (h *Handler) tokenListenerStart(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Port            int    `json:"port"`
+		DefaultCampaign string `json:"default_campaign"`
+	}
+	// Body is optional — ignore decode errors and fall back to defaults.
+	_ = json.NewDecoder(r.Body).Decode(&body)
+
+	if body.DefaultCampaign != "" {
+		if _, ok := h.Manager.GetCampaign(body.DefaultCampaign); !ok {
+			writeError(w, 404, "default_campaign not found")
+			return
+		}
+		h.TokenListener.SetDefaultCampaign(body.DefaultCampaign)
+	}
+
+	port := body.Port
+	if port == 0 {
+		port = h.TokenListener.DefaultPort
+	}
+	if port == 0 {
+		port = 8000
+	}
+	if err := h.TokenListener.Start(port); err != nil {
+		writeError(w, 409, err.Error())
+		return
+	}
+	writeJSON(w, 200, h.TokenListener.Status())
+}
+
+func (h *Handler) tokenListenerStop(w http.ResponseWriter, r *http.Request) {
+	if err := h.TokenListener.Stop(); err != nil {
+		writeError(w, 409, err.Error())
+		return
+	}
+	writeJSON(w, 200, h.TokenListener.Status())
+}
+
+func (h *Handler) tokenListenerLogs(w http.ResponseWriter, r *http.Request) {
+	entries := h.TokenListener.GetLogs(100)
+	if entries == nil {
+		entries = []WebhookEntry{}
+	}
+	writeJSON(w, 200, map[string]interface{}{
+		"entries": entries,
+		"status":  h.TokenListener.Status(),
 	})
 }
 

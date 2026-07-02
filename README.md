@@ -28,6 +28,7 @@ Each target gets a unique code tied to their session, so captured tokens correla
 - Device-code phishing campaigns with per-target codes, email delivery, and live capture over SSE.
 - Three delivery modes: direct device code, QR landing page, and an Intune-style enrollment lookalike.
 - Token handling: capture, refresh, cross-resource exchange (SharePoint, Azure, Key Vault, and others), and JSON export for evidence.
+- Token intake listener: a standalone `POST /token` server (default port 8000) that ingests tokens pushed in from an AiTM proxy, phishing page, or manual drop straight into a campaign, usable immediately by every post-ex tool.
 - Graph post-exploitation: mail, OneDrive/SharePoint, Teams, user and group enumeration, app registrations, conditional access, M365 search.
 - Entra ID tradecraft: MFA method manipulation, virtual device registration, PRT request and conversion to access tokens or SSO cookies, Windows Hello key registration.
 - Tenant persistence (CA exclusions, SP credential backdoors, role assignments) recorded in a deployment ledger with one-click teardown.
