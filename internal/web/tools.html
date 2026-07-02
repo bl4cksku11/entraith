@@ -303,7 +303,7 @@
         </div>
 
         <div id="prttab-intake" class="section-body">
-          <p style="font-size:11px;color:var(--text-dim);margin-bottom:14px">Drop a captured PRT (LSASS / CloudAP) into the vault and optionally <b>activate it in a campaign</b>: with a session key and a selected campaign, the PRT is exchanged for a Graph access token and ingested into that campaign, ready for Graph Actions. Same effect as <code>POST :port/token</code> with a PRT payload — the standalone listener does not need to be running for this console drop.</p>
+          <p style="font-size:11px;color:var(--text-dim);margin-bottom:14px">Drop a captured PRT (LSASS / CloudAP) into the vault and optionally <b>use it in a campaign</b>. A PRT is stronger than a token — it stays in the vault at full strength (mint any resource from <b>Use PRT</b>, or an SSO cookie). With a session key + selected campaign it also mints a Graph access token <b>and a family refresh token</b> ingested as a campaign target, so the identity works across the whole toolset: <b>Graph Actions, Token Exchange</b> (cross-resource) and <b>MFA</b>. Same effect as <code>POST :port/token</code> with a PRT payload — the standalone listener need not be running for this console drop.</p>
           <div class="input-group"><label>LABEL</label><input id="prtNLabel" type="text" placeholder="ceo@contoso.com PRT (LSASS)"></div>
           <div class="input-group"><label>PRT TOKEN</label><textarea id="prtNToken" rows="3" placeholder="Paste the PRT"></textarea></div>
           <div class="input-group"><label>SESSION KEY (base64)</label><input id="prtNSessionKey" type="text" placeholder="derived/clear key — required to mint tokens"></div>
@@ -313,7 +313,7 @@
           </div>
           <div class="input-group"><label>DEVICE CERT ID (optional)</label><select id="prtNDevCert"><option value="">— none —</option></select></div>
           <div class="input-group">
-            <label><input type="checkbox" id="prtNActivate" onchange="document.getElementById('prtNCampaignRow').style.display=this.checked?'block':'none'"> Activate in campaign (auto-exchange PRT → Graph token → ingest)</label>
+            <label><input type="checkbox" id="prtNActivate" onchange="document.getElementById('prtNCampaignRow').style.display=this.checked?'block':'none'"> Use in campaign (mint Graph + family refresh token → usable in Graph Actions, Token Exchange, MFA)</label>
           </div>
           <div id="prtNCampaignRow" class="input-group" style="display:none"><label>CAMPAIGN</label><select id="prtNCampaign"><option value="">— select campaign —</option></select></div>
           <button class="btn btn-primary" onclick="ingestPRTPanel()">▶ Ingest PRT</button>
@@ -1198,8 +1198,9 @@ async function ingestPRTPanel() {
   if (result.error) { out.textContent = '⚠ '+result.error; return; }
   let msg = '✓ PRT stored — id: '+result.prt_id;
   if (result.exchanged) {
-    msg += '\n✓ Exchanged to Graph token and ingested into campaign '+result.campaign_id+
-           '\n  target: '+(result.target_email||result.target_id)+' — now usable in Graph Actions';
+    msg += '\n✓ Minted Graph + refresh token, ingested into campaign '+result.campaign_id+
+           '\n  target: '+(result.target_email||result.target_id)+
+           ' — usable in Graph Actions, Token Exchange (cross-resource) and MFA';
   } else if (result.exchange_error) {
     msg += '\n⚠ Auto-exchange failed (PRT still stored): '+result.exchange_error;
   } else if (activate) {
@@ -1223,7 +1224,7 @@ async function loadPRTs() {
     const useCtl = hasKey
       ? `<div style="display:flex;gap:6px;align-items:center;margin-top:8px;flex-wrap:wrap">
            <select id="prtUseCamp_${escH(p.id)}" style="min-width:160px">${campOpts}</select>
-           <button class="btn btn-sm btn-primary" onclick="prtUseInGraph('${escH(p.id)}')">⚡ Use in Graph</button>
+           <button class="btn btn-sm btn-primary" onclick="prtUseInCampaign('${escH(p.id)}')">⚡ Use in campaign</button>
            <span id="prtUseOut_${escH(p.id)}" style="font-size:11px;color:var(--text-dim)"></span>
          </div>`
       : `<div style="font-size:11px;color:var(--warn);margin-top:8px">⚠ No session key stored — cannot mint tokens. Re-ingest this PRT with its session key to use it in Graph.</div>`;
@@ -1243,19 +1244,25 @@ async function loadPRTs() {
   populatePRTUseSelect();
 }
 
-// prtUseInGraph exchanges an already-stored PRT for a Graph access token and
-// ingests it into the selected campaign, then offers one-click navigation to
-// Graph Ops with that identity selected.
-async function prtUseInGraph(id) {
+// prtUseInCampaign exchanges an already-stored PRT into the selected campaign.
+// The PRT stays in the vault at full strength; this mints a Graph access token
+// plus a family refresh token and ingests them as a campaign target, so the PRT
+// identity becomes usable across the whole toolset — Graph Actions, Token
+// Exchange (cross-resource) and MFA — then offers one-click navigation to Graph
+// Ops with that identity selected.
+async function prtUseInCampaign(id) {
   const sel = document.getElementById('prtUseCamp_'+id);
   const out = document.getElementById('prtUseOut_'+id);
   const cid = sel ? sel.value : '';
   if (!cid) { if (out) out.textContent = '⚠ pick a campaign'; return; }
-  if (out) out.textContent = '⏳ exchanging PRT → Graph token…';
+  if (out) out.textContent = '⏳ exchanging PRT into campaign…';
   const result = await api('POST', '/prts/'+id+'/use-in-campaign', { campaign_id: cid });
   if (result.error) { if (out) out.textContent = '⚠ '+result.error; return; }
   const who = result.target_email || result.target_id;
-  if (out) out.innerHTML = '✓ ingested as '+escH(who)+' — '+
+  const reach = result.has_refresh
+    ? 'Graph Actions + Token Exchange + MFA'
+    : 'Graph Actions only (no refresh token returned)';
+  if (out) out.innerHTML = '✓ '+escH(who)+' → '+escH(reach)+' — '+
     `<button class="btn btn-sm" onclick="openInGraphOps('${escH(cid)}','${escH(result.target_id)}')">→ Graph Ops</button>`;
 }
 

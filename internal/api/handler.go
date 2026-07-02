@@ -3870,11 +3870,17 @@ func (h *Handler) prtUseInCampaign(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 422, err.Error())
 		return
 	}
+	// has_refresh signals whether the exchange returned a (family) refresh token.
+	// With one, the target unlocks the whole refresh-token toolset — Token
+	// Exchange (cross-resource) and MFA — on top of Graph Actions. Without one
+	// (Office is a FOCI client, so this is rare) only Graph Actions works until a
+	// refresh-bearing token is captured.
 	writeJSON(w, 200, map[string]interface{}{
 		"status":       "exchanged",
 		"campaign_id":  campaignID,
 		"target_id":    res.TargetID,
 		"target_email": res.TargetEmail,
+		"has_refresh":  res.RefreshToken != "",
 	})
 }
 

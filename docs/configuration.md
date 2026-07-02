@@ -282,6 +282,8 @@ A Primary Refresh Token is **not** a bearer token, so it takes a different path:
 
 A PRT intake always stores the PRT first; a failed auto-exchange (e.g. wrong session key) is reported in the response as `exchange_error` but the PRT is kept. Response: `{status:"prt_stored", prt_id, label, has_session_key, exchanged?, campaign_id?, target_id?, target_email?, exchange_error?}`.
 
+**A PRT is stronger than a single token, and stays that way.** Using it in a campaign does not consume or weaken it: the PRT remains in the vault and can still mint a token for *any* resource (the **Use PRT** tab) or produce an SSO cookie. The campaign exchange mints a Graph access token **and a family refresh token** (via the Office FOCI client) and ingests them as a target — that family refresh token is what unlocks the rest of the toolset from that identity: **Graph Actions**, **Token Exchange** (cross-resource: SharePoint, Azure, Key Vault, …) and **MFA**. Already-stored PRTs get the same one-click action from the **Stored PRTs** list ("Use in campaign"), which also offers direct navigation into Graph Ops with the identity selected.
+
 Example (PRT captured from LSASS/CloudAP, stored and auto-used in a campaign):
 
 ```bash
