@@ -48,7 +48,7 @@ func NewHandler(mgr *campaigns.Manager, mail *mailer.Manager, webhookLogPath str
 		Store:          db,
 		WebhookLogPath: webhookLogPath,
 		Listener:       NewWebhookListener(webhookLogPath),
-		TokenListener:  NewTokenListener(mgr, webhookLogPath, ""),
+		TokenListener:  NewTokenListener(mgr, db, webhookLogPath, ""),
 		Limiter:        newLoginLimiter(),
 		SecureCookies:  true,
 	}

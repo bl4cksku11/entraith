@@ -370,7 +370,7 @@ func runServer() {
 	// (AiTM proxy / phishing page / manual drop). Controlled at runtime via
 	// /api/token-listener/{start,stop,status,logs}, or autostarted here.
 	tokenLogPath := filepath.Join(cfg.Storage.ArtifactsPath, "token_listener.log")
-	apiHandler.TokenListener = api.NewTokenListener(mgr, tokenLogPath, cfg.Listener.DefaultCampaign)
+	apiHandler.TokenListener = api.NewTokenListener(mgr, db, tokenLogPath, cfg.Listener.DefaultCampaign)
 	apiHandler.TokenListener.DefaultPort = cfg.Listener.TokenPort
 	if cfg.Listener.TokenAutostart {
 		if err := apiHandler.TokenListener.Start(cfg.Listener.TokenPort); err != nil {

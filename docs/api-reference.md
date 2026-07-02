@@ -291,6 +291,7 @@ A standalone OAuth-token intake server that ingests tokens (from an AiTM proxy, 
 | Method | Path | Auth | Notes |
 |--------|------|------|-------|
 | `POST` | `/token` (intake port) | public | Ingest one token. JSON or form-urlencoded. Body: `access_token`/`refresh_token`/`id_token` (≥1), `campaign_id`, `target_id`/`target_email`, `token_type`, `expires_in`, `scope`, `source`. Returns `{status:"ingested", campaign_id, target_id, target_email, upn}` |
+| `POST` | `/token` (intake port) | public | **PRT variant** — if the body carries `prt`/`prt_token` (+ `session_key`, `upn`, `tenant_id`, optional `device_cert_id`/`label`/`campaign_id`), the PRT is stored complete in the PRT vault. With a `campaign_id` and session key it is also exchanged for a Graph access token ingested into the campaign. Returns `{status:"prt_stored", prt_id, exchanged?, exchange_error?}` |
 | `GET`  | `/health` (intake port) | public | `{status:"ok"}` |
 | `GET`  | `/api/token-listener/status` | session | `{running, port, started_at, received, ingested, log_path, default_campaign, default_port}` |
 | `POST` | `/api/token-listener/start` | session | Optional `{port, default_campaign}`. Port falls back to `listener.token_port` (8000). A supplied `default_campaign` must exist |

