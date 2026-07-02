@@ -100,6 +100,7 @@ The console handles live tokens for the client tenant and is reachable from the 
 
 - [Operator guide](docs/operator-guide.md) — campaign workflow, QR and Intune phishing, mail, token management, Graph post-exploitation.
 - [Advanced tools](docs/advanced-tools.md) — MFA manipulation, device registration, PRT operations, token exchange, persistence and teardown.
+- [Token & PRT intake walkthrough](docs/token-prt-walkthrough.md) — step-by-step: the token listener, PRT intake, and using a PRT across the whole toolset.
 - [Configuration](docs/configuration.md) — config reference, roles and access control, database, webhook listener.
 - [Architecture](docs/architecture.md) — components, data flow, package layout.
 - [API reference](docs/api-reference.md) — every HTTP endpoint.
