@@ -4,6 +4,7 @@ package store
 
 import (
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -855,12 +856,93 @@ func (s *Store) DeleteEmailTemplate(id string) error {
 
 // CampaignExport holds the complete evidence package for one campaign.
 type CampaignExport struct {
-	Campaign     CampaignRow      `json:"campaign"`
-	Targets      []TargetRow      `json:"targets"`
-	DeviceCodes  []DeviceCodeRow  `json:"device_codes"`
-	Tokens       []TokenRow       `json:"tokens"`
-	EmailResults []EmailResultRow `json:"email_results"`
-	ExportedAt   time.Time        `json:"exported_at"`
+	Campaign      CampaignRow      `json:"campaign"`
+	Targets       []TargetRow      `json:"targets"`
+	DeviceCodes   []DeviceCodeRow  `json:"device_codes"`
+	Tokens        []TokenRow       `json:"tokens"`
+	DecodedTokens []DecodedToken   `json:"decoded_tokens"`
+	EmailResults  []EmailResultRow `json:"email_results"`
+	ExportedAt    time.Time        `json:"exported_at"`
+}
+
+// DecodedToken is a human-readable summary of a captured JWT's claims, added to
+// the export so the evidence package is legible without pasting tokens into an
+// external decoder. No signature verification is done — the token is trusted
+// because we captured it.
+type DecodedToken struct {
+	TargetEmail string     `json:"target_email"`
+	Kind        string     `json:"kind"` // "access" or "id"
+	Audience    string     `json:"aud,omitempty"`
+	AppID       string     `json:"appid,omitempty"`
+	UPN         string     `json:"upn,omitempty"`
+	TenantID    string     `json:"tid,omitempty"`
+	Scopes      string     `json:"scp,omitempty"`
+	Roles       []string   `json:"roles,omitempty"`
+	IssuedAt    *time.Time `json:"iat,omitempty"`
+	Expires     *time.Time `json:"exp,omitempty"`
+	Expired     bool       `json:"expired"`
+	IPAddr      string     `json:"ipaddr,omitempty"`
+}
+
+// decodeTokenClaims parses a captured JWT payload into a DecodedToken. It returns
+// nil when the input is not a JWT (e.g. an opaque refresh token). No signature
+// check is performed.
+func decodeTokenClaims(kind, targetEmail, token string) *DecodedToken {
+	parts := strings.Split(token, ".")
+	if len(parts) < 2 {
+		return nil
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(strings.TrimRight(parts[1], "="))
+	if err != nil {
+		return nil
+	}
+	var c struct {
+		Aud      string   `json:"aud"`
+		AppID    string   `json:"appid"`
+		AZP      string   `json:"azp"`
+		UPN      string   `json:"upn"`
+		PrefUser string   `json:"preferred_username"`
+		UniqName string   `json:"unique_name"`
+		TID      string   `json:"tid"`
+		SCP      string   `json:"scp"`
+		Roles    []string `json:"roles"`
+		IAT      int64    `json:"iat"`
+		EXP      int64    `json:"exp"`
+		IPAddr   string   `json:"ipaddr"`
+	}
+	if err := json.Unmarshal(raw, &c); err != nil {
+		return nil
+	}
+	d := &DecodedToken{
+		TargetEmail: targetEmail,
+		Kind:        kind,
+		Audience:    c.Aud,
+		AppID:       firstNonEmptyStr(c.AppID, c.AZP),
+		UPN:         firstNonEmptyStr(c.UPN, c.PrefUser, c.UniqName),
+		TenantID:    c.TID,
+		Scopes:      c.SCP,
+		Roles:       c.Roles,
+		IPAddr:      c.IPAddr,
+	}
+	if c.IAT > 0 {
+		t := time.Unix(c.IAT, 0).UTC()
+		d.IssuedAt = &t
+	}
+	if c.EXP > 0 {
+		t := time.Unix(c.EXP, 0).UTC()
+		d.Expires = &t
+		d.Expired = time.Now().UTC().After(t)
+	}
+	return d
+}
+
+func firstNonEmptyStr(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 func (s *Store) ExportCampaign(id string) (*CampaignExport, error) {
@@ -896,13 +978,24 @@ func (s *Store) ExportCampaign(id string) (*CampaignExport, error) {
 		return nil, err
 	}
 
+	decoded := []DecodedToken{}
+	for _, t := range tokens {
+		if d := decodeTokenClaims("access", t.TargetEmail, t.AccessToken); d != nil {
+			decoded = append(decoded, *d)
+		}
+		if d := decodeTokenClaims("id", t.TargetEmail, t.IDToken); d != nil {
+			decoded = append(decoded, *d)
+		}
+	}
+
 	return &CampaignExport{
-		Campaign:     *camp,
-		Targets:      orEmpty(targets),
-		DeviceCodes:  orEmptyDC(codes),
-		Tokens:       orEmptyTok(tokens),
-		EmailResults: orEmptyER(emailResults),
-		ExportedAt:   time.Now().UTC(),
+		Campaign:      *camp,
+		Targets:       orEmpty(targets),
+		DeviceCodes:   orEmptyDC(codes),
+		Tokens:        orEmptyTok(tokens),
+		DecodedTokens: decoded,
+		EmailResults:  orEmptyER(emailResults),
+		ExportedAt:    time.Now().UTC(),
 	}, nil
 }
 

@@ -17,6 +17,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
@@ -102,6 +103,59 @@ func signHS256JWT(header, payload map[string]interface{}, key []byte) (string, e
 	return unsigned + "." + b64url(mac.Sum(nil)), nil
 }
 
+// ─── Session-key material decoding ───────────────────────────────────────────
+
+// DecodeKeyMaterial decodes a session key / key blob supplied in any of the
+// encodings the common PRT capture tools emit: standard base64 (roadtx and
+// AADInternals JSON), base64url, or hex (Mimikatz `sekurlsa::cloudap`,
+// AADInternals `-AsHex`, and most LSASS dumps). Surrounding quotes, whitespace
+// and a leading 0x are stripped first.
+//
+// It returns an explicit error instead of silently yielding an empty key, so a
+// wrong-encoding drop fails loudly at exchange time rather than deriving a
+// garbage key and producing an opaque "invalid grant" from Microsoft. Hex is
+// tried before base64 because a 64-char hex session key is also valid base64 —
+// but only the hex reading (32 bytes, AES-256) is the real key.
+func DecodeKeyMaterial(s string) ([]byte, error) {
+	s = strings.TrimSpace(s)
+	s = strings.Trim(s, `"'`)
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil, fmt.Errorf("empty key material")
+	}
+	h := strings.TrimPrefix(strings.TrimPrefix(s, "0x"), "0X")
+	if len(h)%2 == 0 && isHex(h) {
+		if b, err := hex.DecodeString(h); err == nil {
+			return b, nil
+		}
+	}
+	if strings.ContainsAny(s, "-_") {
+		if b, err := base64.RawURLEncoding.DecodeString(strings.TrimRight(s, "=")); err == nil {
+			return b, nil
+		}
+	}
+	if b, err := base64.StdEncoding.DecodeString(s); err == nil {
+		return b, nil
+	}
+	if b, err := base64.RawStdEncoding.DecodeString(strings.TrimRight(s, "=")); err == nil {
+		return b, nil
+	}
+	return nil, fmt.Errorf("key material is not valid hex or base64")
+}
+
+// isHex reports whether s is a non-empty run of hex digits.
+func isHex(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, c := range s {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+			return false
+		}
+	}
+	return true
+}
+
 // ─── KBKDF SP800-108 counter mode ────────────────────────────────────────────
 
 func deriveKey(sessionKey, context []byte) []byte {
@@ -146,7 +200,9 @@ func decryptJWE(compact string, privKey *rsa.PrivateKey) ([]byte, error) {
 		return nil, fmt.Errorf("JWE tag: %w", err)
 	}
 
-	var header struct{ Enc string `json:"enc"` }
+	var header struct {
+		Enc string `json:"enc"`
+	}
 	json.Unmarshal(headerBytes, &header)
 
 	cek, err := rsa.DecryptOAEP(sha1.New(), rand.Reader, privKey, encKey, nil)
@@ -199,7 +255,9 @@ func getServerNonce(ctx context.Context) (string, error) {
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
-	var sc struct{ Nonce string `json:"Nonce"` }
+	var sc struct {
+		Nonce string `json:"Nonce"`
+	}
 	json.Unmarshal(body, &sc)
 	if sc.Nonce == "" {
 		return "", fmt.Errorf("empty nonce: %s", string(body))
@@ -297,7 +355,10 @@ func ToAccessToken(ctx context.Context, p *PRT, clientID, resource, scope string
 	if err != nil {
 		return nil, err
 	}
-	skBytes, _ := base64.StdEncoding.DecodeString(p.SessionKey)
+	skBytes, err := DecodeKeyMaterial(p.SessionKey)
+	if err != nil {
+		return nil, fmt.Errorf("session key: %w", err)
+	}
 	nonceCtx, err := base64.StdEncoding.DecodeString(nonce)
 	if err != nil {
 		nonceCtx = []byte(nonce)
@@ -350,7 +411,10 @@ func ToCookie(ctx context.Context, p *PRT) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	skBytes, _ := base64.StdEncoding.DecodeString(p.SessionKey)
+	skBytes, err := DecodeKeyMaterial(p.SessionKey)
+	if err != nil {
+		return "", fmt.Errorf("session key: %w", err)
+	}
 	nonceCtx, err := base64.StdEncoding.DecodeString(nonce)
 	if err != nil {
 		nonceCtx = []byte(nonce)

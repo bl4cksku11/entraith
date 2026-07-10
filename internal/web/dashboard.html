@@ -2737,10 +2737,11 @@ function tokensSetPage(p) {
     return;
   }
   const cid = activeCampaignID;
-  tbody.innerHTML = items.map(t => {
+  tbody.innerHTML = items.map((t, i) => {
     const identity = escH(t.upn || t.target_email);
     const tid = encodeURIComponent(t.target_id);
     const isExchange = t.source === 'exchange';
+    const rowId = 'tokDecode_' + i;
     const labelBadge = isExchange
       ? `<span style="display:inline-block;background:var(--bg3);border:1px solid var(--accent);color:var(--accent);font-size:9px;padding:1px 5px;border-radius:3px;margin-left:5px;vertical-align:middle">${escH(t.label)}</span>`
       : '';
@@ -2750,13 +2751,58 @@ function tokensSetPage(p) {
       <td style="color:var(--text-dim);font-size:11px">${formatTime(t.redeemed_at)}</td>
       <td style="color:var(--text-dim);font-size:10px;max-width:140px;overflow:hidden;text-overflow:ellipsis">${escH((t.scope||'').split(' ').slice(0,3).join(' '))}</td>
       <td><div style="display:flex;gap:4px;flex-wrap:wrap">
+        <button class="btn btn-sm" onclick="toggleDecode('${rowId}')" title="Decode JWT claims">🔍 Decode</button>
         <button class="btn btn-sm" onclick="dlToken('${cid}','${tid}','access-token','')">↓ AT</button>
         ${t.refresh_token ? `<button class="btn btn-sm" onclick="dlToken('${cid}','${tid}','refresh-token','')">↓ RT</button>` : ''}
         ${!isExchange ? `<button class="btn btn-sm btn-primary" onclick="refreshUserToken('${cid}','${tid}','${escH(t.target_email)}',this)">↺ Refresh</button>` : `<button class="btn btn-sm btn-primary" onclick="refreshExchangedToken('${cid}','${tid}','${escH(t.label||'')}',this)">↺ Refresh</button>`}
       </div></td>
-    </tr>`;
+    </tr>
+    <tr id="${rowId}" style="display:none"><td colspan="5" style="background:var(--bg2);padding:10px 12px">${decodeTokenHtml(t)}</td></tr>`;
   }).join('');
   renderPager('tokensPager', page, totalPages, total, 'tokensPrev', 'tokensNext');
+}
+
+// ─── JWT decode (client-side, no signature check) ─────────────────────────────
+// The captured access/id tokens are already in the token payload the console
+// fetched, so we decode them locally rather than round-tripping to the server.
+function jwtPayload(tok) {
+  if (!tok || tok.indexOf('.') < 0) return null;
+  try {
+    let p = tok.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    p = p.padEnd(p.length + (4 - p.length % 4) % 4, '=');
+    return JSON.parse(atob(p));
+  } catch (e) { return null; }
+}
+
+function claimRows(c) {
+  if (!c) return '<div style="color:var(--text-dim);font-size:11px">— not a JWT (opaque token) —</div>';
+  const now = Math.floor(Date.now() / 1000);
+  const fmt = (s) => s ? new Date(s * 1000).toLocaleString() : '—';
+  const expTxt = c.exp ? (c.exp < now ? '⛔ expired ' + fmt(c.exp) : '✓ valid until ' + fmt(c.exp)) : '—';
+  const identity = c.upn || c.preferred_username || c.unique_name || c.email || '—';
+  const arr = (v) => Array.isArray(v) ? v.join(', ') : (v || '');
+  const pick = [
+    ['aud', c.aud], ['appid', c.appid || c.azp], ['identity', identity],
+    ['tid', c.tid], ['scp', c.scp], ['roles', arr(c.roles)],
+    ['ipaddr', c.ipaddr], ['amr', arr(c.amr)], ['exp', expTxt],
+  ];
+  return '<table style="width:100%;font-size:11px;border-collapse:collapse">' +
+    pick.filter(([k, v]) => v).map(([k, v]) =>
+      `<tr><td style="color:var(--accent3);padding:2px 10px 2px 0;white-space:nowrap;vertical-align:top">${k}</td><td style="color:var(--text-bright);word-break:break-all">${escH(String(v))}</td></tr>`
+    ).join('') + '</table>';
+}
+
+function decodeTokenHtml(t) {
+  const at = jwtPayload(t.access_token);
+  const id = jwtPayload(t.id_token);
+  let html = '<div style="font-size:10px;color:var(--text-dim);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Access token</div>' + claimRows(at);
+  if (id) html += '<div style="font-size:10px;color:var(--text-dim);margin:12px 0 4px;text-transform:uppercase;letter-spacing:.5px">ID token</div>' + claimRows(id);
+  return html;
+}
+
+function toggleDecode(id) {
+  const el = document.getElementById(id);
+  if (el) el.style.display = el.style.display === 'none' ? '' : 'none';
 }
 function tokensPrev() { tokensSetPage(tokensPage - 1); }
 function tokensNext() { tokensSetPage(tokensPage + 1); }
