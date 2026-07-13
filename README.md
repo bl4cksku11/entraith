@@ -50,8 +50,11 @@ Open `http://localhost:8443/login`. The bundled `engagement.docker.conf` is a lo
 
 ### From source
 
+Requires Go 1.24+ (CGO is not needed).
+
 ```bash
 go build -o entraith ./cmd/entraith
+cp bootstrap/engagement.example.conf engagement.conf   # then edit it for your engagement
 ./entraith server --config engagement.conf
 ```
 

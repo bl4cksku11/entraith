@@ -3463,11 +3463,12 @@ func (h *Handler) tokenExchange(w http.ResponseWriter, r *http.Request) {
 	// require the generic endpoint (mirrors mfaClient behaviour).
 	if err != nil && !body.UseV1 && strings.Contains(err.Error(), "AADSTS70000") {
 		v1Resource := body.Resource
-		if v1Resource == "" && body.Scope != "" {
+		if v1Resource == "" {
 			// Derive v1 resource from scope: take first space-delimited token,
 			// strip /.default suffix.
-			v1Resource = strings.Fields(body.Scope)[0]
-			v1Resource = strings.TrimSuffix(v1Resource, "/.default")
+			if fields := strings.Fields(body.Scope); len(fields) > 0 {
+				v1Resource = strings.TrimSuffix(fields[0], "/.default")
+			}
 		}
 		tenantCandidates := []string{tenantID}
 		if tenantID != "organizations" {
@@ -3517,7 +3518,7 @@ func (h *Handler) tokenExchange(w http.ResponseWriter, r *http.Request) {
 			AccessToken:  result.AccessToken,
 			RefreshToken: result.RefreshToken,
 			Scope:        result.Scope,
-			ExpiresIn:    result.ExpiresIn,
+			ExpiresIn:    int(result.ExpiresIn),
 			ObtainedAt:   result.ObtainedAt,
 			TenantID:     token.TenantID,
 			ReqScope:     body.Scope,
@@ -3611,6 +3612,10 @@ outer:
 		writeError(w, 500, lastErr.Error())
 		return
 	}
+	if result == nil {
+		writeError(w, 400, "no scope or resource recorded for this exchanged token — re-run Token Exchange")
+		return
+	}
 
 	_ = h.Store.InsertExchangedToken(store.ExchangedTokenRow{
 		ID:           ex.ID,
@@ -3621,7 +3626,7 @@ outer:
 		AccessToken:  result.AccessToken,
 		RefreshToken: result.RefreshToken,
 		Scope:        result.Scope,
-		ExpiresIn:    result.ExpiresIn,
+		ExpiresIn:    int(result.ExpiresIn),
 		ObtainedAt:   result.ObtainedAt,
 		TenantID:     ex.TenantID,
 		ReqScope:     ex.ReqScope,

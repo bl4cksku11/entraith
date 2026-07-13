@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -20,12 +21,34 @@ const (
 	oidcMeta   = "https://login.microsoftonline.com/%s/.well-known/openid-configuration"
 )
 
+// httpClient carries a timeout so a stalled connection to the Microsoft
+// identity endpoints cannot hang the calling handler goroutine indefinitely.
+var httpClient = &http.Client{Timeout: 30 * time.Second}
+
+// flexInt unmarshals a JSON value that may arrive as a number (v2.0 endpoint)
+// or as a quoted string (the v1.0 endpoint returns expires_in as a string).
+type flexInt int
+
+func (f *flexInt) UnmarshalJSON(b []byte) error {
+	s := strings.Trim(string(b), `"`)
+	if s == "" || s == "null" {
+		*f = 0
+		return nil
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return err
+	}
+	*f = flexInt(n)
+	return nil
+}
+
 // TokenPair holds the result of a token exchange.
 type TokenPair struct {
 	AccessToken  string    `json:"access_token"`
 	RefreshToken string    `json:"refresh_token"`
 	TokenType    string    `json:"token_type"`
-	ExpiresIn    int       `json:"expires_in"`
+	ExpiresIn    flexInt   `json:"expires_in"`
 	Scope        string    `json:"scope"`
 	Resource     string    `json:"resource"`
 	ObtainedAt   time.Time `json:"obtained_at"`
@@ -67,7 +90,7 @@ func Exchange(ctx context.Context, tenantID, clientID, refreshToken, resource, s
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.2210.133")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("token exchange request failed: %w", err)
 	}
@@ -77,6 +100,13 @@ func Exchange(ctx context.Context, tenantID, clientID, refreshToken, resource, s
 	if resp.StatusCode != 200 {
 		var ee exchangeError
 		json.Unmarshal(body, &ee)
+		if ee.Error == "" {
+			snippet := strings.TrimSpace(string(body))
+			if len(snippet) > 300 {
+				snippet = snippet[:300]
+			}
+			return nil, fmt.Errorf("token exchange failed: HTTP %d: %s", resp.StatusCode, snippet)
+		}
 		return nil, fmt.Errorf("%s: %s", ee.Error, ee.ErrorDescription)
 	}
 
@@ -99,7 +129,7 @@ func LookupTenantID(ctx context.Context, domain string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("lookup request failed: %w", err)
 	}

@@ -160,9 +160,10 @@ func redirectToLogin(w http.ResponseWriter, r *http.Request) {
 
 func usage() {
 	fmt.Fprintf(os.Stderr, "Usage:\n")
-	fmt.Fprintf(os.Stderr, "  entraith server   <config> [--debug]  start the operator console\n")
-	fmt.Fprintf(os.Stderr, "  entraith validate <config>          validate config file\n")
-	fmt.Fprintf(os.Stderr, "  entraith version                    print version\n")
+	fmt.Fprintf(os.Stderr, "  entraith server     <config> [--debug]  start the operator console\n")
+	fmt.Fprintf(os.Stderr, "  entraith validate   <config>            validate config file\n")
+	fmt.Fprintf(os.Stderr, "  entraith reset-admin <config>           reset the admin password\n")
+	fmt.Fprintf(os.Stderr, "  entraith version                        print version\n")
 	fmt.Fprintf(os.Stderr, "\nFlags (alternative to positional config):\n")
 	fmt.Fprintf(os.Stderr, "  --config <path>                     path to engagement config file\n")
 }

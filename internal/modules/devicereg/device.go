@@ -23,6 +23,10 @@ import (
 
 const deviceRegEndpoint = "https://enterpriseregistration.windows.net/EnrollmentServer/device/?api-version=2.0"
 
+// httpClient carries a timeout so a stalled connection to the device
+// registration endpoint cannot hang the calling handler goroutine indefinitely.
+var httpClient = &http.Client{Timeout: 30 * time.Second}
+
 // JoinType mirrors the Entra ID device join category.
 const (
 	JoinTypeAADJoined   = 0 // Azure AD Joined
@@ -161,7 +165,7 @@ func Register(ctx context.Context, accessToken, label, targetDomain, deviceType,
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.2210.133")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("registration request: %w", err)
 	}

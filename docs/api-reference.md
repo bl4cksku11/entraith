@@ -2,7 +2,7 @@
 
 ## API reference
 
-All endpoints are under `/api/`. Request bodies are `application/json` unless noted. Every `/api/` route requires a valid session cookie (set by `POST /api/auth/login`), and so do the `/webhook/*` control endpoints below. The only unauthenticated endpoints are the target-facing ones: `/login`, `/qr/*`, `/intune/*`, `/receive`, and `/capture`.
+All endpoints are under `/api/`. Request bodies are `application/json` unless noted. Every `/api/` route requires a valid session cookie (set by `POST /api/auth/login`), and so do the `/webhook/*` control endpoints below. The unauthenticated endpoints are the target-facing ones — `/login`, `/qr/*`, `/intune/*`, `/receive`, and `/capture` — plus `GET /health` on the main port, which returns `{status:"ok"}` for reverse-proxy and container health checks.
 
 ### Authentication
 
@@ -10,7 +10,7 @@ All endpoints are under `/api/`. Request bodies are `application/json` unless no
 |--------|------|-------|
 | `POST` | `/api/auth/login` | `{username, password}` → sets `session` HttpOnly cookie; returns `{status, username, role, must_change_password}`. Returns `429` with a `Retry-After` header once the login rate limit trips |
 | `POST` | `/api/auth/logout` | Clears the session cookie |
-| `GET` | `/api/auth/check` | Returns `{ok, username, role, must_change_password}` |
+| `GET` | `/api/auth/check` | Returns `{status, username, role, must_change_password}` |
 | `POST` | `/api/auth/change-password` | `{new_password}` — clears `must_change_password` flag for current user |
 
 ### User management (admin only)
@@ -171,7 +171,7 @@ All Graph Ops routes look up the stored access token for `{targetId}` and proxy 
 |--------|------|-------|
 | `GET` | `.../graph/{targetId}/apps` | App registrations + service principals |
 | `GET` | `.../graph/{targetId}/grants` | OAuth2 delegated permission grants |
-| `POST` | `.../graph/{targetId}/deploy-app` | `{display_name, redirect_uri?, scopes?}` |
+| `POST` | `.../graph/{targetId}/deploy-app` | `{display_name, redirect_uri?, requested_scopes?}` |
 | `GET` | `.../graph/{targetId}/conditional-access` | CA policies (requires Policy.Read.All) |
 
 #### Persistence modules (mutating — logged in the deployment ledger)
@@ -221,7 +221,7 @@ All Graph Ops routes look up the stored access token for `{targetId}` and proxy 
 | Method | Path | Notes |
 |--------|------|-------|
 | `GET` | `/api/prts` | List all stored PRTs |
-| `POST` | `/api/prts/request` | `{campaign_id, target_id, device_cert_id, client_id}` |
+| `POST` | `/api/prts/request` | `{label, deviceCertId, refreshToken, clientId, targetUpn, tenantId}` — mints a PRT from a captured refresh token bound to the device cert (camelCase fields) |
 | `POST` | `/api/prts/import` | Import a raw PRT |
 | `POST` | `/api/prts/ingest` | Same-origin PRT drop (console): store a PRT (`prt`/`prt_token`, `session_key`, `upn`, `tenant_id`, `device_cert_id`, `label`) and, with a `campaign_id` + session key, auto-exchange it to a Graph token ingested into the campaign |
 | `POST` | `/api/prts/{id}/use-in-campaign` | Take a stored PRT, mint a Graph access token (needs the stored session key) and ingest it into `{campaign_id, client_id?, resource?}` so it is usable in Graph Actions |

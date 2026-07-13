@@ -1685,7 +1685,7 @@
           <div class="config-card">
             <div class="config-card-title">Listener Port</div>
             <div class="input-group">
-              <input type="number" id="webhookPort" placeholder="8000" value="8000">
+              <input type="number" id="webhookPort" placeholder="9000" value="9000">
             </div>
             <button class="btn btn-primary btn-sm" onclick="startWebhookListener()">Start</button>
           </div>
@@ -4449,7 +4449,7 @@ function renderBrokerEntry(entry) {
 }
 
 async function startWebhookListener() {
-  const port = parseInt(document.getElementById('webhookPort')?.value) || 8000;
+  const port = parseInt(document.getElementById('webhookPort')?.value) || 9000;
   try {
     const r = await fetch('/webhook/start', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ port }) });
     const data = await r.json();
