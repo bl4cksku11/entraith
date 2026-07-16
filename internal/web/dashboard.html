@@ -1568,6 +1568,18 @@
             <button class="btn btn-primary btn-sm" onclick="persAssignDirectoryRole()">▶ Assign Directory Role</button>
             <pre id="persDirOut" class="pers-out" style="display:none"></pre>
           </div>
+
+          <div class="config-card" style="margin-top:16px">
+            <div class="config-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+              <span>🧹 Deployment Ledger — artifacts &amp; rollback (this campaign)</span>
+              <span style="display:flex;gap:6px">
+                <button class="btn btn-sm" onclick="persLoadLedger()">↻ Refresh</button>
+                <button class="btn btn-sm btn-danger" onclick="persTeardown()">⚠ Teardown all</button>
+              </span>
+            </div>
+            <div style="font-size:11px;color:var(--text-dim);margin-bottom:10px">Cada mutación desplegada en los targets de esta campaña queda registrada con su descriptor de rollback. Los artefactos <span style="color:var(--accent3)">graph</span> se revierten con un clic; <span style="color:var(--warn)">device / WinHello / MFA</span> se marcan para limpieza manual.</div>
+            <div id="persLedgerList"><div style="color:var(--text-dim);font-size:11px">Pulsa Refresh.</div></div>
+          </div>
         </div>
       </div>
 
@@ -2922,7 +2934,7 @@ function switchGraphSub(name, btn) {
   document.querySelectorAll('.graph-sub').forEach(s => s.classList.remove('active'));
   btn.classList.add('active');
   document.getElementById('graph-sub-' + name).classList.add('active');
-  if (name === 'persistence') persTargetHintUpdate();
+  if (name === 'persistence') { persTargetHintUpdate(); persLoadLedger(); }
   loadTokenLog();
 }
 
@@ -3312,6 +3324,54 @@ function persAssignDirectoryRole() {
   const role = document.getElementById('persDirRole').value.trim();
   if (!prin || !role) { notify('Principal ID and role definition ID required', true); return; }
   persPost('/assign-directory-role', { principal_id: prin, role_definition_id: role, directory_scope_id: document.getElementById('persDirScope').value.trim() || '/' }, 'persDirOut');
+}
+
+// Deployment Ledger for the active campaign — list, roll back, teardown.
+async function persLoadLedger() {
+  const el = document.getElementById('persLedgerList');
+  if (!el) return;
+  if (!activeCampaignID) { el.innerHTML = '<div style="color:var(--text-dim);font-size:11px">Select a campaign first.</div>'; return; }
+  el.innerHTML = '<div style="color:var(--text-dim);font-size:11px">⏳ Loading...</div>';
+  const data = await api('GET', `/campaigns/${activeCampaignID}/artifacts`);
+  if (data && data.error) { el.innerHTML = `<div style="color:var(--accent2);font-size:11px">${escH(data.error)}</div>`; return; }
+  const arts = Array.isArray(data) ? data : [];
+  if (!arts.length) { el.innerHTML = '<div style="color:var(--text-dim);font-size:11px">No deployed artifacts recorded for this campaign yet. Persistence actions above are logged here automatically.</div>'; return; }
+  el.innerHTML = arts.map(persRenderArtifact).join('');
+}
+function persRenderArtifact(a) {
+  const done = a.status === 'rolled_back';
+  const auto = a.rollback_kind === 'graph';
+  const sColor = done ? 'var(--accent3)' : (a.status === 'failed' ? 'var(--accent2)' : 'var(--text-bright)');
+  let action;
+  if (done)      action = '<span style="font-size:10px;color:var(--accent3)">✓ rolled back</span>';
+  else if (auto) action = `<button class="btn btn-sm btn-danger" onclick="persRollback('${escH(a.id)}')">↺ Roll back</button>`;
+  else           action = `<span style="font-size:10px;color:var(--warn)" title="${escH((a.rollback_method||'')+' '+(a.rollback_url||''))}">manual ⓘ</span>`;
+  return `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius);margin-bottom:6px">
+    <div style="min-width:0">
+      <div style="font-size:12px;color:var(--text-bright)">${escH(a.display_name||a.type)} <span style="font-size:9px;color:var(--accent);border:1px solid var(--border);padding:1px 5px;margin-left:4px">${escH(a.type)}</span></div>
+      <div style="font-size:10px;color:var(--text-dim)">obj: ${escH(a.object_id||'—')} · rollback: ${escH(a.rollback_kind)} · detect: ${escH(a.detection_signature||'—')}</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;white-space:nowrap">
+      <span style="font-size:10px;color:${sColor}">${escH(a.status)}</span>
+      ${action}
+    </div>
+  </div>`;
+}
+async function persRollback(id) {
+  if (!confirm('Roll back this artifact? This deletes the object from the target tenant.')) return;
+  const res = await api('POST', '/artifacts/' + encodeURIComponent(id) + '/rollback');
+  if (res && res.error) notify(res.error, true);
+  else if (res && res.status === 'failed') notify('Rollback failed: ' + (res.detail || 'unknown error'), true);
+  else notify('Rolled back');
+  persLoadLedger();
+}
+async function persTeardown() {
+  if (!activeCampaignID) { notify('Select a campaign first', true); return; }
+  if (!confirm('Teardown ALL auto-revertible artifacts for this campaign? This deletes the deployed objects from the target tenant.')) return;
+  const res = await api('POST', `/campaigns/${activeCampaignID}/teardown`);
+  if (res && res.error) { notify(res.error, true); return; }
+  notify('Teardown complete');
+  persLoadLedger();
 }
 
 async function graphSearch(type) {
